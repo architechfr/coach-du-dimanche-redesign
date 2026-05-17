@@ -1,0 +1,243 @@
+/* ============================================================
+   QUICK THEME — Floating action button + panel
+   ============================================================ */
+
+.qt-fab {
+  position: absolute;
+  bottom: 96px;
+  right: 18px;
+  width: 48px; height: 48px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(255,255,255,.15);
+  cursor: pointer;
+  z-index: 40;
+  padding: 0;
+  display: grid; place-items: center;
+  transition: transform .25s cubic-bezier(.2,.85,.3,1.4), box-shadow .25s;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.4),
+    0 8px 22px rgba(0,0,0,.5),
+    0 0 24px var(--acc-glow);
+  animation: qt-fab-pulse 3s ease-in-out infinite;
+}
+@keyframes qt-fab-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.5), 0 0 16px var(--acc-glow); }
+  50%      { box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.5), 0 0 32px var(--acc-glow); }
+}
+.qt-fab:active { transform: scale(.9); }
+.qt-fab:hover  { transform: scale(1.08) rotate(-6deg); }
+.qt-fab-inner {
+  font-size: 22px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+}
+
+/* Overlay */
+.qt-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0,0,0,.65);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn .22s ease;
+}
+
+.qt-panel {
+  width: 100%;
+  background: linear-gradient(180deg, var(--bg-1), #050709);
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  border-top: 1px solid var(--line-2);
+  padding: 8px 18px 24px;
+  animation: qt-slide-up .35s cubic-bezier(.2,.85,.3,1.1);
+  box-shadow: 0 -40px 80px rgba(0,0,0,.6), 0 0 60px var(--acc-glow);
+}
+@keyframes qt-slide-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.qt-panel::before {
+  content: "";
+  display: block;
+  width: 48px; height: 5px;
+  border-radius: 3px;
+  background: var(--acc);
+  box-shadow: 0 0 12px var(--acc-glow);
+  margin: 4px auto 16px;
+}
+
+.qt-h {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px;
+}
+.qt-t {
+  font-family: var(--f-display);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  color: var(--acc);
+  text-shadow: 0 0 12px var(--acc-glow);
+}
+.qt-x {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--tx-1);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.qt-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.qt-sw {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px;
+  background: var(--bg-2);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all .2s cubic-bezier(.2,.85,.3,1.3);
+}
+.qt-sw:active { transform: scale(.94); }
+.qt-sw.on {
+  background: linear-gradient(135deg, var(--bg-3), var(--bg-2));
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc), 0 8px 22px var(--acc-glow);
+}
+.qt-sw-c {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.2);
+  transition: transform .25s cubic-bezier(.2,.85,.3,1.5), box-shadow .25s;
+}
+.qt-sw.on .qt-sw-c {
+  transform: scale(1.15);
+  border-color: rgba(255,255,255,.9);
+}
+.qt-sw-l {
+  font-family: var(--f-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: var(--tx-1);
+}
+.qt-sw.on .qt-sw-l { color: var(--acc); }
+
+.qt-close-cta {
+  width: 100%;
+  height: 48px;
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  color: var(--acc-ink);
+  border: none;
+  border-radius: 14px;
+  font-family: var(--f-display);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  cursor: pointer;
+  box-shadow: 0 8px 22px var(--acc-glow);
+  transition: transform .15s;
+}
+.qt-close-cta:active { transform: scale(.97); }
+
+/* ============================================================
+   SETTINGS THEME CARD V2
+   ============================================================ */
+.set-theme-card {
+  background:
+    linear-gradient(135deg, var(--bg-3), var(--bg-2));
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  margin-bottom: 8px;
+}
+.set-theme-h {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px;
+}
+.set-theme-k {
+  font-family: var(--f-display);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  color: var(--tx-0);
+  margin-bottom: 2px;
+}
+.set-theme-d {
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.set-theme-preview {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(255,255,255,.2);
+  box-shadow: 0 0 24px var(--acc-glow);
+  transition: background .3s, box-shadow .3s;
+}
+.set-theme-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.set-swatch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  background: var(--bg-2);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .2s cubic-bezier(.2,.85,.3,1.3);
+}
+.set-swatch:active { transform: scale(.94); }
+.set-swatch.on {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc), 0 6px 18px var(--acc-glow);
+}
+.set-swatch-c {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.15);
+  transition: transform .25s cubic-bezier(.2,.85,.3,1.5);
+}
+.set-swatch.on .set-swatch-c {
+  transform: scale(1.15);
+  border-color: rgba(255,255,255,.9);
+}
+.set-swatch-l {
+  font-family: var(--f-display);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--tx-1);
+}
+.set-swatch.on .set-swatch-l { color: var(--acc); }
+.set-swatch-d {
+  font-size: 9px;
+  color: var(--tx-3);
+  letter-spacing: .04em;
+}
+.set-swatch-tick {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--acc);
+  color: var(--acc-ink);
+  display: grid; place-items: center;
+  font-size: 9px;
+  font-weight: 900;
+}

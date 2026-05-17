@@ -1,0 +1,186 @@
+/* ============================================================
+   LINEUP V2 — Formation picker modal + reserve + improvements
+   ============================================================ */
+
+.lu-saved {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--gn);
+  letter-spacing: .06em;
+  margin-left: 6px;
+  animation: lu-saved-fade .4s ease;
+}
+@keyframes lu-saved-fade {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Formation button — looks like a pill */
+.lu-formation-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  margin-top: 6px;
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  border: none;
+  border-radius: 10px;
+  color: var(--acc-ink);
+  font-family: var(--f-display);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--acc-glow);
+  transition: transform .15s, box-shadow .2s;
+}
+.lu-formation-current:active { transform: scale(.97); }
+.lu-formation-current b { font-size: 18px; }
+.lu-formation-arr {
+  font-size: 12px;
+  opacity: .75;
+}
+
+/* Formation picker modal */
+.lu-fp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn .25s ease;
+}
+
+.lu-fp-sheet {
+  width: 100%;
+  background: linear-gradient(180deg, var(--bg-1), #050709);
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  border-top: 1px solid var(--line-2);
+  padding: 8px 16px 24px;
+  max-height: 80%;
+  overflow-y: auto;
+  box-shadow: 0 -40px 80px rgba(0,0,0,.6);
+  animation: lu-fp-up .4s cubic-bezier(.2,.85,.3,1.1);
+}
+@keyframes lu-fp-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.lu-fp-sheet::before {
+  content: "";
+  display: block;
+  width: 48px; height: 5px;
+  border-radius: 3px;
+  background: var(--acc);
+  box-shadow: 0 0 12px var(--acc-glow);
+  margin: 4px auto 16px;
+}
+.lu-fp-h {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.lu-fp-t {
+  font-family: var(--f-display);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  color: var(--acc);
+  text-shadow: 0 0 12px var(--acc-glow);
+}
+.lu-fp-x {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--tx-1);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lu-fp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lu-fp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-2);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all .2s cubic-bezier(.2,.85,.3,1.3);
+}
+.lu-fp-card:active { transform: scale(.97); }
+.lu-fp-card.on {
+  background: linear-gradient(135deg, rgba(200,241,105,.08), var(--bg-2));
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc), 0 8px 22px var(--acc-glow);
+}
+
+.lu-fp-mini {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0a1c11;
+}
+
+.lu-fp-l {
+  font-family: var(--f-display);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  color: var(--tx-0);
+}
+.lu-fp-card.on .lu-fp-l { color: var(--acc); }
+
+.lu-fp-d {
+  font-size: 10px;
+  color: var(--tx-3);
+  line-height: 1.3;
+}
+
+/* Reserve cards (greyed) */
+.lu-bench-card.reserve {
+  opacity: .55;
+  border-style: dashed;
+}
+
+/* Slot name — bigger now since it's first name */
+.lu-slot-name {
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(0,0,0,.78);
+  padding: 2px 7px;
+  border-radius: 5px;
+  max-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0,0,0,.9);
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+/* CTA button when slots not filled */
+.btn-cta:disabled {
+  background: var(--bg-3);
+  color: var(--tx-3);
+  box-shadow: none;
+  cursor: not-allowed;
+  filter: grayscale(.5);
+}
+.btn-cta:disabled::before { display: none; }
+.btn-cta:disabled::after { display: none; }

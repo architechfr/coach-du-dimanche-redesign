@@ -1,0 +1,349 @@
+/* global React, ReactDOM, ScreenHome, ScreenEffectif, ScreenLineup, ScreenMatch, ScreenFiche, ScreenResults, ScreenConvocations, ScreenSettings, ScreenOnboarding, TweaksPanel, TweakSection, TweakColor, TweakRadio, TweakSelect, useTweaks */
+
+const { useState, useEffect, useMemo } = React;
+
+// ----- Tweakable defaults (parsed/persisted by host) -----
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#c8f169",
+  "cardStyle": "fut-classic",
+  "hero": "photo",
+  "density": "comfy"
+}/*EDITMODE-END*/;
+
+// Map accent → derived shades
+function applyAccent(hex) {
+  // Simple complementary shade (darker variant)
+  const m = hex.replace("#","").match(/.{2}/g) || ["c8","f1","69"];
+  const [r,g,b] = m.map(x => parseInt(x,16));
+  // Darker accent-2 (mix toward green-3)
+  const acc2 = `rgb(${Math.round(r*.55)},${Math.round(g*.85)},${Math.round(b*.7)})`;
+  // Accent-3 is the further-darker variant
+  const acc3 = `rgb(${Math.round(r*.35)},${Math.round(g*.7)},${Math.round(b*.5)})`;
+  // ink — pick dark or light
+  const lum = (0.299*r + 0.587*g + 0.114*b)/255;
+  const ink = lum > 0.55 ? "#06120a" : "#fff";
+  const glow = `rgba(${r},${g},${b},.45)`;
+  document.documentElement.style.setProperty("--acc", hex);
+  document.documentElement.style.setProperty("--acc-2", acc2);
+  document.documentElement.style.setProperty("--acc-3", acc3);
+  document.documentElement.style.setProperty("--acc-ink", ink);
+  document.documentElement.style.setProperty("--acc-glow", glow);
+}
+
+// ----- Nav model -----
+const NAV = [
+  { id:"home",         label:"Accueil",       ic:"⌂",   icon:HomeIcon,   bottom:true },
+  { id:"effectif",     label:"Effectif",      ic:"◧",   icon:SquadIcon,  bottom:true },
+  { id:"lineup",       label:"Compo",         ic:"◉",   icon:PitchIcon,  bottom:true },
+  { id:"convocations", label:"Convocs",       ic:"☷",   icon:ConvocIcon, bottom:true },
+  { id:"results",      label:"Champ",         ic:"♛",   icon:CupIcon,    bottom:true },
+  { id:"prep",         label:"Prépa J-7",     ic:"◈",   icon:CardIcon,   bottom:false },
+  { id:"match",        label:"Live",          ic:"●",   icon:LiveIcon,   bottom:false },
+  { id:"fiche",        label:"Fiche",         ic:"◌",   icon:CardIcon,   bottom:false },
+  { id:"vote",         label:"Vote",          ic:"☆",   icon:CupIcon,    bottom:false },
+  { id:"arb",          label:"Arbitre",       ic:"⚑",   icon:LiveIcon,   bottom:false },
+  { id:"lecteur",      label:"Lecteur",       ic:"△",   icon:SquadIcon,  bottom:false },
+  { id:"convoP",       label:"Convoc parent", ic:"¤",   icon:ConvocIcon, bottom:false },
+  { id:"transfert",    label:"Transfert",     ic:"⇄",   icon:ConvocIcon, bottom:false },
+  { id:"sync",         label:"Sync cloud",    ic:"☁",   icon:GearIcon,   bottom:false },
+  { id:"set",          label:"Réglages",      ic:"⚙",   icon:GearIcon,   bottom:false },
+  { id:"onb",          label:"Onboarding",    ic:"✦",   icon:SparkIcon,  bottom:false },
+];
+
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/>
+    </svg>
+  );
+}
+function SquadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3"/>
+      <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+      <circle cx="17" cy="6" r="2.5"/>
+      <path d="M14 14a4 4 0 0 1 3-1 4 4 0 0 1 4 4v1"/>
+    </svg>
+  );
+}
+function PitchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="1.5"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M3 8h4v8H3M21 8h-4v8h4"/>
+    </svg>
+  );
+}
+function ConvocIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="3" width="16" height="18" rx="2"/>
+      <line x1="8" y1="8" x2="16" y2="8"/>
+      <line x1="8" y1="12" x2="16" y2="12"/>
+      <line x1="8" y1="16" x2="13" y2="16"/>
+    </svg>
+  );
+}
+function CupIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 4h10v4a5 5 0 0 1-10 0z"/>
+      <path d="M7 6H4a3 3 0 0 0 3 6M17 6h3a3 3 0 0 1-3 6"/>
+      <path d="M9 14h6l-.5 4h-5z"/>
+      <line x1="8" y1="20" x2="16" y2="20"/>
+    </svg>
+  );
+}
+function LiveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="4" fill="currentColor"/>
+      <circle cx="12" cy="12" r="9" strokeOpacity=".4"/>
+    </svg>
+  );
+}
+function CardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6" y="3" width="12" height="18" rx="2"/>
+      <circle cx="12" cy="9" r="2"/>
+      <path d="M8 16c1-2 2.5-3 4-3s3 1 4 3"/>
+    </svg>
+  );
+}
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  );
+}
+function SparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+      <path d="M12 2l1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7z"/>
+    </svg>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [screen, setScreen] = useState("home");
+  const [stack, setStack] = useState(["home"]);
+  const [currentPlayer, setCurrentPlayer] = useState(null);
+  const [screenMenuOpen, setScreenMenuOpen] = useState(false);
+
+  // Apply tweaks
+  useEffect(() => { applyAccent(t.accent); }, [t.accent]);
+
+  // Go to a screen, optionally with payload
+  const go = (id, payload) => {
+    if (id === "back") {
+      setStack(s => {
+        if (s.length <= 1) return s;
+        const next = s.slice(0, -1);
+        setScreen(next[next.length - 1]);
+        return next;
+      });
+      return;
+    }
+    if (id === "fiche" && payload) setCurrentPlayer(payload);
+    setScreen(id);
+    setStack(s => [...s.slice(-3), id]);
+    setScreenMenuOpen(false);
+  };
+
+  // Determine if header back button shown
+  const showBack = !["home", "onb"].includes(screen);
+
+  const headerTitle = useMemo(() => {
+    const map = {
+      home: "",
+      effectif: "EFFECTIF",
+      lineup: "FEUILLE DE MATCH",
+      convocations: "CONVOCATIONS",
+      results: "CHAMPIONNAT",
+      match: "MATCH LIVE",
+      fiche: "FICHE JOUEUR",
+      prep: "PRÉPA MATCH",
+      arb: "MODE ARBITRE",
+      lecteur: "AS MAGNY · LECTEUR",
+      vote: "VOTE POST-MATCH",
+      transfert: "TRANSFERT",
+      sync: "SYNC CLOUD",
+      convoP: "CONVOCATION",
+      set: "RÉGLAGES",
+      onb: "",
+    };
+    return map[screen] ?? "";
+  }, [screen]);
+
+  return (
+    <div className="app-stage" data-screen-label={`Phone — ${screen}`}>
+
+      <div className="phone">
+        <div className="phone-notch"/>
+        <div className="phone-screen">
+
+          {/* Status bar */}
+          <div className="status-bar">
+            <span className="num">10:24</span>
+            <span className="right">
+              <span style={{fontSize:11, fontWeight:600}}>5G</span>
+              <span style={{display:"inline-block", width:18, height:11, border:"1px solid #fff", borderRadius:2, position:"relative"}}>
+                <span style={{position:"absolute", inset:1, background:"#fff", width:"82%", borderRadius:1}}/>
+              </span>
+            </span>
+          </div>
+
+          {/* Header (hidden on onboarding & home) */}
+          {screen !== "onb" && screen !== "home" && (
+            <div className="app-hdr">
+              <button className="app-hdr-btn back" onClick={() => go("back")}>‹</button>
+              <div className="app-hdr-title">{headerTitle}</div>
+              <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+            </div>
+          )}
+
+          {/* Home : floating header */}
+          {screen === "home" && (
+            <div className="app-hdr" style={{paddingTop: 0}}>
+              <button className="app-hdr-btn" onClick={() => go("set")} aria-label="Réglages">⚙</button>
+              <div className="app-hdr-title" style={{fontSize:14}}>AS MAGNY · U15 D1</div>
+              <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+            </div>
+          )}
+
+          {/* Body */}
+          <div className="app-body" key={screen}>
+            {screen === "home"         && <ScreenHome go={go} tweaks={t}/>}
+            {screen === "effectif"     && <ScreenEffectif go={go} tweaks={t}/>}
+            {screen === "lineup"       && <ScreenLineup go={go} tweaks={t}/>}
+            {screen === "convocations" && <ScreenConvocations go={go} tweaks={t}/>}
+            {screen === "results"      && <ScreenResults go={go} tweaks={t}/>}
+            {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}
+            {screen === "fiche"        && <ScreenFiche go={go} tweaks={t} player={currentPlayer}/>}
+            {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
+            {screen === "arb"          && <ScreenArbitre go={go} tweaks={t}/>}
+            {screen === "lecteur"      && <ScreenLecteur go={go} tweaks={t}/>}
+            {screen === "vote"         && <ScreenVote go={go} tweaks={t}/>}
+            {screen === "transfert"    && <ScreenTransfert go={go} tweaks={t}/>}
+            {screen === "sync"         && <ScreenSyncCloud go={go} tweaks={t}/>}
+            {screen === "convoP"       && <ScreenConvoParent go={go} tweaks={t}/>}
+            {screen === "set"          && <ScreenSettings go={go} tweaks={t} setTweak={setTweak}/>}
+            {screen === "onb"          && <ScreenOnboarding go={go} tweaks={t}/>}
+          </div>
+
+          {/* Bottom nav */}
+          {screen !== "onb" && (
+            <div className="bottom-nav">
+              {NAV.filter(n => n.bottom).map(n => {
+                const Icon = n.icon;
+                return (
+                  <button key={n.id}
+                    className={`bn-item ${screen===n.id?"on":""}`}
+                    onClick={() => go(n.id)}>
+                    <span className="ic"><Icon/></span>
+                    <span>{n.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Screen selector overlay */}
+          {screenMenuOpen && (
+            <div className="sm-overlay" onClick={() => setScreenMenuOpen(false)}>
+              <div className="sm-sheet" onClick={e => e.stopPropagation()}>
+                <div className="sm-h">
+                  <div className="sm-t">Tous les écrans</div>
+                  <button className="sm-close" onClick={() => setScreenMenuOpen(false)}>✕</button>
+                </div>
+                <div className="sm-grid">
+                  {NAV.map(n => {
+                    const Icon = n.icon;
+                    return (
+                      <button key={n.id}
+                        className={`sm-tile ${screen===n.id?"on":""}`}
+                        onClick={() => go(n.id)}>
+                        <span className="sm-tile-ic"><Icon/></span>
+                        <span className="sm-tile-l">{n.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="sm-hint">
+                  Tu peux aussi utiliser la barre de navigation en bas, ou taper sur les cartes joueurs / matchs depuis l'accueil.
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Tweaks panel — controlled by host toolbar */}
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Couleur d'accent">
+          <TweakColor
+            label="Accent"
+            value={t.accent}
+            onChange={v => setTweak("accent", v)}
+            options={["#c8f169", "#f5c451", "#06b6d4", "#ef4444", "#a78bfa"]}
+          />
+        </TweakSection>
+        <TweakSection label="Hero d'accueil">
+          <TweakRadio
+            label="Style hero"
+            value={t.hero}
+            onChange={v => setTweak("hero", v)}
+            options={[
+              { value:"photo",      label:"Photo" },
+              { value:"geometric",  label:"Géom." },
+            ]}/>
+        </TweakSection>
+        <TweakSection label="Cartes joueurs (à venir)">
+          <TweakSelect
+            label="Style FUT"
+            value={t.cardStyle}
+            onChange={v => setTweak("cardStyle", v)}
+            options={[
+              { value:"fut-classic", label:"Classique (FUT)" },
+              { value:"fut-icon",    label:"Icon — premium" },
+              { value:"fut-totw",    label:"Team of the Week" },
+              { value:"fut-hero",    label:"Hero (arc-en-ciel)" },
+            ]}/>
+        </TweakSection>
+        <TweakSection label="Densité">
+          <TweakRadio
+            label="Densité"
+            value={t.density}
+            onChange={v => setTweak("density", v)}
+            options={[
+              { value:"comfy",   label:"Aéré" },
+              { value:"compact", label:"FM" },
+            ]}/>
+        </TweakSection>
+      </TweaksPanel>
+
+    </div>
+  );
+}
+
+window.App = App;
+
+// Render. Listen for data rebuilds (real-data mode) to force refresh.
+(function() {
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  function render() { root.render(<App/>); }
+  window.addEventListener('cdd-data-rebuilt', render);
+  render();
+})();

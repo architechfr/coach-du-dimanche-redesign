@@ -1,0 +1,206 @@
+/* ============================================================
+   EFFECTIF V2 — Search, filters, sort
+   ============================================================ */
+
+/* Search bar */
+.ef-search {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0 14px 10px;
+  background: var(--bg-2);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.ef-search:focus-within {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc), 0 4px 16px var(--acc-glow);
+}
+.ef-search-ic {
+  font-size: 14px;
+  color: var(--tx-3);
+  text-align: center;
+}
+.ef-search-i {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--tx-1);
+  font-family: var(--f-body);
+  font-size: 14px;
+  font-weight: 500;
+  width: 100%;
+  padding: 6px 0;
+}
+.ef-search-i::placeholder { color: var(--tx-3); font-weight: 400; }
+
+.ef-search-x {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--bg-3);
+  border: none;
+  color: var(--tx-2);
+  font-size: 11px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.ef-search-x:active { transform: scale(.85); }
+
+.ef-search-toggle {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.ef-search-toggle.on {
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  color: var(--acc-ink);
+  border-color: transparent;
+  transform: rotate(60deg);
+}
+
+/* Filter panel */
+.ef-filters-panel {
+  margin: 0 14px 10px;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  animation: ef-fp-in .35s cubic-bezier(.2,.85,.3,1.1);
+}
+@keyframes ef-fp-in {
+  from { opacity: 0; transform: translateY(-8px); max-height: 0; padding: 0 14px; }
+  to   { opacity: 1; transform: none; max-height: 200px; padding: 12px 14px; }
+}
+.ef-fp-k {
+  font-size: 9px;
+  letter-spacing: .14em;
+  font-weight: 900;
+  color: var(--tx-3);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.ef-fp-k:not(:first-child) { margin-top: 12px; }
+.ef-fp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ef-fp-chip {
+  padding: 6px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--tx-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ef-fp-chip:active { transform: scale(.94); }
+.ef-fp-chip.on {
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  color: var(--acc-ink);
+  border-color: transparent;
+  box-shadow: 0 0 12px var(--acc-glow);
+}
+
+/* Position tabs — enhanced with icons and counts */
+.ef-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 10px;
+}
+.ef-tab-ic {
+  font-size: 12px;
+  line-height: 1;
+}
+.ef-tab-c {
+  display: inline-block;
+  font-family: var(--f-display);
+  font-size: 10px;
+  font-weight: 900;
+  background: rgba(0,0,0,.25);
+  color: inherit;
+  padding: 1px 5px;
+  border-radius: 8px;
+  margin-left: 2px;
+  opacity: .7;
+}
+.ef-tab.on .ef-tab-c {
+  background: rgba(0,0,0,.2);
+  opacity: 1;
+}
+
+/* Result count */
+.ef-result-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0 18px 10px;
+  font-family: var(--f-display);
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+.ef-result-count .num {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--acc);
+}
+.ef-result-count em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--tx-2);
+}
+.ef-clear {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--tx-3);
+  font-family: var(--f-body);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ef-clear:hover {
+  color: var(--rd);
+  border-color: var(--rd);
+}
+
+/* Empty state */
+.ef-empty {
+  text-align: center;
+  padding: 40px 24px;
+  color: var(--tx-3);
+}
+.ef-empty-ic {
+  font-size: 44px;
+  margin-bottom: 12px;
+  opacity: .5;
+}
+.ef-empty-t {
+  font-family: var(--f-display);
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--tx-1);
+  margin-bottom: 4px;
+}
+.ef-empty-d {
+  font-size: 12px;
+  color: var(--tx-3);
+}

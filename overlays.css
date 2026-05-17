@@ -1,0 +1,105 @@
+/* ============================================================
+   Misc overlays — screen selector + tweaks polish
+   ============================================================ */
+
+/* Screen menu sheet */
+.sm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: flex-end;
+  animation: fadeIn .2s ease;
+}
+.sm-sheet {
+  width: 100%;
+  background: var(--bg-1);
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  border-top: 1px solid var(--line);
+  padding: 8px 16px 24px;
+  animation: slideUp .25s cubic-bezier(.2,.7,.3,1);
+  max-height: 80%;
+  overflow-y: auto;
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.sm-sheet::before {
+  content: "";
+  display: block;
+  width: 40px; height: 4px;
+  border-radius: 2px;
+  background: var(--bg-4);
+  margin: 4px auto 16px;
+}
+.sm-h {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px 12px;
+}
+.sm-t {
+  font-family: var(--f-display);
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--tx-0);
+  letter-spacing: .04em;
+}
+.sm-close {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--tx-1);
+  font-size: 14px;
+}
+.sm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.sm-tile {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
+  padding: 16px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--tx-1);
+}
+.sm-tile.on {
+  background: linear-gradient(135deg, rgba(200,241,105,.12), rgba(0,227,140,.05));
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc), 0 0 18px var(--acc-glow);
+}
+.sm-tile-ic {
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  color: var(--tx-1);
+}
+.sm-tile.on .sm-tile-ic { background: var(--acc); color: var(--acc-ink); }
+.sm-tile-l {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.sm-hint {
+  margin-top: 14px;
+  padding: 12px;
+  font-size: 11px;
+  color: var(--tx-3);
+  text-align: center;
+  line-height: 1.5;
+  background: rgba(255,255,255,.025);
+  border-radius: 10px;
+}
+
+/* Tweaks panel inside the design-stage area */
+.tweaks-panel {
+  font-family: var(--f-body) !important;
+}

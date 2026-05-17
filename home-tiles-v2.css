@@ -1,0 +1,73 @@
+/* ============================================================
+   HOME V2 — All tiles visible, organized in sections
+   ============================================================ */
+
+.home-tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 0 14px 8px;
+}
+
+.home-tiles-grid .tile {
+  padding: 12px 12px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-align: left;
+  display: flex; flex-direction: column;
+  gap: 2px;
+  position: relative;
+  transition: all .2s cubic-bezier(.2,.85,.3,1.2);
+  overflow: hidden;
+}
+.home-tiles-grid .tile-ic {
+  font-size: 22px;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.home-tiles-grid .tile-t {
+  font-family: var(--f-display);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--tx-0);
+  letter-spacing: .03em;
+}
+.home-tiles-grid .tile-s {
+  font-size: 10px;
+  color: var(--tx-3);
+  letter-spacing: .02em;
+}
+
+/* Accent stripe per tile-type */
+.home-tiles-grid .tile::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  opacity: .8;
+  border-radius: 14px 14px 0 0;
+}
+.tile-prep::before     { background: linear-gradient(90deg, #a78bfa, transparent); }
+.tile-convoc::before   { background: linear-gradient(90deg, var(--acc), transparent); }
+.tile-effectif::before { background: linear-gradient(90deg, var(--bl), transparent); }
+.tile-lineup::before   { background: linear-gradient(90deg, var(--gn), transparent); }
+.tile-match::before    { background: linear-gradient(90deg, var(--rd), transparent); }
+.tile-champ::before    { background: linear-gradient(90deg, var(--gold), transparent); }
+.tile-fiche::before    { background: linear-gradient(90deg, var(--cy), transparent); }
+.tile-vote::before     { background: linear-gradient(90deg, var(--gold), transparent); }
+.tile-lecteur::before  { background: linear-gradient(90deg, var(--bl), transparent); }
+.tile-cvp::before      { background: linear-gradient(90deg, var(--pk), transparent); }
+.tile-arb::before      { background: linear-gradient(90deg, var(--yl), transparent); }
+.tile-transfert::before{ background: linear-gradient(90deg, #a78bfa, transparent); }
+.tile-sync::before     { background: linear-gradient(90deg, var(--cy), transparent); }
+.tile-set::before      { background: linear-gradient(90deg, var(--tx-2), transparent); }
+
+@media (hover: hover) {
+  .home-tiles-grid .tile:hover {
+    transform: translateY(-2px);
+    border-color: var(--acc);
+    box-shadow: 0 10px 24px rgba(0,0,0,.4);
+  }
+}
+.home-tiles-grid .tile:active { transform: scale(.96); }

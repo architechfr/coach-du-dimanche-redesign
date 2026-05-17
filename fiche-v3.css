@@ -1,0 +1,221 @@
+/* ============================================================
+   FICHE V3 — Coach control surfaces
+   ============================================================ */
+
+/* Clickable status chip */
+.fi-chip-btn {
+  border: 1px solid;
+  cursor: pointer;
+  font-family: var(--f-display);
+  transition: all .15s;
+}
+.fi-chip-btn:active { transform: scale(.95); }
+.fi-chip-edit {
+  font-size: 9px;
+  margin-left: 4px;
+  opacity: .6;
+}
+
+/* Status picker sheet */
+.fi-sp-overlay {
+  position: absolute; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex; align-items: flex-end;
+  animation: fadeIn .2s ease;
+}
+.fi-sp-sheet {
+  width: 100%;
+  background: linear-gradient(180deg, var(--bg-1), #050709);
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  border-top: 1px solid var(--line-2);
+  padding: 8px 16px 24px;
+  animation: qt-slide-up .3s cubic-bezier(.2,.85,.3,1.1);
+}
+.fi-sp-sheet::before {
+  content: "";
+  display: block;
+  width: 44px; height: 5px;
+  border-radius: 3px;
+  background: var(--acc);
+  margin: 4px auto 14px;
+  box-shadow: 0 0 12px var(--acc-glow);
+}
+.fi-sp-h {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px;
+}
+.fi-sp-t {
+  font-family: var(--f-display);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  color: var(--acc);
+}
+.fi-sp-x {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--tx-1);
+  font-size: 13px;
+  cursor: pointer;
+}
+.fi-sp-list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.fi-sp-opt {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  color: var(--tx-1);
+  font-family: var(--f-display);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: .04em;
+  transition: all .15s;
+}
+.fi-sp-opt:active { transform: scale(.98); }
+.fi-sp-opt.on {
+  background: linear-gradient(135deg, rgba(200,241,105,.08), var(--bg-2));
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc);
+}
+.fi-sp-opt-ok.on   { background: linear-gradient(135deg, rgba(34,197,94,.12), var(--bg-2)); border-color: var(--gn); }
+.fi-sp-opt-warn.on { background: linear-gradient(135deg, rgba(249,115,22,.12), var(--bg-2)); border-color: var(--or); }
+.fi-sp-opt-bad.on  { background: linear-gradient(135deg, rgba(239,68,68,.12), var(--bg-2)); border-color: var(--rd); }
+.fi-sp-opt-info.on { background: linear-gradient(135deg, rgba(167,139,250,.12), var(--bg-2)); border-color: #a78bfa; }
+.fi-sp-tick {
+  font-size: 16px;
+  color: var(--acc);
+  font-weight: 900;
+}
+
+/* Stats edit mode */
+.fi-attrs-h {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.fi-attrs-k {
+  font-family: var(--f-display);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  color: var(--acc);
+  text-transform: uppercase;
+}
+.fi-attrs-actions {
+  display: flex; gap: 4px;
+}
+.fi-attrs-btn-edit,
+.fi-attrs-btn-reset,
+.fi-attrs-btn-done {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+  font-family: var(--f-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.fi-attrs-btn-edit:hover { border-color: var(--acc); color: var(--acc); }
+.fi-attrs-btn-reset { border-color: rgba(239,68,68,.3); color: var(--rd); }
+.fi-attrs-btn-done {
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  color: var(--acc-ink);
+  border-color: transparent;
+}
+.fi-attrs-btn-done:hover { filter: brightness(1.05); }
+
+.fi-attr-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--bg-3);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+.fi-attr-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--acc);
+  border: 2px solid #000;
+  box-shadow: 0 0 0 2px var(--acc), 0 0 12px var(--acc-glow);
+  cursor: grab;
+}
+.fi-attr-range::-webkit-slider-thumb:active { cursor: grabbing; }
+.fi-attr-range::-moz-range-thumb {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--acc);
+  border: 2px solid #000;
+  box-shadow: 0 0 12px var(--acc-glow);
+  cursor: grab;
+}
+
+/* Observations — add note input */
+.fi-obs-add {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+.fi-obs-input {
+  width: 100%;
+  min-height: 60px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--tx-1);
+  font-family: var(--f-body);
+  font-size: 13px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.fi-obs-input::placeholder { color: var(--tx-3); font-style: italic; }
+.fi-obs-add-btn {
+  margin-top: 8px;
+  height: 36px;
+  width: 100%;
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  color: var(--acc-ink);
+  border: none;
+  border-radius: 10px;
+  font-family: var(--f-display);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  cursor: pointer;
+  transition: transform .15s;
+}
+.fi-obs-add-btn:disabled { opacity: .35; cursor: not-allowed; }
+.fi-obs-add-btn:active:not(:disabled) { transform: scale(.97); }
+
+.fi-obs-del {
+  margin-left: auto;
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  background: rgba(239,68,68,.1);
+  border: 1px solid rgba(239,68,68,.25);
+  color: var(--rd);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+.fi-obs-del:hover { background: rgba(239,68,68,.2); }

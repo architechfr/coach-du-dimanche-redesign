@@ -1,0 +1,51 @@
+# Coach du dimanche — fichiers à ne pas pousser sur GitHub
+
+# Système OS
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# Éditeurs de texte / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OneDrive — fichiers temporaires de synchro
+*.tmp
+~$*
+
+# Archives locales
+_archive*/
+_old*/
+backup*/
+
+# Builds / dépendances (au cas où on ajoute Node plus tard)
+node_modules/
+dist/
+build/
+.cache/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Variables d'environnement (secrets — à ne JAMAIS pousser)
+.env
+.env.local
+.env.*.local
+
+# Fichiers de test temporaires
+test-*.html
+diagnostic*.html
+
+# Versions historiques
+*_v??.html
+*_v?.html
+*_old.html
+arbitre-sport*.html
+prototype.html
+variations.html

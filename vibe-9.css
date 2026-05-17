@@ -1,0 +1,306 @@
+/* ============================================================
+   INTENSITÉ 9 — Neon, glows, holographic, FUT pack feel
+   ============================================================ */
+
+/* Global glow palette */
+:root {
+  --neon-shadow:
+    0 0 12px var(--acc-glow),
+    0 0 32px var(--acc-glow);
+  --holo-grad: conic-gradient(from 0deg,
+    #b9ffec 0%, #6ad8ff 16%, #d5b6ff 33%,
+    #ffd1a0 50%, #ffaadc 66%, #b9ffec 100%);
+}
+
+/* Body — subtle vignette + scanlines for that "broadcast" feel */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 200;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+    radial-gradient(140% 90% at 50% 50%, transparent 60%, rgba(0,0,0,.4) 100%);
+  mix-blend-mode: overlay;
+}
+
+/* === HERO — more drama === */
+.home-hero {
+  box-shadow:
+    var(--sh-2),
+    0 0 0 1px rgba(255,255,255,.04) inset,
+    0 24px 80px -20px var(--acc-glow);
+}
+.home-hero::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--r-2xl);
+  background: linear-gradient(135deg,
+    var(--acc) 0%, transparent 30%,
+    transparent 70%, var(--acc-3) 100%);
+  opacity: .25;
+  z-index: -1;
+  filter: blur(8px);
+}
+
+/* Hero "VS" — bigger, glow, animated */
+.hero-vs span {
+  background: linear-gradient(180deg, #fff 0%, var(--acc) 60%, var(--acc-3) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 24px var(--acc-glow));
+  animation: vs-pulse 2.4s ease-in-out infinite;
+}
+@keyframes vs-pulse {
+  0%, 100% { filter: drop-shadow(0 0 14px var(--acc-glow)); }
+  50%      { filter: drop-shadow(0 0 32px var(--acc-glow)); }
+}
+
+/* Badges with glow + tilt */
+.hero-badge {
+  position: relative;
+  transition: transform .3s ease;
+}
+.hero-badge::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--acc), transparent 50%);
+  opacity: .5;
+  filter: blur(10px);
+  z-index: -1;
+  pointer-events: none;
+}
+.hero-badge.me {
+  animation: badge-pulse 3s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { transform: rotate(0); box-shadow: 0 8px 24px var(--acc-glow); }
+  50%      { transform: rotate(-1deg); box-shadow: 0 12px 32px var(--acc-glow); }
+}
+
+/* btn-cta — more electric */
+.btn-cta {
+  position: relative;
+  overflow: hidden;
+}
+.btn-cta::before {
+  content: "";
+  position: absolute;
+  top: -2px; left: -2px; right: -2px; bottom: -2px;
+  background: linear-gradient(135deg, var(--acc), var(--acc-3), var(--acc));
+  background-size: 200% 200%;
+  z-index: -1;
+  border-radius: 18px;
+  animation: cta-flow 3s linear infinite;
+  filter: blur(0);
+  opacity: .8;
+}
+@keyframes cta-flow {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+.btn-cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg,
+    transparent 30%,
+    rgba(255,255,255,.4) 50%,
+    transparent 70%);
+  transform: translateX(-100%);
+  animation: cta-shine 4s infinite;
+}
+@keyframes cta-shine {
+  0%, 60% { transform: translateX(-100%); }
+  80%, 100% { transform: translateX(100%); }
+}
+.btn-cta.ghost::before { display: none; }
+.btn-cta.ghost::after { display: none; }
+
+/* Section headings — light dot accents */
+.sec-h .t::before {
+  background: linear-gradient(90deg, var(--acc), transparent);
+  box-shadow: 0 0 8px var(--acc-glow);
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* Tile hover glow */
+.tile {
+  position: relative;
+  overflow: hidden;
+}
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 80% at 50% 100%, var(--acc-glow), transparent 70%);
+  opacity: 0;
+  transition: opacity .25s;
+  pointer-events: none;
+}
+.tile:hover::after,
+.tile:active::after { opacity: 1; }
+
+/* FUT card — extra holographic noise for icons */
+.pc-icon::before,
+.pc-hero::before,
+.pc-totw::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-conic-gradient(from 0deg at 50% 50%,
+      transparent 0deg, rgba(255,255,255,.08) 4deg, transparent 8deg, rgba(0,0,0,.05) 12deg);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 3;
+  border-radius: 12px;
+  animation: holo-spin 10s linear infinite;
+}
+@keyframes holo-spin {
+  to { filter: hue-rotate(360deg); }
+}
+
+/* Section dividers with subtle glow */
+.set-sec-k::before,
+.cv-sec-k::before {
+  content: "";
+  display: inline-block;
+  width: 16px; height: 2px;
+  background: var(--acc);
+  box-shadow: 0 0 6px var(--acc-glow);
+  vertical-align: middle;
+  margin-right: 6px;
+  border-radius: 2px;
+}
+
+/* Bottom nav — small ambient glow when active */
+.bn-item.on .ic {
+  filter: drop-shadow(0 0 8px var(--acc-glow));
+}
+
+/* Snap-card glow line */
+.snap-card {
+  position: relative;
+}
+.snap-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 20%; right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--acc), transparent);
+  box-shadow: 0 0 12px var(--acc-glow);
+}
+
+/* Live indicator — heavy pulse */
+.chip.live {
+  box-shadow:
+    0 0 0 0 rgba(239,68,68,.6),
+    0 0 16px rgba(239,68,68,.5);
+  animation: live-pulse 1.8s infinite;
+}
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(239,68,68,.6), 0 0 12px rgba(239,68,68,.4); }
+  60%  { box-shadow: 0 0 0 10px rgba(239,68,68,0),   0 0 20px rgba(239,68,68,.6); }
+  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0),     0 0 12px rgba(239,68,68,.4); }
+}
+
+/* Status bar — clean dim */
+.status-bar { color: rgba(255,255,255,.92); }
+
+/* Phone — outer glow */
+.phone {
+  box-shadow:
+    0 60px 120px -20px rgba(0,0,0,.7),
+    0 0 0 8px #0c0f14,
+    0 0 0 9px #1c222b,
+    0 0 200px -20px var(--acc-glow),
+    inset 0 0 0 .5px rgba(255,255,255,.06);
+}
+
+/* Match live score — bigger throb */
+.ml-bb-score {
+  text-shadow:
+    0 4px 20px rgba(0,0,0,.7),
+    0 0 28px var(--acc-glow),
+    0 0 60px var(--acc-glow);
+  animation: score-throb 2.6s ease-in-out infinite;
+}
+@keyframes score-throb {
+  0%, 100% { letter-spacing: -.02em; }
+  50%      { letter-spacing: .005em; }
+}
+
+/* Fiche radar — neon stroke */
+.fi-radar svg path[stroke="var(--acc)"] {
+  filter: drop-shadow(0 0 8px var(--acc-glow));
+}
+
+/* Match live action buttons - hover lift */
+.ml-act {
+  position: relative;
+  overflow: hidden;
+}
+.ml-act::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(70% 100% at 50% 100%, var(--acc-glow), transparent 70%);
+  opacity: 0;
+  transition: opacity .2s;
+  pointer-events: none;
+}
+.ml-act:active::after { opacity: 1; }
+
+/* Lineup slot — selected ring */
+.lu-slot.on::before {
+  outline: 3px solid var(--acc);
+  outline-offset: 3px;
+  box-shadow:
+    0 0 0 6px rgba(0,0,0,.3),
+    0 0 24px var(--acc-glow),
+    inset 0 -3px 0 rgba(0,0,0,.25);
+}
+
+/* "Coach du Dimanche" big title - rainbow shine on onboarding */
+.onb-title-acc {
+  background: linear-gradient(90deg,
+    var(--acc) 0%,
+    #fff 30%,
+    var(--acc-3) 60%,
+    var(--acc) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine-text 5s linear infinite;
+  filter: drop-shadow(0 4px 24px var(--acc-glow));
+}
+@keyframes shine-text {
+  to { background-position: 200% 0; }
+}
+
+/* Form bars + radar shadows */
+.fi-attr-fill,
+.fi-form-fill,
+.ml-sbar-l {
+  filter: drop-shadow(0 0 6px var(--acc-glow));
+}
+
+/* Section heading - subtle tracking */
+.sec-h .t {
+  text-shadow: 0 0 24px var(--acc-glow);
+}
+
+/* Tooltip / sheet bottom drag handle accent */
+.sm-sheet::before {
+  background: var(--acc);
+  box-shadow: 0 0 12px var(--acc-glow);
+}

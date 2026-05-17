@@ -1,0 +1,349 @@
+/* ============================================================
+   FICHE JOUEUR V2 — refonte sans duplication nom
+   ============================================================ */
+
+/* ─── HERO V2 ─────────────────────────────────────────── */
+.fi-hero-v2 {
+  position: relative;
+  margin: 0 14px 12px;
+  padding: 22px 16px 18px;
+  border-radius: var(--r-2xl);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  isolation: isolate;
+  box-shadow: var(--sh-2);
+  text-align: center;
+}
+.fi-hero-v2 .fi-hero-bg {
+  position: absolute; inset: 0; z-index: 0;
+  background:
+    url("assets/hero-coach-dashboard.jpg") center 30%/cover no-repeat,
+    radial-gradient(80% 50% at 50% 0%, rgba(200,241,105,.25), transparent 60%),
+    #050a12;
+  filter: brightness(.45) saturate(.85);
+}
+.fi-hero-v2 .fi-hero-grad {
+  position: absolute; inset: 0; z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.4) 0%, transparent 30%, rgba(0,0,0,.9) 100%),
+    radial-gradient(60% 40% at 50% 50%, transparent 30%, rgba(0,0,0,.5) 100%);
+}
+
+/* Massive OVR ghosted in background — FIFA-style */
+.fi-hero-ovr-ghost {
+  position: absolute;
+  bottom: -32px;
+  right: -12px;
+  z-index: 2;
+  font-family: var(--f-display);
+  font-size: 240px;
+  font-weight: 900;
+  line-height: .8;
+  color: rgba(255,255,255,.04);
+  letter-spacing: -.04em;
+  pointer-events: none;
+  text-shadow: 0 0 60px rgba(255,255,255,.05);
+}
+
+.fi-hero-card-wrap {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+  perspective: 1000px;
+  animation: card-float 5s ease-in-out infinite;
+}
+@keyframes card-float {
+  0%, 100% { transform: translateY(0) rotateY(0); }
+  25%      { transform: translateY(-2px) rotateY(-2deg); }
+  75%      { transform: translateY(-2px) rotateY(2deg); }
+}
+
+/* ─── Identity block ──────────────────────────────────── */
+.fi-id {
+  position: relative;
+  z-index: 3;
+  color: #fff;
+  text-align: center;
+}
+.fi-id-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.fi-id-num {
+  font-family: var(--f-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: var(--acc);
+  padding: 3px 10px;
+  background: rgba(200,241,105,.1);
+  border: 1px solid rgba(200,241,105,.3);
+  border-radius: 6px;
+  box-shadow: 0 0 12px var(--acc-glow);
+}
+.fi-id-pos {
+  font-family: var(--f-display);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  color: #fff;
+  padding: 3px 10px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+.fi-id-ovr {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 10px;
+  background: linear-gradient(135deg, var(--acc), var(--acc-3));
+  color: var(--acc-ink);
+  border-radius: 6px;
+  font-family: var(--f-display);
+  font-weight: 900;
+  box-shadow: 0 0 14px var(--acc-glow);
+}
+.fi-id-ovr b { font-size: 16px; line-height: 1; }
+.fi-id-ovr em {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: .12em;
+  opacity: .8;
+}
+
+.fi-id-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 8px 0 6px;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.fi-id-name:hover { opacity: .82; }
+.fi-id-edit-ic {
+  font-size: 14px;
+  margin-left: 6px;
+  opacity: 0;
+  color: var(--acc);
+  vertical-align: middle;
+  transition: opacity .2s;
+}
+.fi-id-name:hover .fi-id-edit-ic { opacity: 1; }
+
+/* Name editor form */
+.fi-ne-form {
+  padding: 0;
+  display: flex; flex-direction: column;
+  gap: 12px;
+}
+.fi-ne-l {
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.fi-ne-l > span {
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: var(--tx-3);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.fi-ne-i {
+  background: var(--bg-2);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--tx-0);
+  font-family: var(--f-display);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  outline: none;
+  transition: border-color .15s;
+}
+.fi-ne-i:focus {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc), 0 0 12px var(--acc-glow);
+}
+.fi-ne-info {
+  padding: 10px 12px;
+  background: rgba(59,130,246,.06);
+  border: 1px solid rgba(59,130,246,.2);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--bl);
+  line-height: 1.5;
+}
+.fi-ne-actions {
+  display: flex; gap: 8px;
+  margin-top: 4px;
+}
+.fi-ne-actions button { flex: 1; height: 44px; font-size: 12px; }
+.fi-id-first {
+  font-family: var(--f-body);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  color: rgba(255,255,255,.6);
+  text-transform: lowercase;
+}
+.fi-id-last {
+  font-family: var(--f-display);
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -.005em;
+  line-height: .95;
+  color: #fff;
+  margin: 0;
+  text-shadow: 0 4px 28px rgba(0,0,0,.55), 0 0 32px rgba(200,241,105,.1);
+}
+
+.fi-id-meta {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,.7);
+  margin-top: 8px;
+}
+.fi-id-meta b { color: #fff; font-weight: 800; }
+.fi-id-meta .dot { color: rgba(255,255,255,.3); font-size: 8px; }
+
+/* ─── Chips: status + licence + mutation ─────────────── */
+.fi-chips {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.fi-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-family: var(--f-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  border-radius: 999px;
+  border: 1px solid;
+  text-transform: uppercase;
+}
+.fi-chip.ok  { background: rgba(34,197,94,.12); color: var(--gn);  border-color: rgba(34,197,94,.35); }
+.fi-chip.warn{ background: rgba(249,115,22,.12); color: var(--or); border-color: rgba(249,115,22,.35); }
+.fi-chip.bad { background: rgba(239,68,68,.12); color: var(--rd);  border-color: rgba(239,68,68,.35); }
+.fi-chip.info{ background: rgba(59,130,246,.12); color: var(--bl); border-color: rgba(59,130,246,.35); }
+.fi-chip.mut { background: rgba(167,139,250,.12); color: #a78bfa; border-color: rgba(167,139,250,.35); }
+.fi-chip.mut-hp {
+  background: rgba(245,196,81,.12); color: var(--gold);
+  border-color: rgba(245,196,81,.4);
+  box-shadow: 0 0 10px rgba(245,196,81,.2);
+  animation: chip-pulse 2s ease-in-out infinite;
+}
+@keyframes chip-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(245,196,81,.2); }
+  50%      { box-shadow: 0 0 20px rgba(245,196,81,.5); }
+}
+
+/* ─── Licence block — separate visual identity ─────── */
+.fi-licence {
+  margin: 0 14px 14px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(59,130,246,.08), var(--bg-2)),
+    var(--bg-2);
+  border: 1px solid rgba(59,130,246,.25);
+  border-radius: var(--r-lg);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.fi-licence-l {
+  text-align: left;
+  border-right: 1px solid var(--line);
+  padding-right: 12px;
+}
+.fi-licence-k {
+  font-size: 9px;
+  letter-spacing: .14em;
+  color: var(--bl);
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.fi-licence-n {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--tx-0);
+  letter-spacing: .03em;
+}
+.fi-licence-r {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+}
+.fi-licence-r > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fi-licence-r em {
+  font-style: normal;
+  color: var(--tx-3);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.fi-licence-r b {
+  color: var(--tx-1);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: right;
+}
+.fi-licence-prev b { color: var(--or); }
+
+/* Suppress old fiche hero classes for V2 */
+.scr-fiche .fi-hero { display: none; }
+
+/* ─── Animations refresh ─────────────────────────────── */
+.fi-hero-v2 { animation: scr-enter .55s both cubic-bezier(.2,.85,.3,1.2); }
+.fi-id-row    { animation: hero-in .5s .15s both ease-out; }
+.fi-id-name   { animation: hero-in .55s .25s both cubic-bezier(.2,.85,.3,1.2); }
+.fi-id-meta   { animation: hero-in .5s .35s both ease-out; }
+.fi-chips     { animation: hero-in .5s .45s both ease-out; }
+.fi-licence   { animation: scr-enter .55s .35s both cubic-bezier(.2,.85,.3,1.05); }
+.fi-id-last   { animation: name-reveal .8s .3s both cubic-bezier(.2,.85,.3,1.1); }
+@keyframes name-reveal {
+  from {
+    opacity: 0;
+    letter-spacing: .15em;
+    transform: scale(.9);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    letter-spacing: -.005em;
+    transform: none;
+    filter: blur(0);
+  }
+}
+.fi-hero-ovr-ghost {
+  animation: ghost-in 1.2s .2s both cubic-bezier(.2,.85,.3,1.05);
+}
+@keyframes ghost-in {
+  from { transform: translateY(40px) scale(.6); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
