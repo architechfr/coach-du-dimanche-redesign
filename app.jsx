@@ -44,6 +44,7 @@ const NAV = [
   { id:"arb",          label:"Arbitre",       ic:"⚑",   icon:LiveIcon,   bottom:false },
   { id:"lecteur",      label:"Lecteur",       ic:"△",   icon:SquadIcon,  bottom:false },
   { id:"convoP",       label:"Convoc parent", ic:"¤",   icon:ConvocIcon, bottom:false },
+  { id:"share",        label:"Partager",      ic:"↗",   icon:ConvocIcon, bottom:false },
   { id:"transfert",    label:"Transfert",     ic:"⇄",   icon:ConvocIcon, bottom:false },
   { id:"sync",         label:"Sync cloud",    ic:"☁",   icon:GearIcon,   bottom:false },
   { id:"set",          label:"Réglages",      ic:"⚙",   icon:GearIcon,   bottom:false },
@@ -180,6 +181,7 @@ function App() {
       transfert: "TRANSFERT",
       sync: "SYNC CLOUD",
       convoP: "CONVOCATION",
+      share: "PARTAGER",
       set: "RÉGLAGES",
       onb: "",
     };
@@ -238,6 +240,7 @@ function App() {
             {screen === "transfert"    && <ScreenTransfert go={go} tweaks={t}/>}
             {screen === "sync"         && <ScreenSyncCloud go={go} tweaks={t}/>}
             {screen === "convoP"       && <ScreenConvoParent go={go} tweaks={t}/>}
+            {screen === "share"        && <ScreenSharePartage go={go} tweaks={t}/>}
             {screen === "set"          && <ScreenSettings go={go} tweaks={t} setTweak={setTweak}/>}
             {screen === "onb"          && <ScreenOnboarding go={go} tweaks={t}/>}
           </div>

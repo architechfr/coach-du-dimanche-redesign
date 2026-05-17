@@ -2,66 +2,28 @@
 
 ## 🚀 Déploiement test
 
-### Option recommandée : nouveau projet Vercel séparé pour tester
+### Étapes (15 min)
 
-L'objectif : **garder ton index.html actuel intact** sur ta prod, et avoir une **URL séparée** pour tester le redesign avec tes vraies données. Une fois validé, on intègre.
-
-#### Étapes (15 min)
-
-1. **Créer un nouveau repo GitHub**
+1. **Télécharge le ZIP** (carte de téléchargement dans le chat)
+2. **Dézippe dans un nouveau dossier**
+3. **Push sur GitHub** :
    ```bash
-   # Sur ton ordinateur
-   mkdir coach-du-dimanche-redesign
-   cd coach-du-dimanche-redesign
-   git init
-   # Copier tous les fichiers de ce projet ici
-   git add .
-   git commit -m "Initial redesign prototype"
+   cd dossier-décompressé
+   git init && git add . && git commit -m "Redesign v1"
    git remote add origin https://github.com/architechfr/coach-du-dimanche-redesign.git
-   git push -u origin main
+   git push -u origin main --force
    ```
+4. **Vercel auto-déploie** depuis le push
+5. **URL** : `https://coach-du-dimanche-redesign.vercel.app/`
 
-2. **Déployer sur Vercel**
-   - Va sur https://vercel.com/new
-   - Importe le repo GitHub que tu viens de créer
-   - **Aucune config build** nécessaire — c'est du HTML/CSS/JS pur
-   - Vercel détecte automatiquement → Deploy
-   - URL générée : `coach-du-dimanche-redesign-xxx.vercel.app`
+### ⚠️ Important : noms de fichiers URL-safe
 
-3. **Tester avec tes vraies données**
-   - Ouvre l'URL Vercel
-   - Va sur `/Coach du Dimanche — Real Data.html`
-   - Tu vois le HUD à gauche avec FCMH/USDF
-   - Tape ↻ Rafraîchir FFF → tes vrais classements (FCMH U15 D2 + USDF Vétérans D2)
-   - Tout l'effectif Magny U15 (Laighor, Mamadou, Sékou…) avec photos FFF
+Les fichiers principaux sont maintenant nommés sans espaces ni caractères spéciaux :
+- `app.html` — version REAL DATA (avec ton seed FCMH + USDF) ⭐ par défaut
+- `mock.html` — version avec données mockées
+- `index.html` — redirige vers `app.html`
 
-#### Page d'entrée
-
-Tu peux créer un `index.html` à la racine qui redirige vers la version Real Data :
-
-```html
-<!DOCTYPE html>
-<meta http-equiv="refresh" content="0; url=Coach du Dimanche — Real Data.html">
-```
-
----
-
-### Option alternative : branche sur ton repo existant
-
-Si tu préfères tout avoir au même endroit :
-
-```bash
-cd coach-du-dimanche
-git checkout -b redesign-fifa-fm
-# Copier les fichiers du proto dans un sous-dossier ./v2/
-mkdir v2
-# (copier tous les .html .css .jsx .js de ce projet dans ./v2/)
-git add v2/
-git commit -m "Add v2 redesign prototype"
-git push -u origin redesign-fifa-fm
-```
-
-Vercel te déploie automatiquement le preview à `coach-du-dimanche-git-redesign-fifa-fm-xxx.vercel.app/v2/` à chaque push.
+Si la racine renvoie 404 : ouvre directement `https://coach-du-dimanche-redesign.vercel.app/app.html`
 
 ---
 

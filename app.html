@@ -3,14 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Coach du Dimanche — FIFA × FM Redesign</title>
+<title>Coach du Dimanche — REAL DATA · Cloisonnement</title>
 
-<!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 
-<!-- Theme -->
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="player-card.css">
 <link rel="stylesheet" href="screens.css">
@@ -25,30 +23,71 @@
 <link rel="stylesheet" href="lineup-v2.css">
 <link rel="stylesheet" href="home-tiles-v2.css">
 <link rel="stylesheet" href="fff-live.css">
+<link rel="stylesheet" href="match-live-v2.css">
+<link rel="stylesheet" href="screen-share.css">
 <link rel="stylesheet" href="overlays.css">
+<link rel="stylesheet" href="debug-hud.css">
 
-<!-- React + Babel (pinned, with integrity) -->
+<!-- Step 1: seed data (synchronous) -->
+<script src="seed-inline.js"></script>
+
+<!-- Step 2: adapter (auto-initialises from seed) -->
+<script src="data-adapter.js"></script>
+
+<!-- Step 2b: FFF live data fetcher (cascade CORS proxies) -->
+<script src="fff-fetcher.js"></script>
+<script src="coach-overrides.js"></script>
+<script src="match-engine.js"></script>
+
+<!-- Step 3: React + Babel -->
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 </head>
 <body>
 
+<!-- HUD root (separate from app so they don't conflict) -->
+<div id="hud-root"></div>
+
+<!-- App root -->
 <div id="root"></div>
 
-<!-- Data + components, ordered so that dependencies resolve -->
-<script type="text/babel" src="data.jsx"></script>
+<!-- Step 4: data bridge builds the globals (CDD_PLAYERS etc) BEFORE app.jsx mounts -->
+<script type="text/babel" src="data-bridge.js"></script>
+
+<!-- Step 5: UI components -->
 <script type="text/babel" src="player-card.jsx"></script>
 <script type="text/babel" src="tweaks-panel.jsx"></script>
 <script type="text/babel" src="screen-home.jsx"></script>
 <script type="text/babel" src="screen-effectif-lineup.jsx"></script>
 <script type="text/babel" src="screen-match-fiche.jsx"></script>
+<script type="text/babel" src="screen-match-live-v2.jsx"></script>
 <script type="text/babel" src="screen-results-conv.jsx"></script>
 <script type="text/babel" src="screen-onb-set.jsx"></script>
 <script type="text/babel" src="screen-prep-arb-lec-vote.jsx"></script>
 <script type="text/babel" src="screen-transfert-sync-convp.jsx"></script>
+<script type="text/babel" src="screen-share.jsx"></script>
+<script type="text/babel" src="debug-hud.jsx"></script>
 <script type="text/babel" src="quick-theme.jsx"></script>
+
+<!-- Step 6: main app (auto-mounts into #root via its own ReactDOM call) -->
 <script type="text/babel" src="app.jsx"></script>
+
+<!-- Step 7: separately mount HUD + listen for rebuilds -->
+<script type="text/babel">
+(function mountHud() {
+  if (!window.DebugHUD) {
+    setTimeout(mountHud, 100);
+    return;
+  }
+  const hudRoot = ReactDOM.createRoot(document.getElementById('hud-root'));
+  hudRoot.render(<window.DebugHUD />);
+  // On club change, force the HUD to rerender AND signal app to refresh
+  window.addEventListener('cdd-data-rebuilt', () => {
+    hudRoot.render(<window.DebugHUD key={Date.now()} />);
+  });
+})();
+</script>
 
 </body>
 </html>

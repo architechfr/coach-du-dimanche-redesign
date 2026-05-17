@@ -55,14 +55,16 @@ function deriveRarity(player, idx) {
 const STAR_BONUSES = {
   // BOYLAMBA Laighor — CAPITAINE, meilleur joueur
   'pl_moydtri8_82ncg': { base: 12, profile: 'BU', label: 'Capitaine' },
-  // BAMBA Mamadou — défenseur central exceptionnel
-  'pl_moydtri8_v1skp': { base: 11, profile: 'DC' },
+  // BAMBA Mamadou — LEADER, récupérateur + meneur de jeu, physique
+  'pl_moydtri8_v1skp': { base: 14, profile: 'DM', leader: true },
   // TRAORE Djibril (#10) — meneur de jeu
   'pl_moydtri8_uid2h': { base: 11, profile: 'MOC' },
   // ITOUA Grace Appolinaire — milieu / box-to-box
   'pl_moydtri8_krkoy': { base: 10, profile: 'MC' },
   // DOUMBIA Sékou — athlète polyvalent, peut tout jouer
   'pl_moydtri8_uyhvf': { base: 12, profile: 'BU', versatile: true },
+  // EULOGA Darell (#7) — RAPIDE, ailier droit
+  'pl_moydtri8_fs89g': { base: 9, profile: 'AD', speedster: true },
 };
 
 function deriveStats(player) {
@@ -109,6 +111,18 @@ function deriveStats(player) {
   if (star?.versatile) {
     p.DEF = Math.max(p.DEF, -2);
     p.PHY = Math.max(p.PHY, +8);
+  }
+  // Mamadou leader: PHY, DEF, PAS au max (récupérateur + meneur)
+  if (star?.leader) {
+    p.PHY = +14;
+    p.DEF = +12;
+    p.PAS = +14;
+    p.DRI = +8;
+  }
+  // Darell speedster: PAC boost
+  if (star?.speedster) {
+    p.PAC = +20;
+    p.DRI = +16;
   }
 
   const clamp = v => Math.max(40, Math.min(95, v));
@@ -159,10 +173,11 @@ function resolvePhoto(player) {
 function buildViewPlayer(player, idx) {
   const STAR_RARITIES = {
     'pl_moydtri8_82ncg': 'hero',    // Laighor — capitaine
-    'pl_moydtri8_v1skp': 'icon',    // Mamadou
+    'pl_moydtri8_v1skp': 'hero',    // Mamadou — leader
     'pl_moydtri8_uid2h': 'icon',    // Djibril
     'pl_moydtri8_krkoy': 'totw',    // Grace Appolinaire
     'pl_moydtri8_uyhvf': 'hero',    // Sékou
+    'pl_moydtri8_fs89g': 'totw',    // Darell — speedster
   };
   const pos = normalizePosition(player.position, player.preferredNumber) || 'MC';
   const stats = deriveStats(player);

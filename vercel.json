@@ -1,0 +1,5 @@
+<!-- Empty config: Vercel auto-detects as static -->
+{
+  "cleanUrls": true,
+  "trailingSlash": false
+}

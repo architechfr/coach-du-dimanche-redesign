@@ -128,10 +128,10 @@ function ScreenHome({ go, tweaks }) {
           <span className="tile-t">Page parents</span>
           <span className="tile-s">Lecteur public</span>
         </button>
-        <button className="tile tile-cvp" onClick={() => go("convoP")}>
-          <span className="tile-ic">📬</span>
-          <span className="tile-t">Convoc parent</span>
-          <span className="tile-s">Réponse 1-tap</span>
+        <button className="tile tile-cvp" onClick={() => go("share")}>
+          <span className="tile-ic">↗</span>
+          <span className="tile-t">Partager</span>
+          <span className="tile-s">WhatsApp · SMS · QR</span>
         </button>
         <button className="tile tile-arb" onClick={() => go("arb")}>
           <span className="tile-ic">🟨</span>
