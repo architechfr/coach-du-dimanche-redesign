@@ -79,12 +79,14 @@ function buildDefaultTeams() {
     tA: {
       n: club.short || 'Mon équipe',
       c: club.colors?.[0] || '#c8f169',
+      c2: club.colors?.[1] || '#000000',
       p: players.filter(p => p.isStarter).slice(0, 11).map(p => ({ num: p.num, first: p.first, last: p.last, id: p.id, onField: true })),
       bench: players.filter(p => !p.isStarter && p.status !== 'reserve').slice(0, 7).map(p => ({ num: p.num, first: p.first, last: p.last, id: p.id, onField: false })),
     },
     tB: {
       n: 'Adversaire',
       c: '#3b82f6',
+      c2: '#ffffff',
       p: Array.from({length:11}, (_,i) => ({ num: i+1, first: '', last: '#'+(i+1), id: 'b_'+i, onField: true })),
       bench: Array.from({length:5}, (_,i) => ({ num: 12+i, first: '', last: '#'+(12+i), id: 'b_'+(11+i), onField: false })),
     }
@@ -185,6 +187,8 @@ function setOpponent(M, name, color, opts = {}) {
   if (!M) return;
   M.tB.n = name || M.tB.n;
   M.tB.c = color || M.tB.c;
+  // 2e couleur (bicolore) — via opts.color2 ou string secondaire
+  if (opts.color2) M.tB.c2 = opts.color2;
   if (opts.players && Array.isArray(opts.players)) {
     M.tB.p = opts.players.slice(0, 11).map((nm, i) => ({
       num: i + 1, first: '', last: nm || '#' + (i+1), id: 'b_' + i, onField: true,

@@ -186,7 +186,12 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
 
       <div className="mv-teams-row">
         <div className="mv-team mv-team-A">
-          <div className="mv-team-badge" style={{background:`linear-gradient(160deg, ${M.tA.c}, ${M.tA.c}99)`, borderColor: M.tA.c}}>
+          <div className="mv-team-badge" style={{
+            background: M.tA.c2
+              ? `linear-gradient(135deg, ${M.tA.c} 50%, ${M.tA.c2} 50%)`
+              : `linear-gradient(160deg, ${M.tA.c}, ${M.tA.c}99)`,
+            borderColor: M.tA.c
+          }}>
             {M.tA.n[0]}
           </div>
           <div className="mv-team-n">{M.tA.n}</div>
@@ -213,7 +218,12 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
         </div>
 
         <div className="mv-team mv-team-B">
-          <div className="mv-team-badge" style={{background:`linear-gradient(160deg, ${M.tB.c}, ${M.tB.c}99)`, borderColor: M.tB.c}}>
+          <div className="mv-team-badge" style={{
+            background: M.tB.c2
+              ? `linear-gradient(135deg, ${M.tB.c} 50%, ${M.tB.c2} 50%)`
+              : `linear-gradient(160deg, ${M.tB.c}, ${M.tB.c}99)`,
+            borderColor: M.tB.c
+          }}>
             {M.tB.n[0]}
           </div>
           <div className="mv-team-n">{M.tB.n}</div>
@@ -878,11 +888,12 @@ function getYellowsForPlayer(M, t, lbl) {
 function PreMatchSetup({ M, onStart, rerender }) {
   const [oppName, setOppName] = useStateMV(M.tB?.n || 'Adversaire');
   const [oppColor, setOppColor] = useStateMV(M.tB?.c || '#3b82f6');
+  const [oppColor2, setOppColor2] = useStateMV(M.tB?.c2 || '#ffffff');
   const [hd, setHd] = useStateMV(M.cfg?.hd || 45);
   const [htd, setHtd] = useStateMV(M.cfg?.htd || 15);
   const [hs, setHs] = useStateMV(M.cfg?.hs || 2);
   const applyAndStart = () => {
-    if (MATCH_HELPERS.setOpponent) MATCH_HELPERS.setOpponent(M, oppName.trim() || 'Adversaire', oppColor);
+    if (MATCH_HELPERS.setOpponent) MATCH_HELPERS.setOpponent(M, oppName.trim() || 'Adversaire', oppColor, { color2: oppColor2 });
     M.cfg = M.cfg || {};
     M.cfg.hd  = parseInt(hd, 10)  || 45;
     M.cfg.htd = parseInt(htd, 10) || 15;
@@ -911,11 +922,25 @@ function PreMatchSetup({ M, onStart, rerender }) {
         </label>
         <label style={{display:'block', marginBottom:12}}>
           <span style={{display:'block', fontSize:11, fontWeight:700, letterSpacing:'.08em',
-                        color:'rgba(255,255,255,.7)', marginBottom:4, textTransform:'uppercase'}}>
-            Couleur adversaire
+                        color:'rgba(255,255,255,.7)', marginBottom:6, textTransform:'uppercase'}}>
+            Couleurs adversaire (maillot + 2e couleur)
           </span>
-          <input type="color" value={oppColor} onChange={e => setOppColor(e.target.value)}
-                 style={{height:38, width:'100%', borderRadius:8, border:'none', padding:0, background:'transparent'}}/>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            <input type="color" value={oppColor} onChange={e => setOppColor(e.target.value)}
+                   title="Couleur principale (maillot)"
+                   style={{height:38, width:'40%', borderRadius:8, border:'none', padding:0, background:'transparent', cursor:'pointer'}}/>
+            <input type="color" value={oppColor2} onChange={e => setOppColor2(e.target.value)}
+                   title="Couleur secondaire (short / liserés)"
+                   style={{height:38, width:'40%', borderRadius:8, border:'none', padding:0, background:'transparent', cursor:'pointer'}}/>
+            <div title="Aperçu badge"
+                 style={{width:38, height:38, borderRadius:'50%',
+                         background: `linear-gradient(135deg, ${oppColor} 50%, ${oppColor2} 50%)`,
+                         border:'2px solid rgba(255,255,255,.6)',
+                         boxShadow:'0 2px 6px rgba(0,0,0,.4)'}}/>
+          </div>
+          <div style={{fontSize:10, color:'rgba(255,255,255,.4)', marginTop:4}}>
+            💡 Pour une équipe monochrome, choisis 2 fois la même couleur.
+          </div>
         </label>
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
           <label>
