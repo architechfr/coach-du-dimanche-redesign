@@ -379,7 +379,7 @@ function ScreenConvocations({ go, tweaks }) {
             </button>
             <button className="btn-cta" onClick={() => go("tv")}
                     style={{background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.14)'}}>
-              📺 PRÉSENTATION TV
+              🧥 MODE VESTIAIRE
             </button>
           </div>
         </div>
@@ -413,6 +413,40 @@ function ScreenConvocations({ go, tweaks }) {
             <span style={{opacity:0.5}}>/{starterPlayers.length + benchPlayers.length}</span>
           </span>
         </span>
+      </div>
+
+      {/* Bandeau Compo type vs Convocation match (séparation des 3 couches) */}
+      <div style={{
+        margin:"0 14px 12px", padding:"10px 12px",
+        background: conv.hasMatchOverlay ? "rgba(249,115,22,0.08)" : "rgba(255,255,255,0.03)",
+        border: `1px solid ${conv.hasMatchOverlay ? "rgba(249,115,22,0.35)" : "rgba(255,255,255,0.08)"}`,
+        borderRadius:10, display:"flex", justifyContent:"space-between", alignItems:"center",
+        fontSize:12, gap:10,
+      }}>
+        <span style={{flex:1, lineHeight:1.35}}>
+          {conv.hasMatchOverlay ? (
+            <><b style={{color:"#f97316"}}>Convocation adaptée pour ce match</b> — la compo type de la saison n'est pas modifiée.</>
+          ) : (
+            <><b style={{opacity:0.85}}>Source : compo type</b> — toute modif ci-dessous créera une convoc spécifique à ce match.</>
+          )}
+        </span>
+        {conv.hasMatchOverlay && (
+          <button
+            onClick={() => {
+              if (!window.CDD_CONVOC || !teamId) return;
+              if (!confirm("Réinitialiser la convocation depuis la compo type ?\n\nToutes les adaptations spécifiques à ce match seront perdues.")) return;
+              window.CDD_CONVOC.resetToTemplate(conv.matchId, teamId);
+            }}
+            style={{
+              padding:"6px 10px", borderRadius:8, cursor:"pointer",
+              background:"rgba(255,255,255,0.06)", color:"#fff",
+              border:"1px solid rgba(255,255,255,0.18)", fontSize:11, fontWeight:700,
+              whiteSpace:"nowrap", flexShrink:0,
+            }}
+            title="Supprime l'overlay match — repart de la compo type">
+            ↻ Réinit. compo type
+          </button>
+        )}
       </div>
 
       {/* Warnings convoc (#33) — 11 titulaires + taille atteinte */}

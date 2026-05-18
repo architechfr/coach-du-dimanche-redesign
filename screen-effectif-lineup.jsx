@@ -197,6 +197,18 @@ function ScreenLineup({ go, tweaks }) {
   const formations = Object.keys(CDD_FORMATIONS);
 
   // ===== Initial state — 3 listes : starters (map slotIdx→pid), bench[], reserve[] =====
+  // Règle banc foot amateur : strictement 3 OU 5 remplaçants, jamais 4, jamais autre chose.
+  // Tout banc chargé d'une longueur invalide est snappé : <=3 → 3, 4 → 3 (le surplus retombe en réserve),
+  // >=5 → 5 (le reste retombe en réserve). Évite l'état intermédiaire qui agace.
+  const snapBench = (bench, reserve) => {
+    if (bench.length <= 3) return { bench: bench.slice(), reserve: reserve.slice() };
+    if (bench.length === 4) {
+      // Snap down vers 3 : le 4ème joueur va en tête de réserve (non destructif).
+      return { bench: bench.slice(0, 3), reserve: [bench[3], ...reserve] };
+    }
+    // bench.length >= 5 : cap à 5, surplus en tête de réserve.
+    return { bench: bench.slice(0, 5), reserve: [...bench.slice(5), ...reserve] };
+  };
   const buildInitial = () => {
     const activeTeam = window.CDD?.getActiveTeam?.();
     // 1. localStorage cdd_lineup_template (nouveau format avec starters/bench/reserve)
@@ -215,7 +227,8 @@ function ScreenLineup({ go, tweaks }) {
             localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
           } catch (e) {}
         }
-        return { formation, starters: s.starters, bench: s.bench, reserve: s.reserve };
+        const snapped = snapBench(s.bench, s.reserve);
+        return { formation, starters: s.starters, bench: snapped.bench, reserve: snapped.reserve };
       }
     } catch (e) {}
     // 2. FFF lineupTemplate sinon isStarter
@@ -228,7 +241,7 @@ function ScreenLineup({ go, tweaks }) {
     const starters = {};
     startersIds.slice(0, slots.length).forEach((pid, i) => { starters[i] = pid; });
     const used = new Set(Object.values(starters));
-    const benchArr = CDD_PLAYERS.filter(p => !used.has(p.id) && p.status !== 'reserve').slice(0, 7).map(p => p.id);
+    const benchArr = CDD_PLAYERS.filter(p => !used.has(p.id) && p.status !== 'reserve').slice(0, 3).map(p => p.id);
     benchArr.forEach(pid => used.add(pid));
     const reserveArr = CDD_PLAYERS.filter(p => !used.has(p.id)).map(p => p.id);
     return { formation, starters, bench: benchArr, reserve: reserveArr };
@@ -548,6 +561,39 @@ function ScreenLineup({ go, tweaks }) {
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
           </button>
         ))}
+        {/* Toggle banc 3 ↔ 5 (foot amateur strict, jamais 4) */}
+        {lineup.bench.length === 3 && lineup.reserve.length >= 2 && (
+          <button
+            className="lu-bench-card"
+            style={{minWidth:110, justifyContent:"center", alignItems:"center", display:"flex", flexDirection:"column", gap:2, fontSize:11, fontWeight:800, color:"var(--acc, #c8f169)", borderStyle:"dashed", cursor:"pointer"}}
+            title="Étendre le banc à 5 remplaçants"
+            onClick={() => {
+              setLineup(l => {
+                if (l.bench.length !== 3 || l.reserve.length < 2) return l;
+                const [pid1, pid2, ...rest] = l.reserve;
+                return { ...l, bench: [...l.bench, pid1, pid2], reserve: rest };
+              });
+            }}>
+            <span style={{fontSize:20, lineHeight:1}}>+</span>
+            <span>Banc → 5</span>
+          </button>
+        )}
+        {lineup.bench.length === 5 && (
+          <button
+            className="lu-bench-card"
+            style={{minWidth:110, justifyContent:"center", alignItems:"center", display:"flex", flexDirection:"column", gap:2, fontSize:11, fontWeight:800, color:"#f97316", borderStyle:"dashed", borderColor:"rgba(249,115,22,0.45)", cursor:"pointer"}}
+            title="Réduire le banc à 3 remplaçants (les 2 derniers retournent en réserve)"
+            onClick={() => {
+              setLineup(l => {
+                if (l.bench.length !== 5) return l;
+                const demoted = l.bench.slice(3);
+                return { ...l, bench: l.bench.slice(0, 3), reserve: [...demoted, ...l.reserve] };
+              });
+            }}>
+            <span style={{fontSize:20, lineHeight:1}}>−</span>
+            <span>Banc → 3</span>
+          </button>
+        )}
       </div>
 
       <div className="sec-h">

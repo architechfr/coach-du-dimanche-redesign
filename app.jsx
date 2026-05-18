@@ -218,6 +218,7 @@ function App() {
       share: "PARTAGER",
       set: "RÉGLAGES",
       onb: "",
+      tv: "MODE VESTIAIRE",
     };
     return map[screen] ?? "";
   }, [screen]);

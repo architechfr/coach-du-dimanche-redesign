@@ -491,8 +491,13 @@ async function rebuildCDDGlobals() {
     ],
   };
 
-  // Next match — par défaut "À déterminer" jusqu'à ce que FFF nous donne un vrai match
-  window.CDD_NEXT_MATCH = {
+  // Next match — par défaut "À déterminer" jusqu'à ce que FFF nous donne un vrai match.
+  // Si applyFFFData a déjà rempli CDD_NEXT_MATCH avec un vrai match, on le préserve
+  // (sinon un simple rebuild écraserait le contexte FFF et casserait l'overlay convoc).
+  const prevNext = window.CDD_NEXT_MATCH;
+  const hasRealNext = prevNext && !prevNext.noUpcoming && prevNext.away && prevNext.away !== 'À déterminer';
+  window.CDD_NEXT_MATCH = hasRealNext ? prevNext : {
+    id: '__placeholder__',
     date: "À déterminer",
     home: clubName || "Mon équipe",
     away: "À déterminer",
@@ -513,13 +518,24 @@ async function rebuildCDDGlobals() {
   // ─── Convoc : taille foot amateur, banc strict 3 à 5 (#51) ───
   // 14 par défaut (11 + 3), extensible jusqu'à 16 (11 + 5) via bouton +.
   const lt = activeTeam?.lineupTemplate;
+  // Overlay match (séparation Compo type ↔ Convocation match) : si une convoc spécifique
+  // existe pour le prochain match, elle prend le pas sur lineupTemplate. Sinon, fallback
+  // sur le template (comportement historique).
+  const matchId = window.CDD_NEXT_MATCH?.id || '__placeholder__';
+  let overlay = null;
+  try {
+    const allOv = JSON.parse(localStorage.getItem('cdd_match_convoc') || '{}');
+    overlay = allOv[activeTeam?.id]?.[matchId] || null;
+  } catch (e) {}
+  const effectiveLt = overlay ? { startersIds: overlay.startersIds || [], benchIds: overlay.benchIds || [] } : lt;
   let convocCount = 14; // default amateur
   try {
     const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
     const raw = allSet[activeTeam?.id]?.count;
     if (typeof raw === 'number') {
-      // Clamp legacy values (15/18/20/null) sur [14, 16]
-      convocCount = Math.max(14, Math.min(16, raw));
+      // #51 — Strict 14 ou 16 (banc 3 ou 5). 15 = banc 4 = INVALIDE → snap à 14.
+      // Toute valeur ≥16 snappe à 16, toute valeur ≤14 snappe à 14.
+      convocCount = raw >= 16 ? 16 : 14;
     }
   } catch (e) {}
 
@@ -529,8 +545,8 @@ async function rebuildCDDGlobals() {
   const absentPlayers = players.filter(p => unavailable.has(p.status));
 
   // Titulaires : ceux marqués isStarter, dans la limite des dispos
-  let starters = lt?.startersIds
-    ? lt.startersIds.filter(id => availablePlayers.some(p => p.id === id))
+  let starters = effectiveLt?.startersIds
+    ? effectiveLt.startersIds.filter(id => availablePlayers.some(p => p.id === id))
     : availablePlayers.filter(p => p.isStarter).slice(0, 11).map(p => p.id);
 
   // ⚠️ COMPLETER A 11 TITULAIRES : puise dans dispos (banc puis reserve)
@@ -541,8 +557,8 @@ async function rebuildCDDGlobals() {
     !startersSetInit.has(p.id) && p.status !== 'reserve'
   );
   fillers.sort((a, b) => {
-    const aBench = lt?.benchIds?.includes(a.id) ? 0 : 1;
-    const bBench = lt?.benchIds?.includes(b.id) ? 0 : 1;
+    const aBench = effectiveLt?.benchIds?.includes(a.id) ? 0 : 1;
+    const bBench = effectiveLt?.benchIds?.includes(b.id) ? 0 : 1;
     return aBench - bBench;
   });
   while (starters.length < 11 && fillers.length > 0) {
@@ -578,8 +594,8 @@ async function rebuildCDDGlobals() {
       );
       benchPool = [...benchPool, ...reservists];
     }
-    bench = (lt?.benchIds && lt.benchIds.length)
-      ? lt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchTarget)
+    bench = (effectiveLt?.benchIds && effectiveLt.benchIds.length)
+      ? effectiveLt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchTarget)
       : benchPool.slice(0, benchTarget).map(p => p.id);
     if (bench.length < benchTarget) {
       const inBench = new Set(bench);
@@ -620,6 +636,8 @@ async function rebuildCDDGlobals() {
 
   window.CDD_CONVO = {
     match: window.CDD_NEXT_MATCH,
+    matchId,                  // id du match courant (ou '__placeholder__')
+    hasMatchOverlay: !!overlay, // true si la convoc est adaptée pour ce match (overlay actif)
     starters,
     bench,
     absent,
@@ -779,6 +797,7 @@ async function applyFFFData(fffCfg, clubName, players) {
       const daysLeft = isValid ? Math.max(0, Math.ceil((d - Date.now()) / 86400000)) : 0;
 
       window.CDD_NEXT_MATCH = {
+        id: `${next.away || 'inconnu'}__${next.dateRaw || next.date || 'sans-date'}`,
         date: isValid ? `${dayLabel} ${dayNum} ${monthLabel}${hour ? ' · ' + hour : ''}` : next.date,
         home: next.home,
         away: next.away,
@@ -806,16 +825,52 @@ const CONVOC_MAX  = 16; // 11 + 5 (extension max via bouton +)
 const BENCH_MIN   = 3;
 const BENCH_MAX   = 5;
 
+// ─── Overlay convoc par match (séparation Compo type ↔ Convocation) ───
+// Storage : cdd_match_convoc = { [teamId]: { [matchId]: { startersIds, benchIds, basedOn, createdAt, updatedAt } } }
+// Toute modif depuis la page Convocations écrit ici, jamais dans team.lineupTemplate.
+function _readMatchConvoc() {
+  try { return JSON.parse(localStorage.getItem('cdd_match_convoc') || '{}'); }
+  catch (e) { return {}; }
+}
+function _writeMatchConvoc(all) {
+  try { localStorage.setItem('cdd_match_convoc', JSON.stringify(all)); } catch (e) {}
+}
+function _currentMatchId() {
+  return window.CDD_NEXT_MATCH?.id || '__placeholder__';
+}
+function _getTeamTemplate(teamId) {
+  try {
+    const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+    const team = teams.find(t => t.id === teamId);
+    return team?.lineupTemplate || { startersIds: [], benchIds: [] };
+  } catch (e) { return { startersIds: [], benchIds: [] }; }
+}
+function _ensureOverlay(teamId, matchId) {
+  // Crée l'overlay (copie du template) si pas encore présent pour ce (teamId, matchId).
+  const all = _readMatchConvoc();
+  if (!all[teamId]) all[teamId] = {};
+  if (!all[teamId][matchId]) {
+    const tpl = _getTeamTemplate(teamId);
+    all[teamId][matchId] = {
+      startersIds: [...(tpl.startersIds || [])],
+      benchIds:    [...(tpl.benchIds    || [])],
+      basedOn: 'template',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    _writeMatchConvoc(all);
+  }
+  return all;
+}
+
 window.CDD_CONVOC = {
   CONVOC_MIN, CONVOC_MAX, BENCH_MIN, BENCH_MAX,
   setSize(teamId, count) {
-    // #51 — count clampé entre 14 et 16 (banc 3 à 5). null/illimité retiré.
-    const clamped = (typeof count === 'number')
-      ? Math.max(CONVOC_MIN, Math.min(CONVOC_MAX, count))
-      : CONVOC_MIN;
+    // #51 — Strict 14 ou 16 (banc 3 ou 5). 15 = banc 4 = INVALIDE → snap au plus proche valide.
+    const snapped = (typeof count === 'number' && count >= 16) ? 16 : 14;
     try {
       const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
-      all[teamId] = { count: clamped, updatedAt: Date.now() };
+      all[teamId] = { count: snapped, updatedAt: Date.now() };
       localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
     } catch (e) {}
     if (window.CDD_REBUILD) window.CDD_REBUILD();
@@ -825,78 +880,95 @@ window.CDD_CONVOC = {
       const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
       const raw = all[teamId]?.count;
       if (typeof raw !== 'number') return CONVOC_MIN;
-      return Math.max(CONVOC_MIN, Math.min(CONVOC_MAX, raw));
+      return raw >= 16 ? 16 : 14; // strict 14 ou 16
     } catch (e) { return CONVOC_MIN; }
   },
-  // Ajoute un joueur à la convoc en starters ou bench (selon disponibilité)
-  // #51 — Si slot=bench et bench déjà à 5, refuse l'ajout (cap dur).
-  //       Sinon, étend automatiquement convocCount tant qu'on est sous le cap.
+  // Indique si une convoc adaptée existe pour le match courant (ou un match donné).
+  hasOverlay(matchId, teamId) {
+    const mid = matchId || _currentMatchId();
+    const tid = teamId || window.CDD?.getActiveTeam?.()?.id;
+    if (!tid) return false;
+    const all = _readMatchConvoc();
+    return !!(all[tid] && all[tid][mid]);
+  },
+  // Réinitialise la convoc du match : supprime l'overlay → on retombe sur la compo type.
+  resetToTemplate(matchId, teamId) {
+    const mid = matchId || _currentMatchId();
+    const tid = teamId || window.CDD?.getActiveTeam?.()?.id;
+    if (!tid) return;
+    const all = _readMatchConvoc();
+    if (all[tid] && all[tid][mid]) {
+      delete all[tid][mid];
+      if (Object.keys(all[tid]).length === 0) delete all[tid];
+      _writeMatchConvoc(all);
+    }
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+  // Ajoute un joueur à la convoc en starters ou bench (selon disponibilité).
+  // ⚠️ N'écrit PLUS dans team.lineupTemplate — écrit dans l'overlay du match courant.
+  // #51 — cap bench=5 conservé.
   addToConvoc(teamId, playerId, slot = 'bench') {
-    try {
-      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
-      const team = teams.find(t => t.id === teamId);
-      if (!team) return false;
-      if (!team.lineupTemplate) team.lineupTemplate = {};
-      const lt = team.lineupTemplate;
-      lt.startersIds = lt.startersIds || [];
-      lt.benchIds = lt.benchIds || [];
-      // #51 — cap bench
-      if (slot === 'bench') {
-        const benchCountNow = lt.benchIds.filter(id => id !== playerId).length;
-        if (benchCountNow >= BENCH_MAX) {
-          // Refuse l'ajout, signaler via event pour UI
-          try { window.dispatchEvent(new CustomEvent('cdd-bench-full', { detail: { teamId, max: BENCH_MAX } })); } catch (e) {}
-          return false;
-        }
+    if (!teamId) return false;
+    const matchId = _currentMatchId();
+    const all = _ensureOverlay(teamId, matchId);
+    const ov = all[teamId][matchId];
+    // #51 — cap bench
+    if (slot === 'bench') {
+      const benchCountNow = ov.benchIds.filter(id => id !== playerId).length;
+      if (benchCountNow >= BENCH_MAX) {
+        try { window.dispatchEvent(new CustomEvent('cdd-bench-full', { detail: { teamId, max: BENCH_MAX } })); } catch (e) {}
+        return false;
       }
-      // Retirer d'abord le joueur des deux listes
-      lt.startersIds = lt.startersIds.filter(id => id !== playerId);
-      lt.benchIds    = lt.benchIds.filter(id    => id !== playerId);
-      if (slot === 'starter') lt.startersIds.push(playerId);
-      else                    lt.benchIds.push(playerId);
-      lt.updatedAt = Date.now();
-      localStorage.setItem('arb_teams', JSON.stringify(teams));
+    }
+    // Retirer d'abord le joueur des deux listes
+    ov.startersIds = ov.startersIds.filter(id => id !== playerId);
+    ov.benchIds    = ov.benchIds.filter(id    => id !== playerId);
+    if (slot === 'starter') ov.startersIds.push(playerId);
+    else                    ov.benchIds.push(playerId);
+    ov.updatedAt = Date.now();
+    _writeMatchConvoc(all);
 
-      // #51 — auto-étendre convocCount si on ajoute un remplaçant et qu'on a de la marge
-      if (slot === 'bench') {
-        const currentSize = window.CDD_CONVOC.getSize(teamId);
-        const newBenchLen = lt.benchIds.length;
-        const targetSize = Math.min(CONVOC_MAX, 11 + newBenchLen);
-        if (targetSize > currentSize) {
-          const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
-          all[teamId] = { count: targetSize, updatedAt: Date.now() };
-          localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
-        }
+    // #51 — auto-étendre convocCount si on ajoute un remplaçant et qu'on a de la marge
+    if (slot === 'bench') {
+      const currentSize = window.CDD_CONVOC.getSize(teamId);
+      const newBenchLen = ov.benchIds.length;
+      const targetSize = Math.min(CONVOC_MAX, 11 + newBenchLen);
+      if (targetSize > currentSize) {
+        try {
+          const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+          allSet[teamId] = { count: targetSize, updatedAt: Date.now() };
+          localStorage.setItem('cdd_convoc_settings', JSON.stringify(allSet));
+        } catch (e) {}
       }
-    } catch (e) {}
+    }
     if (window.CDD_REBUILD) window.CDD_REBUILD();
     return true;
   },
   removeFromConvoc(teamId, playerId) {
-    try {
-      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
-      const team = teams.find(t => t.id === teamId);
-      if (!team || !team.lineupTemplate) return;
-      const lt = team.lineupTemplate;
-      const wasOnBench = (lt.benchIds || []).includes(playerId);
-      lt.startersIds = (lt.startersIds || []).filter(id => id !== playerId);
-      lt.benchIds    = (lt.benchIds    || []).filter(id => id !== playerId);
-      lt.updatedAt = Date.now();
-      localStorage.setItem('arb_teams', JSON.stringify(teams));
+    if (!teamId) return;
+    const matchId = _currentMatchId();
+    const all = _ensureOverlay(teamId, matchId);
+    const ov = all[teamId][matchId];
+    const wasOnBench = ov.benchIds.includes(playerId);
+    ov.startersIds = ov.startersIds.filter(id => id !== playerId);
+    ov.benchIds    = ov.benchIds.filter(id => id !== playerId);
+    ov.updatedAt = Date.now();
+    _writeMatchConvoc(all);
 
-      // #51 — Si on retire un remplaçant et qu'on était au-dessus du minimum,
-      // rétrécir convocCount pour rester aligné sur le banc réel.
-      if (wasOnBench) {
-        const currentSize = window.CDD_CONVOC.getSize(teamId);
-        const newBenchLen = lt.benchIds.length;
-        const targetSize = Math.max(CONVOC_MIN, 11 + newBenchLen);
-        if (targetSize < currentSize) {
-          const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
-          all[teamId] = { count: targetSize, updatedAt: Date.now() };
-          localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
-        }
+    // #51 — Si on retire un remplaçant et qu'on était au-dessus du minimum,
+    // rétrécir convocCount pour rester aligné sur le banc réel.
+    if (wasOnBench) {
+      const currentSize = window.CDD_CONVOC.getSize(teamId);
+      const newBenchLen = ov.benchIds.length;
+      const targetSize = Math.max(CONVOC_MIN, 11 + newBenchLen);
+      if (targetSize < currentSize) {
+        try {
+          const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+          allSet[teamId] = { count: targetSize, updatedAt: Date.now() };
+          localStorage.setItem('cdd_convoc_settings', JSON.stringify(allSet));
+        } catch (e) {}
       }
-    } catch (e) {}
+    }
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
 };
