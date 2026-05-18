@@ -65,6 +65,8 @@ const STAR_BONUSES = {
   'pl_moydtri8_uyhvf': { base: 12, profile: 'BU', versatile: true },
   // EULOGA Darell (#7) — RAPIDE, ailier droit
   'pl_moydtri8_fs89g': { base: 9, profile: 'AD', speedster: true },
+  // AID Shahine (#16) — technique cœur du jeu, belles passes, petit périmètre
+  'pl_moydtri8_vjlwq': { base: 3, profile: 'MC', technician: true },
 };
 
 function deriveStats(player) {
@@ -123,6 +125,13 @@ function deriveStats(player) {
   if (star?.speedster) {
     p.PAC = +20;
     p.DRI = +16;
+  }
+  // Shahine technician: belles passes + technique en petit périmètre, peu physique
+  if (star?.technician) {
+    p.PAS = +14;
+    p.DRI = +10;
+    p.SHO = +2;
+    p.PHY = -2;
   }
 
   const clamp = v => Math.max(40, Math.min(95, v));
@@ -186,6 +195,7 @@ function buildViewPlayer(player, idx) {
     'pl_moydtri8_krkoy': 'totw',    // Grace Appolinaire
     'pl_moydtri8_uyhvf': 'hero',    // Sékou
     'pl_moydtri8_fs89g': 'totw',    // Darell — speedster
+    'pl_moydtri8_vjlwq': 'icon',    // Shahine — technique pure
   };
 
   // ─── Apply PROFILE override (coach edits via fiche joueur) ───
