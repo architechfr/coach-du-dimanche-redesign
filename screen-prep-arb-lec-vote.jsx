@@ -1,5 +1,13 @@
 /* global React, CDD_NEXT_MATCH, CDD_PLAYERS, CDD_LAST_MATCHES, CDD_STANDINGS, CDD_CONVO, FutCard, POSITION_LABEL */
 
+// #45 W/L/D -> V/N/D
+function mapResultFR(r) {
+  if (r === 'W') return 'V';
+  if (r === 'D') return 'N';
+  if (r === 'L') return 'D';
+  return r || '?';
+}
+
 /* ============================================================
    SCREEN — Préparation match (J-7 dashboard)
    Combine: prochain match, adversaire (forme + classement),
@@ -92,7 +100,7 @@ function ScreenPrep({ go, tweaks }) {
                 <em>Forme</em>
                 <div className="prep-opp-form">
                   {(opp.form||[]).map((r,i) => (
-                    <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{r}</span>
+                    <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{mapResultFR(r)}</span>
                   ))}
                   {(!opp.form || opp.form.length === 0) && <span style={{opacity:0.5, fontSize:11}}>—</span>}
                 </div>
@@ -439,7 +447,7 @@ function ScreenLecteur({ go, tweaks }) {
         <div className="lec-cal">
           {CDD_LAST_MATCHES.slice(0, 5).map((m,i) => (
             <div className={`lec-cal-row rs-${m.result.toLowerCase()}`} key={i}>
-              <span className={`rs-cal-result rs-${m.result.toLowerCase()}`}>{m.result}</span>
+              <span className={`rs-cal-result rs-${m.result.toLowerCase()}`}>{mapResultFR(m.result)}</span>
               <span className="lec-cal-opp">
                 <em>{m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}</em>
                 {m.opp}

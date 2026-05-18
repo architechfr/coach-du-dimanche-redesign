@@ -16,9 +16,17 @@ function CountdownPill({ days }) {
   );
 }
 
+// #45 — Mapping FR : W (Win)=V (Victoire), D (Draw)=N (Nul), L (Loss)=D (Défaite)
+function mapResultFR(r) {
+  if (r === 'W' || r === 'V') return 'V';
+  if (r === 'D' && r !== 'L') return 'N'; // D anglais = Draw -> N (Nul)
+  if (r === 'N') return 'N';
+  return 'D'; // L (Loss) -> D (Défaite)
+}
 function FormDot({ r, big }) {
+  // Note: la classe CSS reste fd-w/fd-d/fd-l (couleurs vert/jaune/rouge)
   const cls = r === "W" ? "fd-w" : r === "D" ? "fd-d" : "fd-l";
-  return <span className={`fd ${cls} ${big?"fd-big":""}`}>{r}</span>;
+  return <span className={`fd ${cls} ${big?"fd-big":""}`}>{mapResultFR(r)}</span>;
 }
 
 // ---------- Visuel jour/nuit auto selon heure ----------

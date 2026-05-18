@@ -1,5 +1,13 @@
 /* global React, CDD_STANDINGS, CDD_TOP_SCORERS, CDD_LAST_MATCHES, CDD_CLUB, CDD_CONVO, CDD_PLAYERS, CDD_NEXT_MATCH, FutCard, POSITION_LABEL */
 
+// #45 — W/L/D anglais -> V/N/D francais
+function mapResultFR(r) {
+  if (r === 'W') return 'V';
+  if (r === 'D') return 'N';
+  if (r === 'L') return 'D';
+  return r || '?';
+}
+
 /* ============================================================
    SCREEN — Résultats / Championship
    ============================================================ */
@@ -166,7 +174,7 @@ function ScreenResults({ go, tweaks }) {
                     return (
                       <div key={i} className={`rs-jrn-m ${m.played?'played':'pending'} ${isMyMatch?'mine':''} rs-${(m.result||'').toLowerCase()}`}>
                         {m.played && m.result && isMyMatch && (
-                          <span className={`rs-jrn-result rs-${m.result.toLowerCase()}`}>{m.result}</span>
+                          <span className={`rs-jrn-result rs-${m.result.toLowerCase()}`}>{mapResultFR(m.result)}</span>
                         )}
                         {!m.played && isMyMatch && <span className="rs-jrn-date">{m.date}</span>}
                         {!isMyMatch && <span className="rs-jrn-date dim">{m.date}</span>}
