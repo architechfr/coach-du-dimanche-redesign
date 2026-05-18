@@ -375,6 +375,27 @@ function ScreenConvocations({ go, tweaks }) {
         </span>
       </div>
 
+      {/* Warnings convoc (#33) — 11 titulaires + taille atteinte */}
+      {conv.warnings && conv.warnings.length > 0 && (
+        <div style={{margin:'0 14px 14px'}}>
+          {conv.warnings.map((w, i) => (
+            <div key={i} style={{
+              padding:'10px 12px',
+              marginBottom: 8,
+              background: w.level === 'error' ? 'rgba(255,80,80,.12)' : 'rgba(255,170,40,.12)',
+              border: '1px solid ' + (w.level === 'error' ? 'rgba(255,80,80,.35)' : 'rgba(255,170,40,.35)'),
+              borderRadius: 10,
+              fontSize: 13,
+              color: w.level === 'error' ? '#ff9a9a' : '#ffc788',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <span style={{fontSize:18}}>{w.level === 'error' ? '⚠️' : '🟧'}</span>
+              <span style={{flex:1, fontWeight:600}}>{w.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="cv-sec">
         <div className="cv-sec-h">
           <span className="cv-sec-k">TITULAIRES · {starterPlayers.length}</span>

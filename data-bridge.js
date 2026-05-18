@@ -532,6 +532,24 @@ async function rebuildCDDGlobals() {
     ? lt.startersIds.filter(id => availablePlayers.some(p => p.id === id))
     : availablePlayers.filter(p => p.isStarter).slice(0, 11).map(p => p.id);
 
+  // ⚠️ COMPLETER A 11 TITULAIRES : si des titulaires d'origine sont
+  // devenus absents, on puise dans les autres joueurs dispos pour
+  // garantir une équipe complète (11 joueurs sur le terrain).
+  const startersSetInit = new Set(starters);
+  const fillers = availablePlayers.filter(p =>
+    !startersSetInit.has(p.id) && p.status !== 'reserve'
+  );
+  // Ajouter les joueurs habituellement remplaçants en priorité, puis le reste
+  fillers.sort((a, b) => {
+    // Banc d'origine d'abord, puis réserve, puis le reste
+    const aBench = lt?.benchIds?.includes(a.id) ? 0 : 1;
+    const bBench = lt?.benchIds?.includes(b.id) ? 0 : 1;
+    return aBench - bBench;
+  });
+  while (starters.length < 11 && fillers.length > 0) {
+    starters.push(fillers.shift().id);
+  }
+
   // Remplaçants : convocCount - starters parmi les dispos restants
   const startersSet = new Set(starters);
   const benchPool = availablePlayers.filter(p => !startersSet.has(p.id) && p.status !== 'reserve');
@@ -562,6 +580,16 @@ async function rebuildCDDGlobals() {
     !convocIds.has(p.id) && p.status !== 'reserve' && !unavailable.has(p.status)
   ).map(p => p.id);
 
+  // Warnings convoc : taille atteinte ? 11 titulaires ?
+  const targetSize = convocCount === null ? (11 + (benchPool.length)) : convocCount;
+  const warnings = [];
+  if (starters.length < 11) {
+    warnings.push({ level: 'error', text: `Seulement ${starters.length}/11 titulaires disponibles. Manque ${11 - starters.length} joueur(s).` });
+  }
+  if (convocCount !== null && (starters.length + bench.length) < convocCount) {
+    warnings.push({ level: 'warn', text: `Convoc à ${starters.length + bench.length}/${convocCount} joueurs (manque ${convocCount - starters.length - bench.length}).` });
+  }
+
   window.CDD_CONVO = {
     match: window.CDD_NEXT_MATCH,
     starters,
@@ -569,6 +597,8 @@ async function rebuildCDDGlobals() {
     absent,
     reserve, // ← dispo mais non convoqués (cliquables pour ajouter)
     convocCount,
+    targetSize,
+    warnings,
     shareCode: "AS-" + (activeTeam?.id || '').slice(-6).toUpperCase(),
   };
 
