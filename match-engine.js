@@ -7,7 +7,7 @@
    yellow → red + fullscreen card overlay + sub flow + ht/end.
    ============================================================ */
 
-const { useState: useStateML, useEffect: useEffectML, useRef: useRefML, useMemo: useMemoML } = React;
+// (React hooks aliases retirés — match-engine est pure JS, pas React)
 
 // ─── Sounds (cheap Web Audio API beeps, no asset deps) ──
 const _ac = () => {
