@@ -7,13 +7,18 @@
    ============================================================ */
 
 function ScreenPrep({ go, tweaks }) {
-  const next = CDD_NEXT_MATCH;
-  const opp = CDD_STANDINGS.find(s => s.club === "FC PONTOISE");
-  const me  = CDD_STANDINGS.find(s => s.me);
-  const lastMatch = CDD_LAST_MATCHES[0];
-  const allerMatch = { date:"22/09", opp:"FC PONTOISE", venue:"E", score:[1,2], result:"L" };
-  const convoCount = CDD_CONVO.starters.length + CDD_CONVO.bench.length;
-  const absCount = CDD_CONVO.absent.length;
+  const next = CDD_NEXT_MATCH || { date:"À venir", daysLeft:0, competition:"Championnat" };
+  const standings = (typeof CDD_STANDINGS !== 'undefined' && Array.isArray(CDD_STANDINGS)) ? CDD_STANDINGS : [];
+  const lastMatches = (typeof CDD_LAST_MATCHES !== 'undefined' && Array.isArray(CDD_LAST_MATCHES)) ? CDD_LAST_MATCHES : [];
+  const convo = CDD_CONVO || { starters:[], bench:[], absent:[] };
+  // L'adversaire du prochain match (depuis CDD_NEXT_MATCH.away si possible, sinon "FC PONTOISE" placeholder)
+  const oppName = next.away || "FC PONTOISE";
+  const opp = standings.find(s => s.club === oppName) || standings.find(s => !s.me) || null;
+  const me  = standings.find(s => s.me) || null;
+  const lastMatch = lastMatches[0] || null;
+  const allerMatch = { date:"22/09", opp: oppName, venue:"E", score:[1,2], result:"L" };
+  const convoCount = (convo.starters?.length || 0) + (convo.bench?.length || 0);
+  const absCount = convo.absent?.length || 0;
 
   return (
     <div className="scr scr-prep fade-in" data-screen-label="10 Preparation match">
@@ -64,47 +69,52 @@ function ScreenPrep({ go, tweaks }) {
         </div>
       </div>
 
-      {/* Adversaire — forme + classement */}
-      <div className="sec-h">
-        <span className="t">L'adversaire · FC Pontoise</span>
-        <span className="a">3<sup>e</sup> · 17 pts</span>
-      </div>
-
-      <div className="prep-opp">
-        <div className="prep-opp-stats">
-          <div className="prep-opp-stat">
-            <em>Position</em>
-            <b className="num">3<sup>e</sup></b>
+      {/* Adversaire — forme + classement, conditionnel sur opp */}
+      {opp && (
+        <>
+          <div className="sec-h">
+            <span className="t">L'adversaire · {opp.club || oppName}</span>
+            {opp.rank && <span className="a">{opp.rank}<sup>e</sup> · {opp.pts||0} pts</span>}
           </div>
-          <div className="prep-opp-stat">
-            <em>Forme</em>
-            <div className="prep-opp-form">
-              {opp.form.map((r,i) => (
-                <span key={i} className={`fd fd-${r.toLowerCase()}`}>{r}</span>
-              ))}
+
+          <div className="prep-opp">
+            <div className="prep-opp-stats">
+              <div className="prep-opp-stat">
+                <em>Position</em>
+                <b className="num">{opp.rank || "—"}{opp.rank && <sup>e</sup>}</b>
+              </div>
+              <div className="prep-opp-stat">
+                <em>Forme</em>
+                <div className="prep-opp-form">
+                  {(opp.form||[]).map((r,i) => (
+                    <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{r}</span>
+                  ))}
+                  {(!opp.form || opp.form.length === 0) && <span style={{opacity:0.5, fontSize:11}}>—</span>}
+                </div>
+              </div>
+              <div className="prep-opp-stat">
+                <em>Buts marqués</em>
+                <b className="num">{opp.gf||0} <span>en {opp.pl||0}</span></b>
+              </div>
+              <div className="prep-opp-stat">
+                <em>Buts encaissés</em>
+                <b className="num">{opp.ga||0} <span>en {opp.pl||0}</span></b>
+              </div>
+            </div>
+            <div className="prep-aller">
+              <div className="prep-aller-k">MATCH ALLER · {allerMatch.date}</div>
+              <div className="prep-aller-line">
+                <span className="prep-aller-team">FCMH</span>
+                <span className="prep-aller-sc num">{allerMatch.score[0]}–{allerMatch.score[1]}</span>
+                <span className="prep-aller-team">{oppName}</span>
+              </div>
+              <div className={`prep-aller-tag rs-${allerMatch.result.toLowerCase()}`}>
+                {allerMatch.result === "L" ? "DÉFAITE EXT." : "VICTOIRE EXT."}
+              </div>
             </div>
           </div>
-          <div className="prep-opp-stat">
-            <em>Buts marqués</em>
-            <b className="num">{opp.gf} <span>en {opp.pl}</span></b>
-          </div>
-          <div className="prep-opp-stat">
-            <em>Buts encaissés</em>
-            <b className="num">{opp.ga} <span>en {opp.pl}</span></b>
-          </div>
-        </div>
-        <div className="prep-aller">
-          <div className="prep-aller-k">MATCH ALLER · {allerMatch.date}</div>
-          <div className="prep-aller-line">
-            <span className="prep-aller-team">FCMH</span>
-            <span className="prep-aller-sc num">{allerMatch.score[0]}–{allerMatch.score[1]}</span>
-            <span className="prep-aller-team">FC PONTOISE</span>
-          </div>
-          <div className={`prep-aller-tag rs-${allerMatch.result.toLowerCase()}`}>
-            {allerMatch.result === "L" ? "DÉFAITE EXT." : "VICTOIRE EXT."}
-          </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Quick actions block */}
       <div className="sec-h"><span className="t">Préparation</span></div>
@@ -143,17 +153,23 @@ function ScreenPrep({ go, tweaks }) {
         </button>
       </div>
 
-      {/* Match précédent */}
-      <div className="sec-h"><span className="t">Match précédent</span></div>
-      <div className="prep-prev">
-        <div className={`prep-prev-tag rs-${lastMatch.result.toLowerCase()}`}>{lastMatch.result === "W" ? "VICTOIRE" : lastMatch.result === "D" ? "NUL" : "DÉFAITE"}</div>
-        <div className="prep-prev-line">
-          <span>{lastMatch.venue === "H" ? "FCMH" : lastMatch.opp}</span>
-          <span className="num">{lastMatch.score[0]}–{lastMatch.score[1]}</span>
-          <span>{lastMatch.venue === "H" ? lastMatch.opp : "FCMH"}</span>
-        </div>
-        <div className="prep-prev-meta">{lastMatch.date} · {lastMatch.scorers.join(" · ")}</div>
-      </div>
+      {/* Match précédent — conditionnel sur lastMatch */}
+      {lastMatch && (
+        <>
+          <div className="sec-h"><span className="t">Match précédent</span></div>
+          <div className="prep-prev">
+            <div className={`prep-prev-tag rs-${String(lastMatch.result||"").toLowerCase()}`}>
+              {lastMatch.result === "W" ? "VICTOIRE" : lastMatch.result === "D" ? "NUL" : lastMatch.result === "L" ? "DÉFAITE" : "—"}
+            </div>
+            <div className="prep-prev-line">
+              <span>{lastMatch.venue === "H" ? "FCMH" : (lastMatch.opp||"—")}</span>
+              <span className="num">{(lastMatch.score||[0,0])[0]}–{(lastMatch.score||[0,0])[1]}</span>
+              <span>{lastMatch.venue === "H" ? (lastMatch.opp||"—") : "FCMH"}</span>
+            </div>
+            <div className="prep-prev-meta">{lastMatch.date} · {(lastMatch.scorers||[]).join(" · ")}</div>
+          </div>
+        </>
+      )}
 
     </div>
   );

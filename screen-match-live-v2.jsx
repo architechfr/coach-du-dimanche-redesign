@@ -299,26 +299,70 @@ function EventsTimeline({ M, onUndo }) {
 // Main screen — orchestrator
 // ──────────────────────────────────────────────────────────
 function ScreenMatchV2({ go, tweaks }) {
+  // Guard: si moteur match ou data pas chargés, écran d'erreur lisible
+  if (!window.MATCH_HELPERS || !window.MATCH_SFX) {
+    return (
+      <div style={{padding:30, textAlign:"center"}}>
+        <div style={{fontSize:40, marginBottom:10}}>⚠</div>
+        <h2 style={{margin:"0 0 10px"}}>Moteur match non chargé</h2>
+        <p style={{opacity:0.7, marginBottom:20, fontSize:13}}>
+          Le script match-engine.js n'est pas disponible. Recharge la page (Ctrl+Maj+R).
+        </p>
+        <button className="btn-cta" onClick={() => go("home")}>← Retour à l'accueil</button>
+      </div>
+    );
+  }
+  if (!window.CDD_PLAYERS || window.CDD_PLAYERS.length === 0) {
+    return (
+      <div style={{padding:30, textAlign:"center"}}>
+        <div style={{fontSize:40, marginBottom:10}}>⚽</div>
+        <h2 style={{margin:"0 0 10px"}}>Aucun joueur</h2>
+        <p style={{opacity:0.7, marginBottom:20, fontSize:13}}>
+          Ton effectif est vide. Va d'abord dans Effectif pour importer ou ajouter des joueurs.
+        </p>
+        <button className="btn-cta" onClick={() => go("effectif")}>→ Aller à l'effectif</button>
+        <div style={{height:8}}/>
+        <button className="btn-cta ghost" onClick={() => go("home")}>← Retour</button>
+      </div>
+    );
+  }
+
   const [, forceRender] = useStateMV({});
-  const [activeFlow, setActiveFlow] = useStateMV(null); // 'goal-A', 'card-A-yellow', 'sub-A', 'show-only'
+  const [activeFlow, setActiveFlow] = useStateMV(null);
   const [cardOverlay, setCardOverlay] = useStateMV(null);
   const [confirm, setConfirm] = useStateMV(null);
   const [showHtModal, setShowHtModal] = useStateMV(null);
 
   const Mref = useRefMV(null);
   if (!Mref.current) {
-    const existing = localStorage.getItem('cdd_match_current');
-    if (existing) {
-      const loaded = MATCH_HELPERS.loadMatch(existing);
-      if (loaded) Mref.current = loaded;
-    }
-    if (!Mref.current) {
-      const teams = MATCH_HELPERS.buildDefaultTeams();
-      Mref.current = MATCH_HELPERS.newMatch(teams.tA, teams.tB);
-      localStorage.setItem('cdd_match_current', Mref.current.id);
+    try {
+      const existing = localStorage.getItem('cdd_match_current');
+      if (existing) {
+        const loaded = MATCH_HELPERS.loadMatch(existing);
+        if (loaded) Mref.current = loaded;
+      }
+      if (!Mref.current) {
+        const teams = MATCH_HELPERS.buildDefaultTeams();
+        Mref.current = MATCH_HELPERS.newMatch(teams.tA, teams.tB);
+        localStorage.setItem('cdd_match_current', Mref.current.id);
+      }
+    } catch (err) {
+      console.error('[ScreenMatchV2] init failed', err);
     }
   }
   const M = Mref.current;
+  if (!M) {
+    return (
+      <div style={{padding:30, textAlign:"center"}}>
+        <div style={{fontSize:40, marginBottom:10}}>⚠</div>
+        <h2 style={{margin:"0 0 10px"}}>Erreur démarrage match</h2>
+        <p style={{opacity:0.7, marginBottom:20, fontSize:13}}>
+          Impossible d'initialiser le match. Ouvre la console (F12) pour les détails.
+        </p>
+        <button className="btn-cta ghost" onClick={() => go("home")}>← Retour</button>
+      </div>
+    );
+  }
 
   // Tick chrono every second while live
   const [minute, setMinute] = useStateMV(MATCH_HELPERS.gMin(M));

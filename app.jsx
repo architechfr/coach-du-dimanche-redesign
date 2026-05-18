@@ -133,6 +133,36 @@ function SparkIcon() {
 }
 
 // ============================================================
+// ERROR BOUNDARY — catch screen crashes, show readable message
+// ============================================================
+class ScreenErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error('[ScreenErrorBoundary]', err, info); }
+  render() {
+    if (this.state.err) {
+      const msg = this.state.err?.message || String(this.state.err);
+      return (
+        <div style={{padding:24, textAlign:"center"}}>
+          <div style={{fontSize:40, marginBottom:10}}>⚠</div>
+          <h2 style={{margin:"0 0 8px", fontSize:18}}>Cet écran a planté</h2>
+          <p style={{opacity:0.6, fontSize:13, marginBottom:16}}>
+            Erreur : <code style={{background:"rgba(255,255,255,0.06)", padding:"2px 6px", borderRadius:4}}>{msg}</code>
+          </p>
+          <button className="btn-cta" onClick={() => { this.setState({err:null}); this.props.onReset?.(); }}>
+            ← Retour à l'accueil
+          </button>
+          <p style={{opacity:0.4, fontSize:11, marginTop:24}}>
+            (Ouvre la console F12 pour la stack trace complète.)
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 
@@ -216,6 +246,7 @@ function App() {
 
           {/* Body */}
           <div className="app-body" key={screen}>
+            <ScreenErrorBoundary key={screen} onReset={() => go("home")}>
             {screen === "home"         && <ScreenHome go={go} tweaks={t}/>}
             {screen === "effectif"     && <ScreenEffectif go={go} tweaks={t}/>}
             {screen === "lineup"       && <ScreenLineup go={go} tweaks={t}/>}
@@ -234,6 +265,7 @@ function App() {
             {screen === "share"        && <ScreenSharePartage go={go} tweaks={t}/>}
             {screen === "set"          && <ScreenSettings go={go} tweaks={t} setTweak={setTweak}/>}
             {screen === "onb"          && <ScreenOnboarding go={go} tweaks={t}/>}
+            </ScreenErrorBoundary>
           </div>
 
           {/* Bottom nav */}
