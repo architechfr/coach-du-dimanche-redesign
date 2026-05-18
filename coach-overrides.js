@@ -75,6 +75,15 @@ window.CDD_COACH = {
     else all[playerId] = statusId;
     try { localStorage.setItem('cdd_player_status_override', JSON.stringify(all)); } catch (e) {}
 
+    // Timestamp local pour le merge last-write-wins avec le cloud (évite que le listener
+    // Firestore n'écrase une modif locale récente avec un snapshot stale).
+    try {
+      const allTs = JSON.parse(localStorage.getItem('cdd_player_status_local_ts') || '{}');
+      if (statusId === null) delete allTs[playerId];
+      else allTs[playerId] = Date.now();
+      localStorage.setItem('cdd_player_status_local_ts', JSON.stringify(allTs));
+    } catch (e) {}
+
     // Sync Firestore (fire-and-forget, jamais bloquant — localStorage = source de vérité offline)
     if (statusId !== null && window.cddSync?.setPlayerStatus) {
       const teamId = window.CDD?.getActiveTeam?.()?.id || 'default';
@@ -164,6 +173,12 @@ window.CDD_COACH = {
       merged = all[playerId];
       localStorage.setItem('cdd_player_status_meta', JSON.stringify(all));
     } catch (e) {}
+    // Timestamp local : la meta partage la même horloge que le statut.
+    try {
+      const allTs = JSON.parse(localStorage.getItem('cdd_player_status_local_ts') || '{}');
+      allTs[playerId] = Date.now();
+      localStorage.setItem('cdd_player_status_local_ts', JSON.stringify(allTs));
+    } catch (e) {}
 
     // Sync Firestore : on renvoie le statut courant + meta mergé
     if (window.cddSync?.setPlayerStatus) {
@@ -228,16 +243,38 @@ window.CDD_COACH.startCloudPlayersListener = function() {
 
   const teamId = window.CDD?.getActiveTeam?.()?.id || 'default';
   CDD_CLOUD_UNSUB = window.cddSync.watchPlayerStatuses(teamId, (byId) => {
-    // Reflète Firestore dans localStorage (sans écraser les autres clés)
-    const allS = {};
-    const allM = {};
+    // Merge cloud → local en LAST-WRITE-WINS par timestamp. Une modif locale récente
+    // (cdd_player_status_local_ts[pid] > cloud.statusUpdatedAt) n'est PAS écrasée par
+    // un snapshot Firestore stale. Sans timestamp local, le cloud gagne (cas standard).
+    let allS, allM, allTs;
+    try {
+      allS  = JSON.parse(localStorage.getItem('cdd_player_status_override') || '{}');
+      allM  = JSON.parse(localStorage.getItem('cdd_player_status_meta')     || '{}');
+      allTs = JSON.parse(localStorage.getItem('cdd_player_status_local_ts') || '{}');
+    } catch (e) { allS = {}; allM = {}; allTs = {}; }
+
     Object.keys(byId).forEach(pid => {
-      if (byId[pid].status)     allS[pid] = byId[pid].status;
-      if (byId[pid].statusMeta) allM[pid] = byId[pid].statusMeta;
+      const cloudEntry = byId[pid];
+      const cloudTsRaw = cloudEntry.statusUpdatedAt;
+      // Firestore Timestamp → millis. null/undefined si pas encore résolu côté serveur.
+      const cloudMs = cloudTsRaw && typeof cloudTsRaw.toMillis === 'function'
+        ? cloudTsRaw.toMillis()
+        : (typeof cloudTsRaw === 'number' ? cloudTsRaw : 0);
+      const localMs = allTs[pid] || 0;
+      // Si la modif locale est plus récente que la cloud, on ne touche pas.
+      // (Notre propre écriture cloud arrivera dans un snapshot suivant et alignera tout.)
+      if (localMs > cloudMs && localMs > 0) return;
+      // Sinon : le cloud gagne — on aligne localStorage et on retire le marqueur local
+      // pour ne pas bloquer les futurs snapshots.
+      if (cloudEntry.status) allS[pid] = cloudEntry.status;
+      if (cloudEntry.statusMeta) allM[pid] = cloudEntry.statusMeta;
+      if (allTs[pid]) delete allTs[pid];
     });
+
     try {
       localStorage.setItem('cdd_player_status_override', JSON.stringify(allS));
       localStorage.setItem('cdd_player_status_meta',     JSON.stringify(allM));
+      localStorage.setItem('cdd_player_status_local_ts', JSON.stringify(allTs));
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
