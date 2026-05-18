@@ -858,24 +858,65 @@ function ScreenMatchV2({ go, tweaks }) {
             )}
             {M.ch < M.cfg.hs ? (
               <button className="mv-ctrl mv-ctrl-ht" onClick={halftime}>⏸ Mi-temps</button>
-            ) : (
-              <button className="mv-ctrl mv-ctrl-end" onClick={endMatch}>🏁 Fin de match</button>
-            )}
+            ) : M.st !== 'finished' ? (
+              <button className="mv-ctrl mv-ctrl-end" onClick={() => {
+                setConfirm({
+                  title: '🏁 Coup de sifflet final ?',
+                  msg: `Score : ${M.tA.n} ${M.sA} - ${M.sB} ${M.tB.n}. Le match sera clôturé et tu pourras voir la feuille de match.`,
+                  okLabel: 'OUI, FIN DU MATCH',
+                  cancelLabel: 'Annuler',
+                  onOk: () => { setConfirm(null); endMatch(); },
+                  onCancel: () => setConfirm(null),
+                });
+              }}>🏁 Fin de match</button>
+            ) : null}
           </div>
 
           <EventsTimeline M={M} onUndo={handleUndo}
                           onEdit={(idx) => setEditingEvent({idx, ev: M.ev[idx]})}/>
 
           {M.st === 'finished' && (
-            <div style={{padding:'14px', textAlign:'center'}}>
-              <button onClick={() => setShowFiche(true)}
-                      style={{width:'100%', padding:'16px', fontSize:14, fontWeight:800,
-                              background:'linear-gradient(135deg, #c8f169, #84cc16)',
-                              color:'#000', borderRadius:14, border:'none',
-                              boxShadow:'0 4px 20px rgba(200,241,105,.35)', cursor:'pointer'}}>
-                📋 VOIR LA FEUILLE DE MATCH
-              </button>
-            </div>
+            <>
+              <div style={{
+                padding: '20px 14px', margin: '14px',
+                background: 'linear-gradient(135deg, rgba(200,241,105,.18), rgba(132,204,22,.12))',
+                border: '2px solid rgba(200,241,105,.4)',
+                borderRadius: 16, textAlign: 'center',
+              }}>
+                <div style={{fontSize: 32, marginBottom: 8}}>🏁</div>
+                <div style={{
+                  fontSize: 18, fontWeight: 900, letterSpacing: '.08em',
+                  color: '#c8f169', textTransform: 'uppercase', marginBottom: 6,
+                }}>MATCH TERMINÉ</div>
+                <div style={{
+                  fontSize: 32, fontWeight: 900, color: '#fff', marginBottom: 12,
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {M.tA.n} {M.sA} – {M.sB} {M.tB.n}
+                </div>
+                <button onClick={() => setShowFiche(true)}
+                        style={{
+                          width:'100%', padding:'14px', fontSize:14, fontWeight:800,
+                          background:'#c8f169', color:'#000', borderRadius:12, border:'none',
+                          boxShadow:'0 4px 14px rgba(200,241,105,.4)', cursor:'pointer',
+                          letterSpacing: '.05em',
+                        }}>
+                  📋 VOIR LA FEUILLE DE MATCH
+                </button>
+                {!M.matchType && (
+                  <button onClick={() => setShowMatchType(true)}
+                          style={{
+                            width:'100%', padding:'12px', marginTop:8,
+                            fontSize:12, fontWeight:700,
+                            background:'rgba(251,191,36,.15)',
+                            border:'1px solid rgba(251,191,36,.4)',
+                            color:'#fbbf24', borderRadius:10, cursor:'pointer',
+                          }}>
+                    ⚠️ Préciser le type de match (Champ / Amical / …)
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </>
       )}
