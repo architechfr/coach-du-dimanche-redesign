@@ -324,18 +324,29 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="fi-sp-overlay" onClick={() => setShowSizePicker(false)}>
           <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}>
             <div className="fi-sp-h">
-              <span className="fi-sp-t">TAILLE DE LA CONVOCATION</span>
+              <span className="fi-sp-t">TYPE DE MATCH · TAILLE CONVOC</span>
               <button className="fi-sp-x" onClick={() => setShowSizePicker(false)}>✕</button>
             </div>
             <div className="fi-sp-list">
-              {[14, 16, 18, 20, null].map(n => (
-                <button key={String(n)}
-                  className={`fi-sp-opt ${currentSize===n?'on':''}`}
-                  onClick={() => setSize(n)}>
-                  <span className="fi-sp-l">
-                    {n === null ? 'Illimitée — tous les disponibles' : `${n} joueurs (11 titulaires + ${n-11} remplaçants)`}
+              {[
+                { n: 14, ic: '🏆', label: 'Championnat', sub: '11 titulaires + 3 remplaçants' },
+                { n: 16, ic: '🤝', label: 'Amical',      sub: '11 titulaires + 5 remplaçants' },
+                { n: 15, ic: '🏟️', label: 'Coupe',       sub: '11 titulaires + 4 remplaçants' },
+                { n: 18, ic: '🎯', label: 'Tournoi',     sub: '11 titulaires + 7 remplaçants' },
+                { n: 20, ic: '🎉', label: 'Grand match', sub: '11 titulaires + 9 remplaçants' },
+                { n: null, ic: '♾', label: 'Illimitée',  sub: 'Tous les disponibles' },
+              ].map(opt => (
+                <button key={String(opt.n)}
+                  className={`fi-sp-opt ${currentSize===opt.n?'on':''}`}
+                  onClick={() => setSize(opt.n)}>
+                  <span className="fi-sp-l" style={{display:'flex', alignItems:'center', gap:10}}>
+                    <span style={{fontSize:20}}>{opt.ic}</span>
+                    <span style={{flex:1, textAlign:'left'}}>
+                      <div style={{fontWeight:700}}>{opt.label}</div>
+                      <div style={{fontSize:11, opacity:.7}}>{opt.sub}</div>
+                    </span>
                   </span>
-                  {currentSize === n && <span className="fi-sp-tick">✓</span>}
+                  {currentSize === opt.n && <span className="fi-sp-tick">✓</span>}
                 </button>
               ))}
             </div>
