@@ -209,7 +209,7 @@ function App() {
           {screen === "home" && (
             <div className="app-hdr" style={{paddingTop: 0}}>
               <button className="app-hdr-btn" onClick={() => go("set")} aria-label="Réglages">⚙</button>
-              <div className="app-hdr-title" style={{fontSize:14}}>FCMH · U15 D1</div>
+              <div className="app-hdr-title" style={{fontSize:14}}>FCMH · U15 D2</div>
               <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
             </div>
           )}

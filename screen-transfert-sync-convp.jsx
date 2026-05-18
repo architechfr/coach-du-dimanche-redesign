@@ -6,12 +6,12 @@
 
 function ScreenTransfert({ go, tweaks }) {
   const [step, setStep] = useState(1);
-  const [selectedTeams, setSelectedTeams] = useState({ "u15-d1": true, "u13-d2": false });
+  const [selectedTeams, setSelectedTeams] = useState({ "u15-d2": true, "u13-d2": false });
   const code = "K4M-7XR-9PQ";
 
   const toggle = (id) => setSelectedTeams(s => ({...s, [id]: !s[id]}));
   const teams = [
-    { id:"u15-d1",   club:"FCMH",  name:"U15 D1",     n:18 },
+    { id:"u15-d2",   club:"FCMH",  name:"U15 D2",     n:18 },
     { id:"u13-d2",   club:"FCMH",  name:"U13 D2",     n:14 },
     { id:"vet-usdf", club:"USDF",      name:"Vétérans",   n:22 },
   ];
@@ -152,9 +152,9 @@ window.ScreenTransfert = ScreenTransfert;
    ============================================================ */
 
 function ScreenSyncCloud({ go, tweaks }) {
-  const [active, setActive] = useState("u15-d1");
+  const [active, setActive] = useState("u15-d2");
   const clubs = [
-    { id:"asm",   name:"FCMH",        team:"U15 D1",      players:18, color:"#c8f169", on: true },
+    { id:"asm",   name:"FCMH",        team:"U15 D2",      players:18, color:"#c8f169", on: true },
     { id:"usdf",  name:"USDF",            team:"Vétérans",    players:22, color:"#3b82f6", on: false },
     { id:"fcmh",  name:"FCMH",            team:"U11 D3",      players:12, color:"#f5c451", on: false },
   ];
@@ -208,7 +208,7 @@ function ScreenSyncCloud({ go, tweaks }) {
         <button className="sync-club-add" onClick={() => {
           const name = prompt("Nom du nouveau club :");
           if (!name) return;
-          const team = prompt("Catégorie (ex: U15 D1) :", "U15 D1");
+          const team = prompt("Catégorie (ex: U15 D2) :", "U15 D2");
           if (!team) return;
           try {
             const arr = JSON.parse(localStorage.getItem("arb_clubs") || "[]");
@@ -304,7 +304,7 @@ function ScreenConvoParent({ go, tweaks }) {
         <div className="cvp-hero-bg"/>
         <div className="cvp-hero-grad"/>
         <div className="cvp-hero-in">
-          <div className="cvp-hero-k">CONVOCATION · FCMH U15 D1</div>
+          <div className="cvp-hero-k">CONVOCATION · FCMH U15 D2</div>
           <div className="cvp-hero-title">
             <span className="cvp-hero-name">{me.first}</span><br/>
             est convoqué

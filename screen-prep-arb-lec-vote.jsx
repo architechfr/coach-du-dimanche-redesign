@@ -301,7 +301,7 @@ function ScreenLecteur({ go, tweaks }) {
         <div className="lec-banner-in">
           <div className="lec-banner-k">ÉQUIPE PARTAGÉE · LECTURE SEULE</div>
           <div className="lec-banner-title">FC MAGNY LE HONGRE</div>
-          <div className="lec-banner-sub">U15 D1 · Saison 2025–2026</div>
+          <div className="lec-banner-sub">U15 D2 · Saison 2025–2026</div>
         </div>
       </div>
 
@@ -521,7 +521,7 @@ function ScreenVote({ go, tweaks }) {
             <b className="num">2–1</b>
             <span>FC PONTOISE</span>
           </div>
-          <div className="vote-hero-sub">17 mai · Match U15 D1 · stade Cerdan</div>
+          <div className="vote-hero-sub">17 mai · Match U15 D2 · stade Cerdan</div>
         </div>
       </div>
 

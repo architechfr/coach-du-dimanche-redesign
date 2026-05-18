@@ -22,7 +22,7 @@ const POS_COLOR = {
 const CLUB = {
   name: "FC MAGNY LE HONGRE",
   short: "FCMH",
-  team: "U15 D1",
+  team: "U15 D2",
   season: "2025–2026",
   colors: ["#c8f169", "#0a0e14"],
   league: "U15 Phase 1 — Poule B",
@@ -99,7 +99,7 @@ const NEXT_MATCH = {
   awayBadge: "200",
   venue: "Stade Marcel-Cerdan",
   weather: "16°C · Soleil",
-  competition: "Championnat U15 D1",
+  competition: "Championnat U15 D2",
   daysLeft: 4,
 };
 
