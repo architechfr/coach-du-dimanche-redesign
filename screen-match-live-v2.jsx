@@ -178,7 +178,7 @@ function CardOverlay({ color, side, player, hint, onClose, onCloseShow2 }) {
 // ──────────────────────────────────────────────────────────
 // Match Header (sticky)
 // ──────────────────────────────────────────────────────────
-function MatchHeader({ M, minute, onWhistle, onShowOnly }) {
+function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
   return (
     <div className="mv-header">
       <div className="mv-header-bg"/>
@@ -220,9 +220,18 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly }) {
         </div>
       </div>
 
-      <button className="mv-show-only-btn" onClick={onShowOnly} title="Avertissement sans enregistrer">
-        🪪 Montrer carton
-      </button>
+      <div style={{display:'flex', gap:8, justifyContent:'center', padding:'0 14px 8px'}}>
+        <button className="mv-show-only-btn" onClick={onShowOnly}
+                title="Avertissement sans enregistrer" style={{flex:1}}>
+          🪪 Montrer carton
+        </button>
+        {onShowLineup && (
+          <button className="mv-show-only-btn" onClick={onShowLineup}
+                  title="Voir la composition en cours" style={{flex:1}}>
+            📋 Composition
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -266,7 +275,7 @@ function ActionGrid({ side, M, disabled, onGoal, onCard, onSub, onInjury }) {
 // ──────────────────────────────────────────────────────────
 // Events timeline
 // ──────────────────────────────────────────────────────────
-function EventsTimeline({ M, onUndo }) {
+function EventsTimeline({ M, onUndo, onEdit }) {
   const ev = [...M.ev].reverse();
   return (
     <div className="mv-timeline">
@@ -278,25 +287,37 @@ function EventsTimeline({ M, onUndo }) {
       </div>
       {ev.length === 0 ? (
         <div className="mv-empty">Aucun événement pour le moment.<br/>Tape sur BUT / JAUNE / CHANGE pour commencer.</div>
-      ) : ev.map((e, i) => (
-        <div key={ev.length-i} className={`mv-ev mv-ev-${e.tp} mv-ev-${e.t || 'none'}`}>
-          <span className="mv-ev-min num">{e.mn}<i>'</i></span>
-          <span className="mv-ev-dot"/>
-          <div className="mv-ev-body">
-            <span className={`mv-ev-tag mv-ev-tag-${e.tp}`}>
-              {e.tp === 'goal'   ? 'BUT' :
-               e.tp === 'yellow' ? 'JAUNE' :
-               e.tp === 'red'    ? (e.auto ? 'ROUGE (2e jaune)' : 'ROUGE') :
-               e.tp === 'sub'    ? 'CHANGEMENT' :
-               e.tp === 'half'   ? 'MI-TEMPS' :
-               e.tp === 'end'    ? 'COUP DE SIFFLET FINAL' : e.tp.toUpperCase()}
-            </span>
-            <span className="mv-ev-pl">{e.pl || ''}</span>
-            {e.tp === 'goal' && e.source === 'pending' &&
-              <span className="mv-ev-pending">⏰ Passeur à renseigner</span>}
+      ) : ev.map((e, i) => {
+        const realIdx = M.ev.length - 1 - i;
+        return (
+          <div key={realIdx} className={`mv-ev mv-ev-${e.tp} mv-ev-${e.t || 'none'}`}>
+            <span className="mv-ev-min num">{e.mn}<i>'</i></span>
+            <span className="mv-ev-dot"/>
+            <div className="mv-ev-body">
+              <span className={`mv-ev-tag mv-ev-tag-${e.tp}`}>
+                {e.tp === 'goal'   ? 'BUT' :
+                 e.tp === 'yellow' ? 'JAUNE' :
+                 e.tp === 'red'    ? (e.auto ? 'ROUGE (2e jaune)' : 'ROUGE') :
+                 e.tp === 'sub'    ? 'CHANGEMENT' :
+                 e.tp === 'half'   ? 'MI-TEMPS' :
+                 e.tp === 'end'    ? 'COUP DE SIFFLET FINAL' :
+                 e.tp === 'injury' ? 'BLESSURE' :
+                 e.tp === 'at'     ? 'TEMPS ADDITIONNEL' :
+                 e.tp.toUpperCase()}
+              </span>
+              <span className="mv-ev-pl">{e.pl || ''}{e.passer ? ' (P. ' + e.passer + ')' : ''}</span>
+              {e._edited && <span style={{fontSize:10, color:'rgba(200,241,105,.7)', marginLeft:6}}>✎ edite</span>}
+              {e.tp === 'goal' && e.source === 'pending' &&
+                <span className="mv-ev-pending">⏰ Passeur à renseigner</span>}
+            </div>
+            {onEdit && (e.tp === 'goal' || e.tp === 'yellow' || e.tp === 'red' || e.tp === 'sub' || e.tp === 'injury') && (
+              <button onClick={() => onEdit(realIdx)}
+                      style={{background:'transparent', border:'none', color:'rgba(255,255,255,.5)',
+                              fontSize:14, cursor:'pointer', padding:'4px 8px'}}>✎</button>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -338,6 +359,9 @@ function ScreenMatchV2({ go, tweaks }) {
   const [cardOverlay, setCardOverlay] = useStateMV(null);
   const [confirm, setConfirm] = useStateMV(null);
   const [showHtModal, setShowHtModal] = useStateMV(null);
+  const [showLineup, setShowLineup] = useStateMV(false);
+  const [showFiche, setShowFiche] = useStateMV(false);
+  const [editingEvent, setEditingEvent] = useStateMV(null);
 
   const Mref = useRefMV(null);
   if (!Mref.current) {
@@ -378,7 +402,21 @@ function ScreenMatchV2({ go, tweaks }) {
     return () => clearInterval(t);
   }, [M.st]);
 
-  const rerender = () => { forceRender({}); MATCH_HELPERS.saveMatch(M); };
+  const rerender = () => {
+    forceRender({});
+    if (M) M.savedAt = Date.now();
+    MATCH_HELPERS.saveMatch(M);
+  };
+
+  // Auto-save toutes les 10 secondes pendant le match (#20)
+  useEffectMV(() => {
+    if (!M || M.notStarted || M.st === 'finished') return;
+    const tick = setInterval(() => {
+      M.savedAt = Date.now();
+      MATCH_HELPERS.saveMatch(M);
+    }, 10000);
+    return () => clearInterval(tick);
+  }, [M, M && M.st, M && M.notStarted]);
 
   // ─── Match controls ─────────────────────────────────
   const startMatch = () => {
@@ -386,12 +424,26 @@ function ScreenMatchV2({ go, tweaks }) {
     M.tSt = Date.now();
     M.tOff = 0;
     M.st = 'live';
+    M.startedAt = Date.now();
     MATCH_SFX.playWhistle();
     MATCH_SFX.vibrate(200);
-    // ─── Activer wake lock + plein écran + silence loop iOS ───
     if (MATCH_HELPERS.requestWakeLock) MATCH_HELPERS.requestWakeLock();
     if (MATCH_HELPERS.goFullscreen)    MATCH_HELPERS.goFullscreen();
     if (MATCH_HELPERS.startSilenceLoop) MATCH_HELPERS.startSilenceLoop();
+    rerender();
+  };
+
+  // Blessure flow (#16)
+  const handleInjury = (side) => setActiveFlow({ kind: 'injury', side });
+  const handleInjuryPick = (side) => (player) => {
+    if (MATCH_HELPERS.setInjured) MATCH_HELPERS.setInjured(M, side, player.id);
+    else {
+      const mn = MATCH_HELPERS.gMin(M);
+      M.ev.push({ tp:'injury', t: side, mn, pl: MATCH_HELPERS.playerLabel(player), ts: Date.now() });
+    }
+    MATCH_SFX.vibrate(150);
+    setSubOut(player);
+    setActiveFlow({ kind: 'sub-in', side });
     rerender();
   };
 
@@ -463,6 +515,7 @@ function ScreenMatchV2({ go, tweaks }) {
     if (M.st === 'live') M.tOff += Date.now() - M.tSt;
     M.ev.push({ tp:'end', mn: MATCH_HELPERS.gMin(M), ts: Date.now(), _prev: snap });
     M.st = 'finished';
+    M.endedAt = Date.now();
     MATCH_SFX.playBuzzer();
     MATCH_SFX.vibrate(500);
     setShowHtModal(null);
@@ -572,27 +625,6 @@ function ScreenMatchV2({ go, tweaks }) {
     }
   };
 
-  // ─── Blessure flow (#16) ────────────────────────────
-  const handleInjury = (side) => {
-    setActiveFlow({ kind: 'injury', side });
-  };
-  const handleInjuryPick = (side) => (player) => {
-    const playerLbl = MATCH_HELPERS.playerLabel(player);
-    const mn = MATCH_HELPERS.gMin(M);
-    // Enregistre l'événement injury
-    if (MATCH_HELPERS.setInjured) {
-      MATCH_HELPERS.setInjured(M, side, player.id);
-    } else {
-      // Fallback si helper pas dispo
-      M.ev.push({ tp:'injury', t: side, mn, pl: playerLbl, ts: Date.now() });
-    }
-    MATCH_SFX.vibrate(150);
-    // Proposer immédiatement un sub : on garde le joueur blessé comme subOut
-    setSubOut(player);
-    setActiveFlow({ kind: 'sub-in', side });
-    rerender();
-  };
-
   // ─── Sub flow ──────────────────────────────────────
   const [subOut, setSubOut] = useStateMV(null);
   const handleSubOut = (side) => (player) => {
@@ -636,9 +668,10 @@ function ScreenMatchV2({ go, tweaks }) {
 
       <MatchHeader M={M} minute={minute}
         onWhistle={() => { MATCH_SFX.playWhistle(); MATCH_SFX.vibrate(50); }}
-        onShowOnly={() => setActiveFlow({ kind:'show-only' })}/>
+        onShowOnly={() => setActiveFlow({ kind:'show-only' })}
+        onShowLineup={() => setShowLineup(true)}/>
 
-      {/* Pre-match overlay avec setup adversaire */}
+      {/* Pre-match setup adversaire (#14) */}
       {M.notStarted && (
         <PreMatchSetup M={M} onStart={startMatch} rerender={rerender}/>
       )}
@@ -646,6 +679,32 @@ function ScreenMatchV2({ go, tweaks }) {
       {/* Vue Composition en match (#17) */}
       {showLineup && (
         <LineupOverlay M={M} onClose={() => setShowLineup(false)}/>
+      )}
+
+      {/* Feuille de match post-fin (#19) */}
+      {showFiche && (
+        <FicheMatchOverlay M={M}
+                           onClose={() => setShowFiche(false)}
+                           onEditEvent={(idx) => setEditingEvent({idx, ev: M.ev[idx]})}
+                           onShare={async () => {
+                             const text = `${M.tA.n} ${M.sA} - ${M.sB} ${M.tB.n}\n`
+                                        + (M.ev || []).filter(e => e.tp === 'goal')
+                                          .map(e => `${e.mn}' ${e.pl}${e.passer ? ' (P. '+e.passer+')' : ''}`).join('\n');
+                             if (navigator.share) {
+                               try { await navigator.share({ title: 'Feuille de match', text }); }
+                               catch (e) {}
+                             } else {
+                               try { await navigator.clipboard.writeText(text); alert('Feuille copiee dans le presse-papier'); }
+                               catch (e) { alert('Partage indisponible'); }
+                             }
+                           }}/>
+      )}
+
+      {/* Editeur d'event post-match (#19) */}
+      {editingEvent && (
+        <EditEventOverlay M={M} idx={editingEvent.idx} ev={editingEvent.ev}
+                          onSave={() => { setEditingEvent(null); rerender(); }}
+                          onClose={() => setEditingEvent(null)}/>
       )}
 
       {!M.notStarted && (
@@ -681,7 +740,20 @@ function ScreenMatchV2({ go, tweaks }) {
             )}
           </div>
 
-          <EventsTimeline M={M} onUndo={handleUndo}/>
+          <EventsTimeline M={M} onUndo={handleUndo}
+                          onEdit={(idx) => setEditingEvent({idx, ev: M.ev[idx]})}/>
+
+          {M.st === 'finished' && (
+            <div style={{padding:'14px', textAlign:'center'}}>
+              <button onClick={() => setShowFiche(true)}
+                      style={{width:'100%', padding:'16px', fontSize:14, fontWeight:800,
+                              background:'linear-gradient(135deg, #c8f169, #84cc16)',
+                              color:'#000', borderRadius:14, border:'none',
+                              boxShadow:'0 4px 20px rgba(200,241,105,.35)', cursor:'pointer'}}>
+                📋 VOIR LA FEUILLE DE MATCH
+              </button>
+            </div>
+          )}
         </>
       )}
 
@@ -701,29 +773,25 @@ function ScreenMatchV2({ go, tweaks }) {
           onCancel={() => setActiveFlow(null)}/>
       )}
 
-      {/* Blessure flow (#16) — pick joueur blesse, puis sub-in auto */}
+      {/* Blessure flow (#16) */}
       {activeFlow?.kind === 'injury' && (
-        <PlayerPicker
-          title="🩹 Joueur blessé"
+        <PlayerPicker title="🩹 Joueur blessé"
           subtitle="Tape sur le joueur blessé. Tu pourras le remplacer juste après."
           team={team} mode="all" M={M}
           onPick={handleInjuryPick(activeFlow.side)}
           onCancel={() => setActiveFlow(null)}/>
       )}
 
-      {/* Sub flow — mode 'all' : amateur, pas de limite de changements
-           (un joueur peut sortir, rentrer, ressortir autant que voulu) */}
+      {/* Sub flow mode 'all' : amateur, pas de limite (#32) */}
       {activeFlow?.kind === 'sub-out' && (
-        <PlayerPicker
-          title="🔻 Joueur sortant"
+        <PlayerPicker title="🔻 Joueur sortant"
           subtitle="Tape sur celui qui sort du terrain"
           team={team} mode="all" M={M}
           onPick={handleSubOut(activeFlow.side)}
           onCancel={() => setActiveFlow(null)}/>
       )}
       {activeFlow?.kind === 'sub-in' && (
-        <PlayerPicker
-          title="🔺 Joueur entrant"
+        <PlayerPicker title="🔺 Joueur entrant"
           subtitle={`Pour ${MATCH_HELPERS.playerLabel(subOut)}`}
           team={team} mode="all" M={M}
           onPick={handleSubIn(activeFlow.side)}
@@ -805,8 +873,77 @@ function getYellowsForPlayer(M, t, lbl) {
 // Replace the existing ScreenMatch
 
 // ──────────────────────────────────────────────────────────
-// Vue Composition en match (#17) — terrain + banc + sortis + indispo
+// Setup adversaire pré-match (#14)
 // ──────────────────────────────────────────────────────────
+function PreMatchSetup({ M, onStart, rerender }) {
+  const [oppName, setOppName] = useStateMV(M.tB?.n || 'Adversaire');
+  const [oppColor, setOppColor] = useStateMV(M.tB?.c || '#3b82f6');
+  const [hd, setHd] = useStateMV(M.cfg?.hd || 45);
+  const [htd, setHtd] = useStateMV(M.cfg?.htd || 15);
+  const [hs, setHs] = useStateMV(M.cfg?.hs || 2);
+  const applyAndStart = () => {
+    if (MATCH_HELPERS.setOpponent) MATCH_HELPERS.setOpponent(M, oppName.trim() || 'Adversaire', oppColor);
+    M.cfg = M.cfg || {};
+    M.cfg.hd  = parseInt(hd, 10)  || 45;
+    M.cfg.htd = parseInt(htd, 10) || 15;
+    M.cfg.hs  = parseInt(hs, 10)  || 2;
+    rerender();
+    setTimeout(onStart, 50);
+  };
+  return (
+    <div className="mv-prematch">
+      <div className="mv-prematch-glow"/>
+      <div className="mv-prematch-k">PRÉ-MATCH · SETUP</div>
+      <div className="mv-prematch-t">Réglages match</div>
+      <div style={{background:'rgba(0,0,0,.35)', borderRadius:12, padding:'14px 16px',
+                   margin:'14px 0', width:'min(420px, 92%)',
+                   border:'1px solid rgba(255,255,255,.08)'}}>
+        <label style={{display:'block', marginBottom:12}}>
+          <span style={{display:'block', fontSize:11, fontWeight:700, letterSpacing:'.08em',
+                        color:'rgba(255,255,255,.7)', marginBottom:4, textTransform:'uppercase'}}>
+            Nom de l'adversaire
+          </span>
+          <input type="text" value={oppName} onChange={e => setOppName(e.target.value)}
+                 placeholder="ex: FC PONTOISE"
+                 style={{width:'100%', height:38, background:'rgba(0,0,0,.4)',
+                         border:'1px solid rgba(255,255,255,.12)', borderRadius:8,
+                         color:'#fff', padding:'0 12px', fontSize:14, outline:'none'}}/>
+        </label>
+        <label style={{display:'block', marginBottom:12}}>
+          <span style={{display:'block', fontSize:11, fontWeight:700, letterSpacing:'.08em',
+                        color:'rgba(255,255,255,.7)', marginBottom:4, textTransform:'uppercase'}}>
+            Couleur adversaire
+          </span>
+          <input type="color" value={oppColor} onChange={e => setOppColor(e.target.value)}
+                 style={{height:38, width:'100%', borderRadius:8, border:'none', padding:0, background:'transparent'}}/>
+        </label>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
+          <label>
+            <span style={{display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>Mi-temps (min)</span>
+            <input type="number" min="10" max="60" value={hd} onChange={e => setHd(e.target.value)}
+                   style={{width:'100%', height:36, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                           borderRadius:8, color:'#fff', padding:'0 8px', fontSize:14, textAlign:'center'}}/>
+          </label>
+          <label>
+            <span style={{display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>Pause (min)</span>
+            <input type="number" min="0" max="30" value={htd} onChange={e => setHtd(e.target.value)}
+                   style={{width:'100%', height:36, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                           borderRadius:8, color:'#fff', padding:'0 8px', fontSize:14, textAlign:'center'}}/>
+          </label>
+          <label>
+            <span style={{display:'block', fontSize:10, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>Nb périodes</span>
+            <input type="number" min="1" max="4" value={hs} onChange={e => setHs(e.target.value)}
+                   style={{width:'100%', height:36, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                           borderRadius:8, color:'#fff', padding:'0 8px', fontSize:14, textAlign:'center'}}/>
+          </label>
+        </div>
+      </div>
+      <button className="mv-prematch-btn" onClick={applyAndStart}><span>▶ LANCER LE MATCH</span></button>
+    </div>
+  );
+}
+
+// LineupOverlay (#17)
 function LineupOverlay({ M, onClose }) {
   const team = M.tA;
   const injured = new Set();
@@ -831,10 +968,8 @@ function LineupOverlay({ M, onClose }) {
   const benchPlayers = [...onBench].map(l => playerByLbl[l]).filter(Boolean);
   const injuredPlayers = [...injured].map(l => playerByLbl[l]).filter(Boolean);
   const excludedPlayers = [...excluded].map(l => playerByLbl[l]).filter(Boolean);
-
   const primary = team.c || '#22c55e';
   const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
-
   return (
     <div className="mv-modal-overlay" onClick={onClose} style={{zIndex:9999}}>
       <div className="mv-modal" onClick={e => e.stopPropagation()}
@@ -851,7 +986,6 @@ function LineupOverlay({ M, onClose }) {
           </div>
           <button className="mv-modal-x" onClick={onClose}>✕</button>
         </div>
-
         <div style={{padding:'12px', background:'rgba(0,0,0,.2)', borderRadius:10, margin:'12px'}}>
           <svg viewBox="0 0 100 110" width="100%" style={{maxHeight:'320px', display:'block'}}>
             <defs>
@@ -875,42 +1009,29 @@ function LineupOverlay({ M, onClose }) {
               return (
                 <g key={i} transform={`translate(${x}, ${y})`}>
                   <circle r="6" fill={primary} stroke="#fff" strokeWidth=".5"/>
-                  <text textAnchor="middle" dominantBaseline="central"
-                        fontSize="5" fontWeight="900" fill="#000"
-                        fontFamily="Inter, sans-serif" y=".5">
-                    {p.num}
-                  </text>
+                  <text textAnchor="middle" dominantBaseline="central" fontSize="5" fontWeight="900"
+                        fill="#000" fontFamily="Inter, sans-serif" y=".5">{p.num}</text>
                   <g transform="translate(0, 10)">
                     <rect x="-12" y="-2" width="24" height="3.5" rx=".5" fill="rgba(0,0,0,.85)"/>
-                    <text textAnchor="middle" dominantBaseline="central"
-                          fontSize="2.4" fontWeight="700" fill="#fff"
-                          fontFamily="Inter, sans-serif">
-                      {(p.first || '').slice(0, 12)}
-                    </text>
+                    <text textAnchor="middle" dominantBaseline="central" fontSize="2.4" fontWeight="700"
+                          fill="#fff" fontFamily="Inter, sans-serif">{(p.first || '').slice(0, 12)}</text>
                   </g>
                 </g>
               );
             })}
           </svg>
         </div>
-
         <div style={{padding:'0 12px 16px'}}>
           {benchPlayers.length > 0 && (
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em',
-                           color:'rgba(255,255,255,.55)', marginBottom:6,
-                           textTransform:'uppercase'}}>
+              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em', color:'rgba(255,255,255,.55)', marginBottom:6, textTransform:'uppercase'}}>
                 ⏱ AU BANC · {benchPlayers.length}
               </div>
               <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
                 {benchPlayers.map(p => (
-                  <span key={p.id} style={{
-                    padding:'4px 10px', borderRadius:6,
-                    background:'rgba(255,255,255,.06)', fontSize:12,
-                    border:'1px solid rgba(255,255,255,.1)',
-                  }}>
-                    <b style={{color:primary, marginRight:6}}>#{p.num}</b>
-                    {p.first || p.last}
+                  <span key={p.id} style={{padding:'4px 10px', borderRadius:6, background:'rgba(255,255,255,.06)',
+                                            fontSize:12, border:'1px solid rgba(255,255,255,.1)'}}>
+                    <b style={{color:primary, marginRight:6}}>#{p.num}</b>{p.first || p.last}
                   </span>
                 ))}
               </div>
@@ -918,19 +1039,14 @@ function LineupOverlay({ M, onClose }) {
           )}
           {injuredPlayers.length > 0 && (
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em',
-                           color:'#ff9a3d', marginBottom:6, textTransform:'uppercase'}}>
+              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em', color:'#ff9a3d', marginBottom:6, textTransform:'uppercase'}}>
                 🩹 BLESSÉS · {injuredPlayers.length}
               </div>
               <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
                 {injuredPlayers.map(p => (
-                  <span key={p.id} style={{
-                    padding:'4px 10px', borderRadius:6,
-                    background:'rgba(255,160,40,.1)', fontSize:12,
-                    border:'1px solid rgba(255,160,40,.3)',
-                  }}>
-                    <b style={{marginRight:6}}>#{p.num}</b>
-                    {p.first || p.last}
+                  <span key={p.id} style={{padding:'4px 10px', borderRadius:6, background:'rgba(255,160,40,.1)',
+                                            fontSize:12, border:'1px solid rgba(255,160,40,.3)'}}>
+                    <b style={{marginRight:6}}>#{p.num}</b>{p.first || p.last}
                   </span>
                 ))}
               </div>
@@ -938,24 +1054,215 @@ function LineupOverlay({ M, onClose }) {
           )}
           {excludedPlayers.length > 0 && (
             <div>
-              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em',
-                           color:'#ff5b5b', marginBottom:6, textTransform:'uppercase'}}>
+              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em', color:'#ff5b5b', marginBottom:6, textTransform:'uppercase'}}>
                 🟥 EXCLUS · {excludedPlayers.length}
               </div>
               <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
                 {excludedPlayers.map(p => (
-                  <span key={p.id} style={{
-                    padding:'4px 10px', borderRadius:6,
-                    background:'rgba(255,80,80,.12)', fontSize:12,
-                    border:'1px solid rgba(255,80,80,.3)',
-                  }}>
-                    <b style={{marginRight:6}}>#{p.num}</b>
-                    {p.first || p.last}
+                  <span key={p.id} style={{padding:'4px 10px', borderRadius:6, background:'rgba(255,80,80,.12)',
+                                            fontSize:12, border:'1px solid rgba(255,80,80,.3)'}}>
+                    <b style={{marginRight:6}}>#{p.num}</b>{p.first || p.last}
                   </span>
                 ))}
               </div>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// FicheMatchOverlay (#19)
+function FicheMatchOverlay({ M, onClose, onEditEvent, onShare }) {
+  const exploits = (MATCH_HELPERS.computeExploits || (() => ({})))(M);
+  const team = M.tA;
+  const opp = M.tB;
+  const playerStats = {};
+  (team.p || []).concat(team.bench || []).forEach(p => {
+    const lbl = MATCH_HELPERS.playerLabel(p);
+    playerStats[p.id] = { id: p.id, num: p.num, first: p.first, last: p.last, label: lbl,
+                          goals:0, assists:0, yellows:0, reds:0, subbed:false, injured:false };
+  });
+  (M.ev || []).forEach(e => {
+    if (e.t !== 'A') return;
+    Object.values(playerStats).forEach(p => {
+      if (e.tp === 'goal' && e.pl === p.label) p.goals++;
+      if (e.tp === 'goal' && e.passer === p.label) p.assists++;
+      if (e.tp === 'yellow' && e.pl === p.label) p.yellows++;
+      if (e.tp === 'red' && e.pl === p.label) p.reds++;
+      if (e.tp === 'sub' && e.out === p.label) p.subbed = true;
+      if (e.tp === 'injury' && e.pl === p.label) p.injured = true;
+    });
+  });
+  const activeStats = Object.values(playerStats).filter(p =>
+    p.goals || p.assists || p.yellows || p.reds || p.subbed || p.injured
+  );
+  const result = M.sA > M.sB ? 'VICTOIRE' : M.sA < M.sB ? 'DÉFAITE' : 'NUL';
+  const resultColor = M.sA > M.sB ? '#c8f169' : M.sA < M.sB ? '#ff8a8a' : '#fbbf24';
+  return (
+    <div className="mv-modal-overlay" onClick={onClose} style={{zIndex:9998}}>
+      <div className="mv-modal" onClick={e => e.stopPropagation()}
+           style={{maxWidth:'94%', width:'520px', maxHeight:'94vh', overflow:'auto'}}>
+        <div className="mv-modal-h">
+          <div>
+            <div className="mv-modal-k" style={{color: resultColor}}>{result}</div>
+            <h2 className="mv-modal-t" style={{fontSize:18}}>FEUILLE DE MATCH</h2>
+          </div>
+          <button className="mv-modal-x" onClick={onClose}>✕</button>
+        </div>
+        <div style={{textAlign:'center', padding:'20px', background:'rgba(0,0,0,.25)'}}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:20}}>
+            <div style={{flex:1, textAlign:'right'}}>
+              <div style={{fontSize:13, color:'rgba(255,255,255,.7)', fontWeight:700}}>{team.n}</div>
+            </div>
+            <div style={{fontSize:42, fontWeight:900, color:'#fff', minWidth:80}}>{M.sA}&nbsp;–&nbsp;{M.sB}</div>
+            <div style={{flex:1, textAlign:'left'}}>
+              <div style={{fontSize:13, color:'rgba(255,255,255,.7)', fontWeight:700}}>{opp.n}</div>
+            </div>
+          </div>
+          {M.at > 0 && <div style={{fontSize:11, color:'rgba(255,255,255,.5)', marginTop:6}}>+{M.at} min temps additionnel</div>}
+        </div>
+        {(exploits.hatTricks?.length > 0 || exploits.doubles?.length > 0 || exploits.cleanSheet || exploits.mvp) && (
+          <div style={{padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+            <div style={{fontSize:11, fontWeight:800, letterSpacing:'.1em', color:'#c8f169', marginBottom:8}}>⭐ EXPLOITS</div>
+            {exploits.mvp && <div style={{fontSize:13, marginBottom:4}}><b style={{color:'#fbbf24'}}>🏆 Homme du match</b> : {exploits.mvp}</div>}
+            {(exploits.hatTricks || []).map(p => <div key={'ht-'+p} style={{fontSize:13, marginBottom:4}}>🎩 <b style={{color:'#c8f169'}}>Hat-trick</b> : {p}</div>)}
+            {(exploits.doubles || []).map(p => <div key={'d-'+p} style={{fontSize:13, marginBottom:4}}>⚽⚽ <b>Doublé</b> : {p}</div>)}
+            {exploits.cleanSheet && <div style={{fontSize:13, marginBottom:4}}>🧤 <b style={{color:'#06b6d4'}}>Sortie blanche</b> (0 but encaissé)</div>}
+          </div>
+        )}
+        {activeStats.length > 0 && (
+          <div style={{padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+            <div style={{fontSize:11, fontWeight:800, letterSpacing:'.1em', color:'rgba(255,255,255,.6)', marginBottom:10}}>JOUEURS — STATS DU MATCH</div>
+            {activeStats.map(p => (
+              <div key={p.id} style={{display:'flex', alignItems:'center', padding:'6px 0',
+                                       borderBottom:'1px solid rgba(255,255,255,.04)', fontSize:13}}>
+                <span style={{minWidth:24, fontWeight:800, color:'#c8f169'}}>#{p.num}</span>
+                <span style={{flex:1, fontWeight:600}}>{p.first} <span style={{opacity:.7, fontSize:11}}>{p.last}</span></span>
+                <span style={{display:'flex', gap:8, fontSize:11}}>
+                  {p.goals > 0 && <span>⚽×{p.goals}</span>}
+                  {p.assists > 0 && <span>👟×{p.assists}</span>}
+                  {p.yellows > 0 && <span style={{color:'#fbbf24'}}>🟨×{p.yellows}</span>}
+                  {p.reds > 0 && <span style={{color:'#ff5b5b'}}>🟥×{p.reds}</span>}
+                  {p.subbed && <span style={{color:'rgba(255,255,255,.5)'}}>↓</span>}
+                  {p.injured && <span style={{color:'#ff9a3d'}}>🩹</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{padding:'14px 16px'}}>
+          <div style={{fontSize:11, fontWeight:800, letterSpacing:'.1em', color:'rgba(255,255,255,.6)', marginBottom:10}}>CHRONOLOGIE</div>
+          {(M.ev || []).filter(e => ['goal','yellow','red','sub','injury','half','end'].includes(e.tp)).map((e, i) => {
+            const realIdx = M.ev.indexOf(e);
+            return (
+              <div key={i} style={{display:'flex', alignItems:'center', padding:'6px 0',
+                                    borderBottom:'1px solid rgba(255,255,255,.04)', fontSize:12}}>
+                <span style={{minWidth:36, color:'#c8f169', fontWeight:800}}>{e.mn}'</span>
+                <span style={{flex:1}}>
+                  {e.tp === 'goal' ? '⚽ ' : e.tp === 'yellow' ? '🟨 ' : e.tp === 'red' ? '🟥 ' :
+                   e.tp === 'sub' ? '🔁 ' : e.tp === 'injury' ? '🩹 ' :
+                   e.tp === 'half' ? '⏸ ' : e.tp === 'end' ? '🏁 ' : ''}
+                  {e.pl || (e.tp === 'half' ? 'Mi-temps' : e.tp === 'end' ? 'Fin de match' : '')}
+                  {e.tp === 'sub' && (e.inn ? ' (entrant: ' + e.inn + ')' : '')}
+                  {e.tp === 'goal' && e.passer ? ' (P. ' + e.passer + ')' : ''}
+                  {e._edited && <span style={{fontSize:9, color:'rgba(200,241,105,.6)', marginLeft:6}}>✎</span>}
+                </span>
+                {onEditEvent && realIdx >= 0 && (e.tp === 'goal' || e.tp === 'yellow' || e.tp === 'red') && (
+                  <button onClick={() => onEditEvent(realIdx)}
+                          style={{background:'transparent', border:'none', color:'rgba(255,255,255,.4)',
+                                  fontSize:13, cursor:'pointer', padding:'2px 8px'}}>✎</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{padding:'14px 16px 16px', display:'flex', gap:10, position:'sticky', bottom:0, background:'#0a0e14'}}>
+          <button onClick={onShare}
+                  style={{flex:1, padding:'12px', borderRadius:10, border:'1px solid rgba(200,241,105,.4)',
+                          background:'rgba(200,241,105,.12)', color:'#c8f169', fontWeight:800,
+                          fontSize:13, cursor:'pointer'}}>📤 Partager</button>
+          <button onClick={onClose}
+                  style={{flex:1, padding:'12px', borderRadius:10, border:'1px solid rgba(255,255,255,.15)',
+                          background:'rgba(255,255,255,.06)', color:'#fff', fontWeight:700,
+                          fontSize:13, cursor:'pointer'}}>Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// EditEventOverlay (#19)
+function EditEventOverlay({ M, idx, ev, onSave, onClose }) {
+  const [tp, setTp] = useStateMV(ev.tp);
+  const [pl, setPl] = useStateMV(ev.pl || '');
+  const [passer, setPasser] = useStateMV(ev.passer || '');
+  const [mn, setMn] = useStateMV(ev.mn || 0);
+  const save = () => {
+    const p = { tp, pl, mn: parseInt(mn, 10) || 0 };
+    if (tp === 'goal') p.passer = passer || null;
+    if (MATCH_HELPERS.editEvent) MATCH_HELPERS.editEvent(M, idx, p);
+    onSave();
+  };
+  const delEvent = () => {
+    if (!confirm('Supprimer cet evenement ?')) return;
+    M.ev.splice(idx, 1);
+    if (ev.tp === 'goal' && ev.t) {
+      if (ev.t === 'A') M.sA = Math.max(0, (M.sA || 0) - 1);
+      if (ev.t === 'B') M.sB = Math.max(0, (M.sB || 0) - 1);
+    }
+    onSave();
+  };
+  return (
+    <div className="mv-modal-overlay" onClick={onClose} style={{zIndex:9999}}>
+      <div className="mv-modal" onClick={e => e.stopPropagation()} style={{maxWidth:'92%', width:'400px'}}>
+        <div className="mv-modal-h">
+          <h2 className="mv-modal-t">Editer l'evenement</h2>
+          <button className="mv-modal-x" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:'14px 16px'}}>
+          <label style={{display:'block', marginBottom:12}}>
+            <span style={{display:'block', fontSize:11, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>TYPE</span>
+            <select value={tp} onChange={e => setTp(e.target.value)}
+                    style={{width:'100%', height:38, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                            borderRadius:8, color:'#fff', padding:'0 10px', fontSize:13}}>
+              <option value="goal">But</option><option value="yellow">Carton jaune</option>
+              <option value="red">Carton rouge</option><option value="sub">Changement</option>
+              <option value="injury">Blessure</option>
+            </select>
+          </label>
+          <label style={{display:'block', marginBottom:12}}>
+            <span style={{display:'block', fontSize:11, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>JOUEUR</span>
+            <input value={pl} onChange={e => setPl(e.target.value)}
+                   style={{width:'100%', height:38, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                           borderRadius:8, color:'#fff', padding:'0 10px', fontSize:13}}/>
+          </label>
+          {tp === 'goal' && (
+            <label style={{display:'block', marginBottom:12}}>
+              <span style={{display:'block', fontSize:11, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>PASSEUR</span>
+              <input value={passer} onChange={e => setPasser(e.target.value)}
+                     style={{width:'100%', height:38, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                             borderRadius:8, color:'#fff', padding:'0 10px', fontSize:13}}/>
+            </label>
+          )}
+          <label style={{display:'block', marginBottom:12}}>
+            <span style={{display:'block', fontSize:11, fontWeight:700, color:'rgba(255,255,255,.6)', marginBottom:4}}>MINUTE</span>
+            <input type="number" value={mn} onChange={e => setMn(e.target.value)}
+                   style={{width:'100%', height:38, background:'rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+                           borderRadius:8, color:'#fff', padding:'0 10px', fontSize:13}}/>
+          </label>
+        </div>
+        <div style={{padding:'10px 16px 16px', display:'flex', gap:8}}>
+          <button onClick={delEvent}
+                  style={{padding:'10px 14px', borderRadius:8, border:'1px solid rgba(255,80,80,.3)',
+                          background:'rgba(255,80,80,.12)', color:'#ff8a8a', fontWeight:700, cursor:'pointer'}}>🗑 Supprimer</button>
+          <button onClick={onClose}
+                  style={{flex:1, padding:'10px', borderRadius:8, border:'1px solid rgba(255,255,255,.15)',
+                          background:'transparent', color:'#fff', fontWeight:700, cursor:'pointer'}}>Annuler</button>
+          <button onClick={save}
+                  style={{flex:1, padding:'10px', borderRadius:8, border:'none',
+                          background:'var(--acc, #c8f169)', color:'#000', fontWeight:800, cursor:'pointer'}}>💾 Enregistrer</button>
         </div>
       </div>
     </div>
