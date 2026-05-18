@@ -185,108 +185,192 @@ window.ScreenEffectif = ScreenEffectif;
    ============================================================ */
 
 function ScreenLineup({ go, tweaks }) {
-  const [formation, setFormation] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
-      const activeTeam = window.CDD?.getActiveTeam?.();
-      if (activeTeam && saved[activeTeam.id]?.formation) return saved[activeTeam.id].formation;
-    } catch (e) {}
-    return "4-3-3";
-  });
-  const [showFormationPicker, setShowFormationPicker] = useState(false);
   const formations = Object.keys(CDD_FORMATIONS);
 
-  // Build initial assignment: lineup-template (localStorage) > FFF lineupTemplate > fallback
-  const buildInitialAssign = (formationKey) => {
-    const slots = CDD_FORMATIONS[formationKey];
-    const map = {};
+  // ===== Initial state — 3 listes : starters (map slotIdx→pid), bench[], reserve[] =====
+  const buildInitial = () => {
     const activeTeam = window.CDD?.getActiveTeam?.();
-
-    // 1. Coach's saved override (highest priority)
+    // 1. localStorage cdd_lineup_template (nouveau format avec starters/bench/reserve)
     try {
-      const saved = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
-      const teamCfg = activeTeam && saved[activeTeam.id];
-      if (teamCfg && teamCfg.formation === formationKey && teamCfg.slots) {
-        Object.assign(map, teamCfg.slots);
-        return map;
+      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      const s = activeTeam && all[activeTeam.id];
+      if (s && s.formation && s.starters && Array.isArray(s.bench) && Array.isArray(s.reserve)) {
+        return { formation: s.formation, starters: s.starters, bench: s.bench, reserve: s.reserve };
       }
     } catch (e) {}
-
-    // 2. FFF lineupTemplate
+    // 2. FFF lineupTemplate sinon isStarter
+    const formation = '4-3-3';
+    const slots = CDD_FORMATIONS[formation];
     const tpl = activeTeam?.lineupTemplate;
-    if (tpl?.startersIds?.length) {
-      tpl.startersIds.forEach((pid, i) => {
-        if (i < slots.length) map[i] = pid;
-      });
-      return map;
-    }
-
-    // 3. Fallback: use isStarter players in order
-    const starters = CDD_PLAYERS.filter(p => p.isStarter).slice(0, slots.length);
-    starters.forEach((p, i) => { map[i] = p.id; });
-    return map;
+    const startersIds = (tpl?.startersIds && tpl.startersIds.length)
+      ? tpl.startersIds
+      : CDD_PLAYERS.filter(p => p.isStarter).slice(0, slots.length).map(p => p.id);
+    const starters = {};
+    startersIds.slice(0, slots.length).forEach((pid, i) => { starters[i] = pid; });
+    const used = new Set(Object.values(starters));
+    const benchArr = CDD_PLAYERS.filter(p => !used.has(p.id) && p.status !== 'reserve').slice(0, 7).map(p => p.id);
+    benchArr.forEach(pid => used.add(pid));
+    const reserveArr = CDD_PLAYERS.filter(p => !used.has(p.id)).map(p => p.id);
+    return { formation, starters, bench: benchArr, reserve: reserveArr };
   };
 
-  const [assign, setAssign] = useState(() => buildInitialAssign(formation));
-  const [selectedIdx, setSelectedIdx] = useState(null);
+  const [lineup, setLineup] = useState(buildInitial);
+  const [selection, setSelection] = useState(null);  // { type:'slot'|'bench'|'reserve', idx?, pid? }
   const [saved, setSaved] = useState(false);
+  const [showFormationPicker, setShowFormationPicker] = useState(false);
+  const [reserveSearch, setReserveSearch] = useState('');
 
-  // Persist assign + formation whenever they change
+  const slots = CDD_FORMATIONS[lineup.formation];
+  const playerOf = (pid) => pid && CDD_PLAYERS.find(p => p.id === pid);
+  const starterPlayers = slots.map((_, i) => playerOf(lineup.starters[i])).filter(Boolean);
+  const benchPlayers = lineup.bench.map(pid => playerOf(pid)).filter(Boolean);
+  const reservePlayers = lineup.reserve.map(pid => playerOf(pid)).filter(Boolean);
+  const teamOvr = starterPlayers.length ? Math.round(starterPlayers.reduce((s,p)=>s+(p.stats?.ovr||0),0)/starterPlayers.length) : 0;
+  const allFilled = starterPlayers.length === slots.length;
+  const selectedPlayerName = (() => {
+    if (!selection) return null;
+    if (selection.type === 'slot') {
+      const p = playerOf(lineup.starters[selection.idx]);
+      return p ? `${p.first} ${p.last}` : `Slot ${selection.idx+1} (vide)`;
+    }
+    const p = playerOf(selection.pid);
+    return p ? `${p.first} ${p.last}` : 'Inconnu';
+  })();
+
+  // Persist
   useEffect(() => {
     const activeTeam = window.CDD?.getActiveTeam?.();
     if (!activeTeam) return;
     try {
       const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
-      all[activeTeam.id] = { formation, slots: assign, updatedAt: Date.now() };
+      all[activeTeam.id] = { ...lineup, updatedAt: Date.now() };
       localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
       setSaved(true);
       const t = setTimeout(() => setSaved(false), 1400);
       return () => clearTimeout(t);
     } catch (e) {}
-  }, [formation, assign]);
+  }, [lineup]);
 
-  // Re-build on formation change BUT keep existing player assignments if possible
-  useEffect(() => {
-    const newSlots = CDD_FORMATIONS[formation];
-    const currentPlayers = Object.values(assign).filter(Boolean);
-    const map = {};
-    // Keep first N players from current assignment
-    currentPlayers.slice(0, newSlots.length).forEach((pid, i) => {
-      map[i] = pid;
-    });
-    // Fill any empty slots from the team's starters / reserve
-    const used = new Set(Object.values(map));
-    const available = CDD_PLAYERS.filter(p => !used.has(p.id));
-    newSlots.forEach((_, i) => {
-      if (!map[i] && available.length > 0) {
-        const next = available.shift();
-        if (next) map[i] = next.id;
-      }
-    });
-    setAssign(map);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formation]);
-
-  const slots = CDD_FORMATIONS[formation];
-  const startingIds = new Set(Object.values(assign));
-  const bench = CDD_PLAYERS.filter(p => !startingIds.has(p.id) && p.status !== 'reserve').slice(0, 7);
-  const reserve = CDD_PLAYERS.filter(p => !startingIds.has(p.id) && p.status === 'reserve').slice(0, 6);
-
-  const handleSlotClick = (i) => {
-    if (selectedIdx === null) setSelectedIdx(i);
-    else if (selectedIdx === i) setSelectedIdx(null);
-    else {
-      const next = { ...assign };
-      [next[selectedIdx], next[i]] = [next[i], next[selectedIdx]];
-      setAssign(next);
-      setSelectedIdx(null);
+  // Change formation
+  const changeFormation = (newF) => {
+    const newSlots = CDD_FORMATIONS[newF];
+    const currentIds = Object.keys(lineup.starters).sort((a,b) => +a - +b).map(k => lineup.starters[k]).filter(Boolean);
+    const newStarters = {};
+    currentIds.slice(0, newSlots.length).forEach((pid, i) => { newStarters[i] = pid; });
+    const benchCopy = [...lineup.bench];
+    for (let i = 0; i < newSlots.length; i++) {
+      if (!newStarters[i] && benchCopy.length > 0) newStarters[i] = benchCopy.shift();
     }
+    const demoted = currentIds.slice(newSlots.length);
+    setLineup({ ...lineup, formation: newF, starters: newStarters, bench: [...demoted, ...benchCopy] });
+    setSelection(null);
+    setShowFormationPicker(false);
   };
 
-  const playerOf = (i) => assign[i] ? CDD_PLAYERS.find(p => p.id === assign[i]) : null;
-  const starters = slots.map((_,i) => playerOf(i)).filter(Boolean);
-  const teamOvr = starters.length ? Math.round(starters.reduce((s,p)=>s+(p.stats?.ovr||0),0)/starters.length) : 0;
-  const allFilled = starters.length === slots.length;
+  // Tap logic unifié
+  const sameTarget = (a, b) => {
+    if (!a || !b) return false;
+    if (a.type !== b.type) return false;
+    if (a.type === 'slot') return a.idx === b.idx;
+    return a.pid === b.pid;
+  };
+  const handleTap = (target) => {
+    if (!selection) { setSelection(target); return; }
+    if (sameTarget(selection, target)) { setSelection(null); return; }
+    setLineup(l => doSwap(l, selection, target));
+    setSelection(null);
+  };
+  const doSwap = (l, a, b) => {
+    const next = { ...l, starters: {...l.starters}, bench: [...l.bench], reserve: [...l.reserve] };
+    // slot↔slot
+    if (a.type === 'slot' && b.type === 'slot') {
+      const va = next.starters[a.idx], vb = next.starters[b.idx];
+      if (va) next.starters[a.idx] = vb; else delete next.starters[a.idx];
+      if (vb) next.starters[b.idx] = va; else delete next.starters[b.idx];
+      if (!va) delete next.starters[b.idx];
+      if (!vb) delete next.starters[a.idx];
+      if (va !== undefined) next.starters[b.idx] = va;
+      if (vb !== undefined) next.starters[a.idx] = vb;
+      return next;
+    }
+    // bench↔bench
+    if (a.type === 'bench' && b.type === 'bench') {
+      const ia = next.bench.indexOf(a.pid), ib = next.bench.indexOf(b.pid);
+      if (ia >= 0 && ib >= 0) { [next.bench[ia], next.bench[ib]] = [next.bench[ib], next.bench[ia]]; }
+      return next;
+    }
+    // reserve↔reserve
+    if (a.type === 'reserve' && b.type === 'reserve') {
+      const ia = next.reserve.indexOf(a.pid), ib = next.reserve.indexOf(b.pid);
+      if (ia >= 0 && ib >= 0) { [next.reserve[ia], next.reserve[ib]] = [next.reserve[ib], next.reserve[ia]]; }
+      return next;
+    }
+    // Normaliser : slot toujours en premier
+    let s = a.type === 'slot' ? a : (b.type === 'slot' ? b : null);
+    let o = s === a ? b : (s === b ? a : null);
+    if (s && o && (o.type === 'bench' || o.type === 'reserve')) {
+      const slotPid = next.starters[s.idx];
+      const otherList = o.type === 'bench' ? next.bench : next.reserve;
+      const i = otherList.indexOf(o.pid);
+      next.starters[s.idx] = o.pid;
+      if (i >= 0) {
+        if (slotPid) otherList[i] = slotPid;
+        else otherList.splice(i, 1);
+      } else if (slotPid) {
+        otherList.push(slotPid);
+      }
+      return next;
+    }
+    // bench↔reserve
+    if ((a.type === 'bench' && b.type === 'reserve') || (a.type === 'reserve' && b.type === 'bench')) {
+      const benchSel = a.type === 'bench' ? a : b;
+      const resSel   = a.type === 'reserve' ? a : b;
+      const ib = next.bench.indexOf(benchSel.pid);
+      const ir = next.reserve.indexOf(resSel.pid);
+      if (ib >= 0 && ir >= 0) { next.bench[ib] = resSel.pid; next.reserve[ir] = benchSel.pid; }
+      return next;
+    }
+    return l;
+  };
+
+  // Retirer du terrain → réserve
+  const removeFromPitch = (slotIdx) => {
+    setLineup(l => {
+      const next = { ...l, starters: {...l.starters}, bench: [...l.bench], reserve: [...l.reserve] };
+      const pid = next.starters[slotIdx];
+      if (pid) {
+        delete next.starters[slotIdx];
+        if (!next.reserve.includes(pid) && !next.bench.includes(pid)) next.reserve.push(pid);
+      }
+      return next;
+    });
+    setSelection(null);
+  };
+
+  // Reset formation initial
+  const resetLineup = () => {
+    if (!confirm("Réinitialiser la compo aux titulaires FFF ?")) return;
+    const activeTeam = window.CDD?.getActiveTeam?.();
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      if (activeTeam && all[activeTeam.id]) {
+        delete all[activeTeam.id];
+        localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
+      }
+    } catch (e) {}
+    setLineup(buildInitial());
+    setSelection(null);
+  };
+
+  // Selection helpers
+  const isSlotSelected = (i) => selection?.type === 'slot' && selection.idx === i;
+  const isPidSelected  = (pid) => (selection?.type === 'bench' || selection?.type === 'reserve') && selection?.pid === pid;
+
+  // Reserve search filter
+  const reserveFiltered = !reserveSearch.trim() ? reservePlayers : reservePlayers.filter(p => {
+    const q = reserveSearch.toLowerCase();
+    return (p.first + ' ' + p.last + ' ' + (p.num||'')).toLowerCase().includes(q);
+  });
 
   return (
     <div className="scr scr-lineup fade-in" data-screen-label="03 Lineup">
@@ -295,7 +379,7 @@ function ScreenLineup({ go, tweaks }) {
         <div className="lu-top-l">
           <span className="lu-top-k">FORMATION{saved && <em className="lu-saved"> · ✓ Enregistré</em>}</span>
           <button className="lu-formation-current" onClick={() => setShowFormationPicker(true)}>
-            <b>{formation}</b>
+            <b>{lineup.formation}</b>
             <span className="lu-formation-arr">▾</span>
           </button>
         </div>
@@ -306,6 +390,29 @@ function ScreenLineup({ go, tweaks }) {
           </div>
         </div>
       </div>
+
+      {/* Bandeau sélection */}
+      {selection && (
+        <div style={{
+          margin:"0 14px 8px", padding:"10px 14px", borderRadius:10,
+          background:"rgba(200,241,105,0.10)", border:"1px solid var(--acc, #c8f169)",
+          fontSize:13, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8
+        }}>
+          <span><b style={{color:"var(--acc, #c8f169)"}}>{selectedPlayerName}</b> sélectionné · tap un autre joueur pour échanger</span>
+          <div style={{display:"flex", gap:6}}>
+            {selection.type === 'slot' && lineup.starters[selection.idx] && (
+              <button onClick={() => removeFromPitch(selection.idx)}
+                      style={{fontSize:11, padding:"4px 10px", borderRadius:6, border:"1px solid #ff8a8a", background:"transparent", color:"#ff8a8a", cursor:"pointer"}}>
+                ✕ Retirer
+              </button>
+            )}
+            <button onClick={() => setSelection(null)}
+                    style={{fontSize:11, padding:"4px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.2)", background:"transparent", color:"#fff", cursor:"pointer"}}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Formation picker modal */}
       {showFormationPicker && (
@@ -318,8 +425,8 @@ function ScreenLineup({ go, tweaks }) {
             <div className="lu-fp-grid">
               {formations.map(f => (
                 <button key={f}
-                  className={`lu-fp-card ${formation===f?"on":""}`}
-                  onClick={() => { setFormation(f); setShowFormationPicker(false); }}>
+                  className={`lu-fp-card ${lineup.formation===f?"on":""}`}
+                  onClick={() => changeFormation(f)}>
                   <div className="lu-fp-mini">
                     <FormationDiagram formationKey={f} />
                   </div>
@@ -362,14 +469,15 @@ function ScreenLineup({ go, tweaks }) {
           </svg>
 
           {slots.map((s, i) => {
-            const p = playerOf(i);
-            const isSel = selectedIdx === i;
+            const pid = lineup.starters[i];
+            const p = playerOf(pid);
+            const isSel = isSlotSelected(i);
             const color = CDD_POS_COLOR[s.pos] || "var(--acc)";
             return (
               <button key={i}
                 className={`lu-slot ${isSel?"on":""} ${p?"":"empty"}`}
                 style={{ left: s.x+"%", top: s.y+"%", "--slot-c": color }}
-                onClick={() => handleSlotClick(i)}>
+                onClick={() => handleTap({type:'slot', idx:i})}>
                 {p ? (
                   <>
                     <div className="lu-slot-num num">{p.num}</div>
@@ -390,12 +498,16 @@ function ScreenLineup({ go, tweaks }) {
       </div>
 
       <div className="sec-h">
-        <span className="t">Banc · {bench.length}</span>
+        <span className="t">Banc · {benchPlayers.length}</span>
         <span className="a">Tap pour permuter</span>
       </div>
       <div className="lu-bench">
-        {bench.map(p => (
-          <button key={p.id} className="lu-bench-card">
+        {benchPlayers.length === 0 && <div style={{padding:"10px 14px", opacity:0.5, fontSize:12}}>Aucun remplaçant — tape un joueur du terrain puis un de la réserve pour le faire entrer au banc</div>}
+        {benchPlayers.map(p => (
+          <button key={p.id}
+            className={`lu-bench-card ${isPidSelected(p.id)?"on":""}`}
+            style={isPidSelected(p.id) ? {outline:"2px solid var(--acc, #c8f169)", outlineOffset:2} : null}
+            onClick={() => handleTap({type:'bench', pid:p.id})}>
             <span className="lu-bench-num num">{p.num}</span>
             <span className="lu-bench-name">{p.first}</span>
             <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
@@ -404,29 +516,41 @@ function ScreenLineup({ go, tweaks }) {
         ))}
       </div>
 
-      {reserve.length > 0 && (
-        <>
-          <div className="sec-h">
-            <span className="t">Réserve · {reserve.length}</span>
-            <span className="a">Non convoqués</span>
-          </div>
-          <div className="lu-bench">
-            {reserve.map(p => (
-              <button key={p.id} className="lu-bench-card reserve">
-                <span className="lu-bench-num num">{p.num}</span>
-                <span className="lu-bench-name">{p.first}</span>
-                <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-                <span className="lu-bench-ovr num">{p.stats.ovr}</span>
-              </button>
-            ))}
-          </div>
-        </>
+      <div className="sec-h">
+        <span className="t">Réserve / Non retenus · {reservePlayers.length}</span>
+        <span className="a">{reserveSearch.trim() ? `${reserveFiltered.length} match` : 'Tap pour faire monter'}</span>
+      </div>
+      {reservePlayers.length > 5 && (
+        <div style={{padding:"0 14px 10px"}}>
+          <input
+            type="search"
+            placeholder="Rechercher dans la réserve…"
+            value={reserveSearch}
+            onChange={e => setReserveSearch(e.target.value)}
+            style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.1)", background:"rgba(255,255,255,0.04)", color:"#fff", fontSize:13}}
+          />
+        </div>
       )}
+      <div className="lu-bench">
+        {reserveFiltered.length === 0 && reserveSearch.trim() && <div style={{padding:"10px 14px", opacity:0.5, fontSize:12}}>Aucun joueur trouvé</div>}
+        {reserveFiltered.map(p => (
+          <button key={p.id}
+            className={`lu-bench-card reserve ${isPidSelected(p.id)?"on":""}`}
+            style={isPidSelected(p.id) ? {outline:"2px solid var(--acc, #c8f169)", outlineOffset:2} : null}
+            onClick={() => handleTap({type:'reserve', pid:p.id})}>
+            <span className="lu-bench-num num">{p.num}</span>
+            <span className="lu-bench-name">{p.first}</span>
+            <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
+            <span className="lu-bench-ovr num">{p.stats.ovr}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="lu-actions">
+        <button className="btn-cta ghost" onClick={resetLineup} title="Réinitialiser à la compo FFF">↻ Reset</button>
         <button className="btn-cta ghost" onClick={()=>go("home")}>← Retour</button>
         <button className="btn-cta" onClick={()=>go("match")} disabled={!allFilled}>
-          <span>{allFilled ? "COUP D'ENVOI" : `${slots.length - starters.length} POSTE(S) VIDE(S)`}</span>
+          <span>{allFilled ? "COUP D'ENVOI" : `${slots.length - starterPlayers.length} POSTE(S) VIDE(S)`}</span>
           <span className="arr">⚽</span>
         </button>
       </div>

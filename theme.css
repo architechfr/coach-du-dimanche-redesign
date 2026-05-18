@@ -111,6 +111,20 @@ button { font-family: inherit; cursor: pointer; }
   .phone { width: 100vw; height: 100dvh; border-radius: 0; box-shadow: none; border: none; }
   .phone-notch { display: none; }
 }
+
+/* PWA installée : full screen sans bordure mockup, quel que soit l'écran */
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+  .app-stage { padding: 0 !important; min-height: 100vh; }
+  .phone {
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .phone-notch { display: none !important; }
+}
 .phone-notch {
   position: absolute;
   top: 10px; left: 50%; transform: translateX(-50%);

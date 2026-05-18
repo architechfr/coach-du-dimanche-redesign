@@ -194,19 +194,7 @@ function App() {
     <div className="app-stage" data-screen-label={`Phone — ${screen}`}>
 
       <div className="phone">
-        <div className="phone-notch"/>
         <div className="phone-screen">
-
-          {/* Status bar */}
-          <div className="status-bar">
-            <span className="num">10:24</span>
-            <span className="right">
-              <span style={{fontSize:11, fontWeight:600}}>5G</span>
-              <span style={{display:"inline-block", width:18, height:11, border:"1px solid #fff", borderRadius:2, position:"relative"}}>
-                <span style={{position:"absolute", inset:1, background:"#fff", width:"82%", borderRadius:1}}/>
-              </span>
-            </span>
-          </div>
 
           {/* Header (hidden on onboarding & home) */}
           {screen !== "onb" && screen !== "home" && (
