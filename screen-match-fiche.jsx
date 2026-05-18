@@ -205,6 +205,7 @@ function ScreenFiche({ go, tweaks, player }) {
 
       <div className="fi-tabs">
         {[
+          {id:"profil", l:"Profil"},
           {id:"stats", l:"Stats"},
           {id:"saison", l:"Saison"},
           {id:"obs",  l:"Observations"},
@@ -214,6 +215,8 @@ function ScreenFiche({ go, tweaks, player }) {
           </button>
         ))}
       </div>
+
+      {tab === "profil" && <ProfilTab player={p} onChange={triggerRefresh} />}
 
       {tab === "stats" && (
         <div className="fi-stats-tab">
@@ -372,3 +375,190 @@ function ScreenFiche({ go, tweaks, player }) {
 }
 
 window.ScreenFiche = ScreenFiche;
+
+
+/* ============================================================
+   ProfilTab — formulaire complet du profil joueur
+   ============================================================
+   Édite poste, licence, n°, taille, poids, pied fort,
+   date de naissance, téléphones, email, photo.
+   Persisté via window.CDD_COACH.setProfile(playerId, patch).
+   ============================================================ */
+function ProfilTab({ player, onChange }) {
+  const CO = window.CDD_COACH;
+  const POSITION_CHOICES = (CO && CO.POSITION_CHOICES) || [];
+  const FOOT_CHOICES = (CO && CO.FOOT_CHOICES) || [];
+
+  const init = () => {
+    const ov = (CO && CO.getProfile) ? CO.getProfile(player.id) : {};
+    return {
+      position:    ov.position    || player.posLabel || player.pos || '',
+      licence:     ov.licence     || player.license || '',
+      num:         ov.num         != null ? ov.num   : (player.num || ''),
+      height:      ov.height      || player.height   || '',
+      weight:      ov.weight      || player.weight   || '',
+      foot:        ov.foot        || player.foot     || '',
+      birthDate:   ov.birthDate   || player.birthDate || '',
+      phone:       ov.phone       || player.phone     || '',
+      parentPhone: ov.parentPhone || player.parentPhone || '',
+      email:       ov.email       || player.email      || '',
+      photoDataUrl: ov.photoDataUrl || (player.raw && player.raw.photoDataUrl) || '',
+    };
+  };
+  const [form, setForm] = React.useState(init);
+  const [saved, setSaved] = React.useState(false);
+
+  const set = (k) => (e) => {
+    const v = e && e.target ? e.target.value : e;
+    setForm(f => ({ ...f, [k]: v }));
+  };
+
+  const onSave = () => {
+    if (!CO || !CO.setProfile) return;
+    const patch = { ...form };
+    ['num', 'height', 'weight'].forEach(k => {
+      if (patch[k] !== '' && patch[k] != null) {
+        const n = parseInt(patch[k], 10);
+        if (!isNaN(n)) patch[k] = n;
+      }
+    });
+    CO.setProfile(player.id, patch);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+    if (onChange) onChange();
+  };
+
+  const onReset = () => {
+    if (!CO || !CO.resetProfile) return;
+    if (!confirm('Effacer toutes tes modifs de profil et revenir aux données FFF/seed ?')) return;
+    CO.resetProfile(player.id);
+    setForm(init());
+    if (onChange) onChange();
+  };
+
+  const onPhoto = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (file.size > 1500000) {
+      alert('Photo trop lourde (max ~1,5 Mo). Recompresse-la avant.');
+      return;
+    }
+    const r = new FileReader();
+    r.onload = () => set('photoDataUrl')(r.result);
+    r.readAsDataURL(file);
+  };
+
+  return (
+    <div className="fi-profil">
+      <div className="fi-profil-grid">
+
+        <div className="fi-pf-section">
+          <div className="fi-pf-h">IDENTITÉ</div>
+          <label className="fi-pf-l">
+            <span>Poste principal</span>
+            <select className="fi-pf-i" value={form.position} onChange={set('position')}>
+              <option value="">— Aucun —</option>
+              <optgroup label="Gardien">
+                {POSITION_CHOICES.filter(o=>o.grp==='gk').map(o => <option key={o.id} value={o.id}>{o.l}</option>)}
+              </optgroup>
+              <optgroup label="Défense">
+                {POSITION_CHOICES.filter(o=>o.grp==='def').map(o => <option key={o.id} value={o.id}>{o.l}</option>)}
+              </optgroup>
+              <optgroup label="Milieu">
+                {POSITION_CHOICES.filter(o=>o.grp==='mid').map(o => <option key={o.id} value={o.id}>{o.l}</option>)}
+              </optgroup>
+              <optgroup label="Attaque">
+                {POSITION_CHOICES.filter(o=>o.grp==='att').map(o => <option key={o.id} value={o.id}>{o.l}</option>)}
+              </optgroup>
+            </select>
+          </label>
+          <label className="fi-pf-l">
+            <span>N° maillot préféré</span>
+            <input className="fi-pf-i" type="number" min="1" max="99"
+                   value={form.num} onChange={set('num')} placeholder="1-99"/>
+          </label>
+          <label className="fi-pf-l">
+            <span>N° licence FFF</span>
+            <input className="fi-pf-i mono" value={form.licence} onChange={set('licence')}
+                   placeholder="ex: 9602572213"/>
+          </label>
+          <label className="fi-pf-l">
+            <span>Date de naissance</span>
+            <input className="fi-pf-i" type="text" value={form.birthDate} onChange={set('birthDate')}
+                   placeholder="JJ/MM/AAAA"/>
+          </label>
+        </div>
+
+        <div className="fi-pf-section">
+          <div className="fi-pf-h">PHYSIQUE</div>
+          <label className="fi-pf-l">
+            <span>Taille (cm)</span>
+            <input className="fi-pf-i" type="number" min="120" max="220"
+                   value={form.height} onChange={set('height')} placeholder="ex: 175"/>
+          </label>
+          <label className="fi-pf-l">
+            <span>Poids (kg)</span>
+            <input className="fi-pf-i" type="number" min="25" max="150"
+                   value={form.weight} onChange={set('weight')} placeholder="ex: 68"/>
+          </label>
+          <label className="fi-pf-l">
+            <span>Pied fort</span>
+            <div className="fi-pf-radio">
+              {FOOT_CHOICES.map(o => (
+                <button key={o.id} type="button"
+                  className={`fi-pf-rc ${form.foot===o.id?'on':''}`}
+                  onClick={() => set('foot')(o.id)}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+          </label>
+        </div>
+
+        <div className="fi-pf-section">
+          <div className="fi-pf-h">CONTACT</div>
+          <label className="fi-pf-l">
+            <span>Téléphone joueur</span>
+            <input className="fi-pf-i" type="tel" value={form.phone} onChange={set('phone')}
+                   placeholder="06 12 34 56 78"/>
+          </label>
+          <label className="fi-pf-l">
+            <span>Téléphone parent</span>
+            <input className="fi-pf-i" type="tel" value={form.parentPhone} onChange={set('parentPhone')}
+                   placeholder="06 12 34 56 78"/>
+          </label>
+          <label className="fi-pf-l">
+            <span>Email parent</span>
+            <input className="fi-pf-i" type="email" value={form.email} onChange={set('email')}
+                   placeholder="parent@email.fr"/>
+          </label>
+        </div>
+
+        <div className="fi-pf-section">
+          <div className="fi-pf-h">PHOTO</div>
+          <label className="fi-pf-l fi-pf-photo">
+            <span>Photo joueur</span>
+            <input className="fi-pf-i" type="file" accept="image/*" onChange={onPhoto}/>
+            {form.photoDataUrl && (
+              <div className="fi-pf-photo-prev">
+                <img src={form.photoDataUrl} alt="" style={{maxWidth:'100px', borderRadius:'8px', marginTop:'8px'}}/>
+                <button type="button" className="fi-attrs-btn-reset"
+                        onClick={() => set('photoDataUrl')('')}>Retirer</button>
+              </div>
+            )}
+          </label>
+        </div>
+      </div>
+
+      <div className="fi-pf-actions">
+        <button className="fi-attrs-btn-reset" onClick={onReset} type="button">
+          ↺ Reset
+        </button>
+        <button className="fi-attrs-btn-done" onClick={onSave} type="button">
+          {saved ? '✓ Enregistré' : '💾 Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+}
+window.ProfilTab = ProfilTab;

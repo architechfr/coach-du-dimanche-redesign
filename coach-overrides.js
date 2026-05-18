@@ -7,7 +7,33 @@
      cdd_player_status_override → { playerId: 'active'|'rest'|'reserve'|'suspended'|'injured' }
      cdd_player_stats_override  → { playerId: { PAC, SHO, PAS, DRI, DEF, PHY } }
      cdd_player_notes           → { playerId: [{ date, tag, txt }] }
+     cdd_player_profile         → { playerId: { position, licence, num, height, weight,
+                                                foot, birthDate, phone, parentPhone, email,
+                                                photoDataUrl, notes } }
+     cdd_player_status_meta     → { playerId: { reason, until } }
    ============================================================ */
+
+// Postes officiels (codes courts utilisés par l'UI)
+const POSITION_CHOICES = [
+  { id: "GK",  l: "Gardien",            grp: "gk"  },
+  { id: "DC",  l: "Défenseur central",  grp: "def" },
+  { id: "DG",  l: "Latéral gauche",     grp: "def" },
+  { id: "DD",  l: "Latéral droit",      grp: "def" },
+  { id: "DM",  l: "Milieu défensif",    grp: "mid" },
+  { id: "MC",  l: "Milieu central",     grp: "mid" },
+  { id: "MOC", l: "Milieu offensif",    grp: "mid" },
+  { id: "ML",  l: "Milieu gauche",      grp: "mid" },
+  { id: "MD",  l: "Milieu droit",       grp: "mid" },
+  { id: "AG",  l: "Ailier gauche",      grp: "att" },
+  { id: "AD",  l: "Ailier droit",       grp: "att" },
+  { id: "BU",  l: "Buteur",             grp: "att" },
+];
+
+const FOOT_CHOICES = [
+  { id: "D", l: "Droit" },
+  { id: "G", l: "Gauche" },
+  { id: "A", l: "Ambidextre" },
+];
 
 window.CDD_COACH = {
   // Status (cycle 4 values)
@@ -70,6 +96,53 @@ window.CDD_COACH = {
     delete all[playerId];
     try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+  },
+
+  // ─── Profil joueur (poste, licence, taille, pied, parents…) ───
+  POSITION_CHOICES,
+  FOOT_CHOICES,
+  getProfileOverrides() {
+    try { return JSON.parse(localStorage.getItem('cdd_player_profile') || '{}'); }
+    catch (e) { return {}; }
+  },
+  getProfile(playerId) {
+    return this.getProfileOverrides()[playerId] || {};
+  },
+  setProfile(playerId, patch) {
+    const all = this.getProfileOverrides();
+    all[playerId] = { ...(all[playerId] || {}), ...patch };
+    Object.keys(all[playerId]).forEach(k => {
+      const v = all[playerId][k];
+      if (v === null || v === undefined || v === '') delete all[playerId][k];
+    });
+    if (Object.keys(all[playerId]).length === 0) delete all[playerId];
+    try { localStorage.setItem('cdd_player_profile', JSON.stringify(all)); } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+  resetProfile(playerId) {
+    const all = this.getProfileOverrides();
+    delete all[playerId];
+    try { localStorage.setItem('cdd_player_profile', JSON.stringify(all)); } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+
+  // ─── Métadonnées de statut (motif blessure, durée etc.) ───
+  getStatusMeta(playerId) {
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_status_meta') || '{}');
+      return all[playerId] || {};
+    } catch (e) { return {}; }
+  },
+  setStatusMeta(playerId, meta) {
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_status_meta') || '{}');
+      all[playerId] = { ...(all[playerId] || {}), ...meta };
+      localStorage.setItem('cdd_player_status_meta', JSON.stringify(all));
+    } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
 
   // Notes / observations

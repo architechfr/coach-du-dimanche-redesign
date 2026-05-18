@@ -133,18 +133,38 @@
   opacity: .35;
 }
 
-/* Name + divider */
+/* Name + divider — prénom en gros, nom de famille en dessous plus petit */
 .pc-name {
   position: absolute;
-  bottom: 32%;
+  bottom: 30%;
   left: 0; right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
   text-align: center;
-  font-size: var(--name);
-  font-weight: 900;
-  letter-spacing: .04em;
   z-index: 5;
   padding: 0 10px;
   text-shadow: 0 1px 0 rgba(0,0,0,.12);
+  gap: 1px;
+  line-height: 1;
+}
+.pc-name-first {
+  font-size: var(--name);
+  font-weight: 900;
+  letter-spacing: .02em;
+  text-transform: none;
+}
+.pc-name-last {
+  font-size: calc(var(--name) * .58);
+  font-weight: 700;
+  letter-spacing: .06em;
+  opacity: .82;
+  margin-top: 1px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pc-divider {
   position: absolute;
@@ -243,8 +263,9 @@
   line-height: 1.15;
   min-width: 0;
 }
-.pc-row-first { font-size: 12px; color: var(--tx-3); }
-.pc-row-last { font-size: 16px; font-weight: 700; color: var(--tx-1); }
+/* Row variant : prénom en gros, nom de famille en plus petit (demande coach) */
+.pc-row-first { font-size: 16px; font-weight: 700; color: var(--tx-1); line-height: 1.15; }
+.pc-row-last  { font-size: 11px; font-weight: 500; color: var(--tx-3); letter-spacing: .02em; }
 
 .pc-row-form { font-size: 18px; text-align: center; }
 .pc-row-form-hot { filter: drop-shadow(0 0 6px rgba(255,140,40,.6)); }
