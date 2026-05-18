@@ -510,15 +510,16 @@ async function rebuildCDDGlobals() {
   window.CDD_STANDINGS = [];
   window.CDD_TOP_SCORERS = [];
 
-  // ─── Convoc : taille configurable par équipe (14/16/18/20 ou libre) ───
+  // ─── Convoc : taille foot amateur, banc strict 3 à 5 (#51) ───
+  // 14 par défaut (11 + 3), extensible jusqu'à 16 (11 + 5) via bouton +.
   const lt = activeTeam?.lineupTemplate;
-  let convocCount = 14; // 11 titulaires + 3 remplaçants (défaut foot amateur)
+  let convocCount = 14; // default amateur
   try {
     const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
-    if (allSet[activeTeam?.id] && typeof allSet[activeTeam.id].count === 'number') {
-      convocCount = allSet[activeTeam.id].count;
-    } else if (allSet[activeTeam?.id] && allSet[activeTeam.id].count === null) {
-      convocCount = null; // illimité
+    const raw = allSet[activeTeam?.id]?.count;
+    if (typeof raw === 'number') {
+      // Clamp legacy values (15/18/20/null) sur [14, 16]
+      convocCount = Math.max(14, Math.min(16, raw));
     }
   } catch (e) {}
 
@@ -799,12 +800,22 @@ async function applyFFFData(fffCfg, clubName, players) {
 }
 
 // ─── API publique : régler la taille de la convoc d'une équipe ───
+// #51 — Banc strict : 11 titulaires + 3 à 5 remplaçants (foot amateur). Cap dur 14↔16.
+const CONVOC_MIN  = 14; // 11 + 3 (défaut foot amateur)
+const CONVOC_MAX  = 16; // 11 + 5 (extension max via bouton +)
+const BENCH_MIN   = 3;
+const BENCH_MAX   = 5;
+
 window.CDD_CONVOC = {
+  CONVOC_MIN, CONVOC_MAX, BENCH_MIN, BENCH_MAX,
   setSize(teamId, count) {
-    // count = number | null (illimité)
+    // #51 — count clampé entre 14 et 16 (banc 3 à 5). null/illimité retiré.
+    const clamped = (typeof count === 'number')
+      ? Math.max(CONVOC_MIN, Math.min(CONVOC_MAX, count))
+      : CONVOC_MIN;
     try {
       const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
-      all[teamId] = { count, updatedAt: Date.now() };
+      all[teamId] = { count: clamped, updatedAt: Date.now() };
       localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
     } catch (e) {}
     if (window.CDD_REBUILD) window.CDD_REBUILD();
@@ -812,29 +823,54 @@ window.CDD_CONVOC = {
   getSize(teamId) {
     try {
       const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
-      return all[teamId]?.count ?? 16;
-    } catch (e) { return 16; }
+      const raw = all[teamId]?.count;
+      if (typeof raw !== 'number') return CONVOC_MIN;
+      return Math.max(CONVOC_MIN, Math.min(CONVOC_MAX, raw));
+    } catch (e) { return CONVOC_MIN; }
   },
   // Ajoute un joueur à la convoc en starters ou bench (selon disponibilité)
+  // #51 — Si slot=bench et bench déjà à 5, refuse l'ajout (cap dur).
+  //       Sinon, étend automatiquement convocCount tant qu'on est sous le cap.
   addToConvoc(teamId, playerId, slot = 'bench') {
-    // Met à jour le lineupTemplate dans arb_teams
     try {
       const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
       const team = teams.find(t => t.id === teamId);
-      if (!team) return;
+      if (!team) return false;
       if (!team.lineupTemplate) team.lineupTemplate = {};
       const lt = team.lineupTemplate;
       lt.startersIds = lt.startersIds || [];
       lt.benchIds = lt.benchIds || [];
-      // Retirer d'abord du joueur des deux listes
+      // #51 — cap bench
+      if (slot === 'bench') {
+        const benchCountNow = lt.benchIds.filter(id => id !== playerId).length;
+        if (benchCountNow >= BENCH_MAX) {
+          // Refuse l'ajout, signaler via event pour UI
+          try { window.dispatchEvent(new CustomEvent('cdd-bench-full', { detail: { teamId, max: BENCH_MAX } })); } catch (e) {}
+          return false;
+        }
+      }
+      // Retirer d'abord le joueur des deux listes
       lt.startersIds = lt.startersIds.filter(id => id !== playerId);
       lt.benchIds    = lt.benchIds.filter(id    => id !== playerId);
       if (slot === 'starter') lt.startersIds.push(playerId);
       else                    lt.benchIds.push(playerId);
       lt.updatedAt = Date.now();
       localStorage.setItem('arb_teams', JSON.stringify(teams));
+
+      // #51 — auto-étendre convocCount si on ajoute un remplaçant et qu'on a de la marge
+      if (slot === 'bench') {
+        const currentSize = window.CDD_CONVOC.getSize(teamId);
+        const newBenchLen = lt.benchIds.length;
+        const targetSize = Math.min(CONVOC_MAX, 11 + newBenchLen);
+        if (targetSize > currentSize) {
+          const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+          all[teamId] = { count: targetSize, updatedAt: Date.now() };
+          localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
+        }
+      }
     } catch (e) {}
     if (window.CDD_REBUILD) window.CDD_REBUILD();
+    return true;
   },
   removeFromConvoc(teamId, playerId) {
     try {
@@ -842,10 +878,24 @@ window.CDD_CONVOC = {
       const team = teams.find(t => t.id === teamId);
       if (!team || !team.lineupTemplate) return;
       const lt = team.lineupTemplate;
+      const wasOnBench = (lt.benchIds || []).includes(playerId);
       lt.startersIds = (lt.startersIds || []).filter(id => id !== playerId);
       lt.benchIds    = (lt.benchIds    || []).filter(id => id !== playerId);
       lt.updatedAt = Date.now();
       localStorage.setItem('arb_teams', JSON.stringify(teams));
+
+      // #51 — Si on retire un remplaçant et qu'on était au-dessus du minimum,
+      // rétrécir convocCount pour rester aligné sur le banc réel.
+      if (wasOnBench) {
+        const currentSize = window.CDD_CONVOC.getSize(teamId);
+        const newBenchLen = lt.benchIds.length;
+        const targetSize = Math.max(CONVOC_MIN, 11 + newBenchLen);
+        if (targetSize < currentSize) {
+          const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+          all[teamId] = { count: targetSize, updatedAt: Date.now() };
+          localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
+        }
+      }
     } catch (e) {}
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },

@@ -305,17 +305,25 @@ function ScreenConvocations({ go, tweaks }) {
     };
   }, []);
 
-  // ─── Picker taille convoc (14 / 16 / 18 / 20 / libre) ───
-  const [showSizePicker, setShowSizePicker] = useState(false);
+  // #51 — Banc strict 3 à 5 (foot amateur). Picker numérique retiré.
   const teamId = window.CDD?.getActiveTeam?.()?.id;
-  const currentSize = conv.convocCount;
-  const setSize = (n) => {
-    if (!teamId || !window.CDD_CONVOC) return;
-    window.CDD_CONVOC.setSize(teamId, n);
-    setShowSizePicker(false);
-  };
+  const BENCH_MAX = (window.CDD_CONVOC && window.CDD_CONVOC.BENCH_MAX) || 5;
+  const BENCH_MIN = (window.CDD_CONVOC && window.CDD_CONVOC.BENCH_MIN) || 3;
+  const [benchFullToast, setBenchFullToast] = useState(false);
+
+  // Écoute l'event 'cdd-bench-full' dispatché par CDD_CONVOC quand on dépasse 5
+  useEffect(() => {
+    const handler = () => {
+      setBenchFullToast(true);
+      setTimeout(() => setBenchFullToast(false), 2600);
+    };
+    window.addEventListener('cdd-bench-full', handler);
+    return () => window.removeEventListener('cdd-bench-full', handler);
+  }, []);
+
   const addPlayer = (pid) => {
     if (!teamId || !window.CDD_CONVOC) return;
+    // addToConvoc gère lui-même le cap bench=5 et étend convocCount au besoin
     window.CDD_CONVOC.addToConvoc(teamId, pid, 'bench');
   };
   const removePlayer = (pid) => {
@@ -379,48 +387,12 @@ function ScreenConvocations({ go, tweaks }) {
 
       <div className="cv-stats">
         <div className="cv-stat"><b className="num">{starterPlayers.length}</b><em>Titulaires</em></div>
-        <div className="cv-stat"><b className="num">{benchPlayers.length}</b><em>Remplaçants</em></div>
-        <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>
-        <button className="cv-stat cv-stat-btn" onClick={() => setShowSizePicker(true)}
-                title="Régler la taille de la convocation">
-          <b className="num">{currentSize === null ? '∞' : currentSize}</b>
-          <em>Taille ✎</em>
-        </button>
-      </div>
-
-      {showSizePicker && (
-        <div className="fi-sp-overlay" onClick={() => setShowSizePicker(false)}>
-          <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}>
-            <div className="fi-sp-h">
-              <span className="fi-sp-t">TYPE DE MATCH · TAILLE CONVOC</span>
-              <button className="fi-sp-x" onClick={() => setShowSizePicker(false)}>✕</button>
-            </div>
-            <div className="fi-sp-list">
-              {[
-                { n: 14, ic: '🏆', label: 'Championnat', sub: '11 titulaires + 3 remplaçants' },
-                { n: 16, ic: '🤝', label: 'Amical',      sub: '11 titulaires + 5 remplaçants' },
-                { n: 15, ic: '🏟️', label: 'Coupe',       sub: '11 titulaires + 4 remplaçants' },
-                { n: 18, ic: '🎯', label: 'Tournoi',     sub: '11 titulaires + 7 remplaçants' },
-                { n: 20, ic: '🎉', label: 'Grand match', sub: '11 titulaires + 9 remplaçants' },
-                { n: null, ic: '♾', label: 'Illimitée',  sub: 'Tous les disponibles' },
-              ].map(opt => (
-                <button key={String(opt.n)}
-                  className={`fi-sp-opt ${currentSize===opt.n?'on':''}`}
-                  onClick={() => setSize(opt.n)}>
-                  <span className="fi-sp-l" style={{display:'flex', alignItems:'center', gap:10}}>
-                    <span style={{fontSize:20}}>{opt.ic}</span>
-                    <span style={{flex:1, textAlign:'left'}}>
-                      <div style={{fontWeight:700}}>{opt.label}</div>
-                      <div style={{fontSize:11, opacity:.7}}>{opt.sub}</div>
-                    </span>
-                  </span>
-                  {currentSize === opt.n && <span className="fi-sp-tick">✓</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className={`cv-stat ${benchPlayers.length >= BENCH_MAX ? 'cv-stat-full' : ''}`}>
+          <b className="num">{benchPlayers.length}<span className="cv-stat-max">/{BENCH_MAX}</span></b>
+          <em>Banc</em>
         </div>
-      )}
+        <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>
+      </div>
 
       {/* Réponses parents live (Firestore) */}
       <div className="cv-parent-bar" style={{
@@ -572,7 +544,11 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-sec">
           <div className="cv-sec-h">
             <span className="cv-sec-k">DISPONIBLES NON CONVOQUÉS · {reservePlayers.length}</span>
-            <span className="cv-sec-d">Touche le + pour ajouter à la convoc</span>
+            <span className="cv-sec-d">
+              {benchPlayers.length >= BENCH_MAX
+                ? `Banc plein (${BENCH_MAX}/${BENCH_MAX}) — retire un remplaçant pour ajouter`
+                : `Banc ${benchPlayers.length}/${BENCH_MAX} — touche le + pour ajouter`}
+            </span>
           </div>
           <div className="cv-list">
             {reservePlayers.map(p => (
@@ -585,9 +561,10 @@ function ScreenConvocations({ go, tweaks }) {
                   {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
                 </span>
                 <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-                <button className="cv-action cv-action-add"
+                <button className={`cv-action cv-action-add ${benchPlayers.length >= BENCH_MAX ? 'cv-action-disabled' : ''}`}
+                        disabled={benchPlayers.length >= BENCH_MAX}
                         onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
-                        title="Ajouter à la convocation">+</button>
+                        title={benchPlayers.length >= BENCH_MAX ? `Banc plein (${BENCH_MAX}/${BENCH_MAX})` : "Ajouter à la convocation"}>+</button>
               </div>
             ))}
           </div>
@@ -647,6 +624,14 @@ function ScreenConvocations({ go, tweaks }) {
             go("fiche", p);
           }}
         />
+      )}
+
+      {/* #51 — Toast banc plein (auto-hide après 2.6s) */}
+      {benchFullToast && (
+        <div className="cv-toast cv-toast-warn">
+          <span className="cv-toast-ic">⚠</span>
+          <span>Banc plein — {BENCH_MAX} remplaçants max. Retire-en un pour ajouter.</span>
+        </div>
       )}
 
     </div>
