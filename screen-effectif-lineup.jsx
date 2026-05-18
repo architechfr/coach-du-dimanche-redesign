@@ -195,7 +195,18 @@ function ScreenLineup({ go, tweaks }) {
       const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
       const s = activeTeam && all[activeTeam.id];
       if (s && s.formation && s.starters && Array.isArray(s.bench) && Array.isArray(s.reserve)) {
-        return { formation: s.formation, starters: s.starters, bench: s.bench, reserve: s.reserve };
+        // ⚠️ Garde-fou : si la formation sauvée n'existe pas dans CDD_FORMATIONS
+        // (par ex. 'custom' venant de Compo libre), retomber sur basedOn ou 4-3-3.
+        let formation = s.formation;
+        if (!CDD_FORMATIONS[formation]) {
+          formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : '4-3-3';
+          // Auto-corrige le localStorage pour ne plus re-crasher au prochain reload
+          try {
+            all[activeTeam.id] = { ...s, formation };
+            localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
+          } catch (e) {}
+        }
+        return { formation, starters: s.starters, bench: s.bench, reserve: s.reserve };
       }
     } catch (e) {}
     // 2. FFF lineupTemplate sinon isStarter
@@ -220,7 +231,8 @@ function ScreenLineup({ go, tweaks }) {
   const [showFormationPicker, setShowFormationPicker] = useState(false);
   const [reserveSearch, setReserveSearch] = useState('');
 
-  const slots = CDD_FORMATIONS[lineup.formation];
+  // Garde-fou : si lineup.formation est inconnue, prendre 4-3-3 par défaut (12 emplacements)
+  const slots = CDD_FORMATIONS[lineup.formation] || CDD_FORMATIONS['4-3-3'];
   const playerOf = (pid) => pid && CDD_PLAYERS.find(p => p.id === pid);
   const starterPlayers = slots.map((_, i) => playerOf(lineup.starters[i])).filter(Boolean);
   const benchPlayers = lineup.bench.map(pid => playerOf(pid)).filter(Boolean);
