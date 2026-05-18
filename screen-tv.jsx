@@ -349,9 +349,21 @@ function SponsorEditor({ sponsors, onSave, onClose }) {
                        style={{marginTop:6, fontSize:11, color:'rgba(255,255,255,.7)'}}/>
               </div>
               <button type="button" onClick={() => removeSponsor(i)}
-                      style={{width:32, height:32, border:'none', borderRadius:7,
-                              background:'rgba(255,80,80,.18)', color:'#ff8a8a',
-                              fontSize:16, cursor:'pointer', flexShrink:0}}>✕</button>
+                      title="Supprimer ce sponsor"
+                      style={{
+                        minWidth: 80, height: 40, padding: '0 12px',
+                        border: '1px solid rgba(255,80,80,.4)',
+                        borderRadius: 8,
+                        background: 'rgba(255,80,80,.18)',
+                        color: '#ff8a8a',
+                        fontSize: 12, fontWeight: 800,
+                        cursor: 'pointer', flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: 4,
+                      }}>
+                <span style={{fontSize: 14}}>🗑</span>
+                <span>SUPPR.</span>
+              </button>
             </div>
           ))}
         </div>

@@ -154,3 +154,57 @@
   letter-spacing: .04em;
   border-top: 1px solid rgba(255,255,255,.04);
 }
+
+
+/* ─── Sponsors dans le visuel équipe (corrigé) ─── */
+.tv-card-sponsors {
+  padding: 12px 16px;
+  background: rgba(0,0,0,.25);
+  border-top: 1px solid rgba(255,255,255,.06);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.tv-card-sponsors-k {
+  font-family: var(--f-display, sans-serif);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  color: rgba(255,255,255,.5);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.tv-card-sponsors-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.tv-card-sponsor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  max-width: 90px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,.06);
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.tv-card-sponsor img {
+  max-height: 24px;
+  max-width: 80px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+.tv-card-sponsor span {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
