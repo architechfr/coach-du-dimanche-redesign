@@ -1005,12 +1005,23 @@ function PreMatchSetup({ M, onStart, rerender }) {
   const [hd, setHd] = useStateMV(M.cfg?.hd || 45);
   const [htd, setHtd] = useStateMV(M.cfg?.htd || 15);
   const [hs, setHs] = useStateMV(M.cfg?.hs || 2);
+  const [matchType, setMatchType] = useStateMV(M.matchType || (M.fffMatchId ? 'championnat' : ''));
+
+  const MATCH_TYPES = [
+    { id: 'championnat',  ic: '🏆', label: 'Championnat (FFF)' },
+    { id: 'coupe',        ic: '🏟', label: 'Coupe' },
+    { id: 'amical',       ic: '🤝', label: 'Amical' },
+    { id: 'entrainement', ic: '💪', label: 'Entraînement' },
+    { id: 'tournoi',      ic: '🎯', label: 'Tournoi' },
+  ];
+
   const applyAndStart = () => {
     if (MATCH_HELPERS.setOpponent) MATCH_HELPERS.setOpponent(M, oppName.trim() || 'Adversaire', oppColor, { color2: oppColor2 });
     M.cfg = M.cfg || {};
     M.cfg.hd  = parseInt(hd, 10)  || 45;
     M.cfg.htd = parseInt(htd, 10) || 15;
     M.cfg.hs  = parseInt(hs, 10)  || 2;
+    M.matchType = matchType || 'amical'; // par defaut si non choisi
     rerender();
     setTimeout(onStart, 50);
   };
@@ -1076,6 +1087,41 @@ function PreMatchSetup({ M, onStart, rerender }) {
           </label>
         </div>
       </div>
+
+      {/* Selecteur de type de match (#42) */}
+      <div style={{
+        background:'rgba(0,0,0,.35)', borderRadius:12, padding:'14px 16px',
+        marginBottom:14, width:'min(420px, 92%)',
+        border:'1px solid rgba(255,255,255,.08)',
+      }}>
+        <div style={{fontSize:11, fontWeight:800, letterSpacing:'.1em',
+                     color:'rgba(255,255,255,.7)', marginBottom:8,
+                     textTransform:'uppercase'}}>
+          Type de match
+        </div>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+          {MATCH_TYPES.map(t => (
+            <button key={t.id} type="button" onClick={() => setMatchType(t.id)}
+                    style={{
+                      padding:'10px 12px', borderRadius:9,
+                      border:'1px solid ' + (matchType === t.id ? 'var(--acc, #c8f169)' : 'rgba(255,255,255,.12)'),
+                      background: matchType === t.id ? 'rgba(200,241,105,.18)' : 'rgba(0,0,0,.3)',
+                      color: matchType === t.id ? '#c8f169' : '#fff',
+                      fontSize:13, fontWeight:700, cursor:'pointer',
+                      display:'flex', alignItems:'center', gap:8,
+                    }}>
+              <span style={{fontSize:16}}>{t.ic}</span>
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
+        {!matchType && (
+          <div style={{fontSize:11, color:'rgba(251,191,36,.8)', marginTop:8}}>
+            ⚠️ Tu peux choisir plus tard, par defaut le match sera classe en Amical.
+          </div>
+        )}
+      </div>
+
       <button className="mv-prematch-btn" onClick={applyAndStart}><span>▶ LANCER LE MATCH</span></button>
     </div>
   );
