@@ -74,6 +74,15 @@ window.CDD_COACH = {
     if (statusId === null) delete all[playerId];
     else all[playerId] = statusId;
     try { localStorage.setItem('cdd_player_status_override', JSON.stringify(all)); } catch (e) {}
+
+    // Sync Firestore (fire-and-forget, jamais bloquant — localStorage = source de vérité offline)
+    if (statusId !== null && window.cddSync?.setPlayerStatus) {
+      const teamId = window.CDD?.getActiveTeam?.()?.id || 'default';
+      const meta = this.getStatusMeta(playerId) || {};
+      window.cddSync.setPlayerStatus(teamId, playerId, statusId, meta)
+        .catch(err => console.warn('[CDD] sync status cloud failed', err.message));
+    }
+
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
@@ -148,11 +157,24 @@ window.CDD_COACH = {
     } catch (e) { return {}; }
   },
   setStatusMeta(playerId, meta) {
+    let merged = {};
     try {
       const all = JSON.parse(localStorage.getItem('cdd_player_status_meta') || '{}');
       all[playerId] = { ...(all[playerId] || {}), ...meta };
+      merged = all[playerId];
       localStorage.setItem('cdd_player_status_meta', JSON.stringify(all));
     } catch (e) {}
+
+    // Sync Firestore : on renvoie le statut courant + meta mergé
+    if (window.cddSync?.setPlayerStatus) {
+      const statusId = this.getStatusOverrides()[playerId];
+      if (statusId) {
+        const teamId = window.CDD?.getActiveTeam?.()?.id || 'default';
+        window.cddSync.setPlayerStatus(teamId, playerId, statusId, merged)
+          .catch(err => console.warn('[CDD] sync meta cloud failed', err.message));
+      }
+    }
+
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
@@ -187,5 +209,56 @@ window.CDD_COACH = {
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
   },
 };
+
+/* ============================================================
+   CLOUD LISTENER — Firestore → localStorage
+   ============================================================
+   Démarre dès que cddSync est prêt. Pulle les statuts de tous les
+   joueurs de l'équipe active et les mirror dans localStorage,
+   puis dispatch cdd-data-rebuilt pour forcer le re-render des écrans.
+   ============================================================ */
+let CDD_CLOUD_UNSUB = null;
+
+window.CDD_COACH.startCloudPlayersListener = function() {
+  if (!window.cddSync?.watchPlayerStatuses) {
+    console.warn('[CDD] cddSync.watchPlayerStatuses non dispo — sync désactivée');
+    return;
+  }
+  if (CDD_CLOUD_UNSUB) { try { CDD_CLOUD_UNSUB(); } catch (e) {} CDD_CLOUD_UNSUB = null; }
+
+  const teamId = window.CDD?.getActiveTeam?.()?.id || 'default';
+  CDD_CLOUD_UNSUB = window.cddSync.watchPlayerStatuses(teamId, (byId) => {
+    // Reflète Firestore dans localStorage (sans écraser les autres clés)
+    const allS = {};
+    const allM = {};
+    Object.keys(byId).forEach(pid => {
+      if (byId[pid].status)     allS[pid] = byId[pid].status;
+      if (byId[pid].statusMeta) allM[pid] = byId[pid].statusMeta;
+    });
+    try {
+      localStorage.setItem('cdd_player_status_override', JSON.stringify(allS));
+      localStorage.setItem('cdd_player_status_meta',     JSON.stringify(allM));
+    } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  });
+};
+
+window.CDD_COACH.stopCloudPlayersListener = function() {
+  if (CDD_CLOUD_UNSUB) {
+    try { CDD_CLOUD_UNSUB(); } catch (e) {}
+    CDD_CLOUD_UNSUB = null;
+  }
+};
+
+// Auto-start dès que cddSync est prêt (cdd-sync-ready dispatché par firebase-sync.js)
+if (window.cddSync?.watchPlayerStatuses) {
+  // Déjà prêt → start direct
+  window.CDD_COACH.startCloudPlayersListener();
+} else {
+  window.addEventListener('cdd-sync-ready', () => {
+    window.CDD_COACH.startCloudPlayersListener();
+  }, { once: true });
+}
 
 console.log('[CDD coach] Overrides API ready');

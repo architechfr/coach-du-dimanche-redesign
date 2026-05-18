@@ -65,6 +65,8 @@ const STAR_BONUSES = {
   'pl_moydtri8_uyhvf': { base: 12, profile: 'BU', versatile: true },
   // EULOGA Darell (#7) — RAPIDE, ailier droit
   'pl_moydtri8_fs89g': { base: 9, profile: 'AD', speedster: true },
+  // AID Shahine (#16) — technique cœur du jeu, belles passes, petit périmètre
+  'pl_moydtri8_vjlwq': { base: 3, profile: 'MC', technician: true },
 };
 
 function deriveStats(player) {
@@ -124,6 +126,13 @@ function deriveStats(player) {
     p.PAC = +20;
     p.DRI = +16;
   }
+  // Shahine technician: belles passes + technique en petit périmètre, peu physique
+  if (star?.technician) {
+    p.PAS = +14;
+    p.DRI = +10;
+    p.SHO = +2;
+    p.PHY = -2;
+  }
 
   const clamp = v => Math.max(40, Math.min(95, v));
   const stats = {
@@ -171,6 +180,14 @@ function resolvePhoto(player) {
 
 // Build a "view player" from raw player
 function buildViewPlayer(player, idx) {
+  // ⚠️ Capturer les noms FFF ORIGINAUX *avant* tout merge.
+  // La photo est résolue par le nom de fichier FFF (NOM_Prénom.jpg) :
+  // si le coach renomme un joueur ('Grace Appolinaire' → 'Appolinaire'),
+  // l'image existe toujours sous l'ancien nom — on doit utiliser le raw.
+  const rawFirstName = player.firstName;
+  const rawLastName  = player.lastName;
+  const rawPhotoDataUrl = player.photoDataUrl;
+
   const STAR_RARITIES = {
     'pl_moydtri8_82ncg': 'hero',    // Laighor — capitaine
     'pl_moydtri8_v1skp': 'hero',    // Mamadou — leader
@@ -178,7 +195,45 @@ function buildViewPlayer(player, idx) {
     'pl_moydtri8_krkoy': 'totw',    // Grace Appolinaire
     'pl_moydtri8_uyhvf': 'hero',    // Sékou
     'pl_moydtri8_fs89g': 'totw',    // Darell — speedster
+    'pl_moydtri8_vjlwq': 'icon',    // Shahine — technique pure
   };
+
+  // ─── Apply PROFILE override (coach edits via fiche joueur) ───
+  let profileOv = {};
+  try {
+    const all = JSON.parse(localStorage.getItem('cdd_player_profile') || '{}');
+    profileOv = all[player.id] || {};
+  } catch (e) {}
+  const mergedPlayer = {
+    ...player,
+    position:       profileOv.position       || player.position,
+    licenceFFF:     profileOv.licence        || player.licenceFFF || player.license,
+    preferredNumber: profileOv.num != null   ? profileOv.num : player.preferredNumber,
+    height:         profileOv.height         || player.height,
+    weight:         profileOv.weight         || player.weight,
+    foot:           profileOv.foot           || player.foot,
+    birthDate:      profileOv.birthDate      || player.birthDate,
+    phone:          profileOv.phone          || player.phone,
+    parentPhone:    profileOv.parentPhone    || player.parentPhone,
+    email:          profileOv.email          || player.email,
+    notes:          profileOv.notes          || player.notes,
+    photoDataUrl:   profileOv.photoDataUrl   || player.photoDataUrl,
+  };
+
+  // ─── Apply STATUS override (statut courant + métadonnées) ───
+  let statusFinal = mergedPlayer.status || 'active';
+  let statusMeta = {};
+  try {
+    const allS = JSON.parse(localStorage.getItem('cdd_player_status_override') || '{}');
+    if (allS[player.id]) statusFinal = allS[player.id];
+    const allM = JSON.parse(localStorage.getItem('cdd_player_status_meta') || '{}');
+    if (allM[player.id]) statusMeta = allM[player.id];
+  } catch (e) {}
+  mergedPlayer.status       = statusFinal;
+  mergedPlayer.statusReason = statusMeta.reason || null;
+  mergedPlayer.statusUntil  = statusMeta.until  || null;
+
+  player = mergedPlayer;
   const pos = normalizePosition(player.position, player.preferredNumber) || 'MC';
   const stats = deriveStats(player);
 
@@ -199,26 +254,91 @@ function buildViewPlayer(player, idx) {
     last,
     pos,
     posLabel: player.position || pos,
-    age: player.birthDate ? computeAge(player.birthDate) : 14,
-    foot: player.foot || 'D',
-    height: player.height ? parseInt(player.height) : 170,
-    stats,
+    age: player.birthDate ? computeAge(player.birthDate) : null,
+    foot: player.foot || null,
+    height: player.height ? parseInt(player.height) : null,
+    weight: player.weight ? parseInt(player.weight) : null,
+    birthDate: player.birthDate || null,
+    phone: player.phone || null,
+    parentPhone: player.parentPhone || null,
+    email: player.email || null,
+    notes: player.notes || '',
+    stats, // FUT-card cosmetics derived from poste — see deriveStats()
     rarity: STAR_RARITIES[player.id] || deriveRarity(player, idx),
-    isCaptain: player.id === 'pl_moydtri8_82ncg',
-    form: stats.ovr >= 80 ? 10 : stats.ovr >= 70 ? 8 : 6,
-    fitness: player.status === 'rest' ? 60 : player.status === 'reserve' ? 80 : 92,
-    mins: player.isStarter ? 680 : (player.status === 'reserve' ? 80 : 200),
-    goals: idx === 4 ? 7 : idx === 8 ? 5 : Math.max(0, 10 - idx),
-    assists: Math.max(0, 6 - Math.floor(idx / 2)),
-    yellow: idx % 3 === 0 ? 1 : 0,
+    isCaptain: player.id === 'pl_moydtri8_82ncg' || !!player.isCaptain,
+    // ⚠️ Vraies stats — 0 par défaut, agrégées par applyRealStats() depuis arb_m{}
+    form: 0,
+    fitness: player.status === 'rest' ? 60 : (player.status === 'injured' ? 30 : 100),
+    mins: 0,
+    goals: 0,
+    assists: 0,
+    yellow: 0,
     red: 0,
-    mvp: idx < 4 ? Math.floor(Math.random()*3) : 0,
-    photo: resolvePhoto({ ...player, firstName: first, lastName: last }),
-    license: player.licenceFFF || null,
+    mvp: 0,
+    matchesPlayed: 0,
+    // ⚠️ Photo = nom FFF original (jamais le rename coach), mais photoDataUrl override gagne
+    photo: resolvePhoto({
+      firstName:    rawFirstName,
+      lastName:     rawLastName,
+      photoDataUrl: player.photoDataUrl || rawPhotoDataUrl,
+    }),
+    license: player.licenceFFF || player.license || null,
     status: player.status || 'active',
+    statusReason: player.statusReason || null,
+    statusUntil: player.statusUntil || null,
     isStarter: player.isStarter,
     raw: player,
   };
+}
+
+// ─── Agrège les vraies stats joueur depuis les matches arbitrés (arb_m{}) ───
+// Mute les `players` en place : goals/assists/yellow/red/mvp/mins/matchesPlayed.
+// Sans matchs arbitrés, tout reste à 0 (pas de fausse data).
+function applyRealStats(players) {
+  if (!window.CDD || !window.CDD.getMatchesForActiveTeam) return;
+  const matches = window.CDD.getMatchesForActiveTeam() || [];
+  if (!matches.length) return;
+  const byId = {};
+  players.forEach(p => { byId[p.id] = p; });
+  matches.forEach(m => {
+    const evs = m.events || m.timeline || m.actions || [];
+    const playedIds = new Set();
+    const lineupIds = (m.lineup && m.lineup.startersIds) || m.startersIds || [];
+    const benchIds  = (m.lineup && m.lineup.benchIds)    || m.benchIds    || [];
+    [...lineupIds, ...benchIds].forEach(pid => { if (byId[pid]) playedIds.add(pid); });
+    evs.forEach(e => {
+      if (!e) return;
+      const type = (e.type || e.t || '').toLowerCase();
+      const pid = e.scorerId || e.playerId || e.pid || e.p ||
+                  (e.player && e.player.id) || e.id;
+      if (!pid || !byId[pid]) return;
+      const p = byId[pid];
+      if (type === 'goal' || type === 'but' || type === 'g') {
+        p.goals++;
+        const aid = e.assistId || e.assist || (e.assistPlayer && e.assistPlayer.id);
+        if (aid && byId[aid]) byId[aid].assists++;
+        playedIds.add(pid);
+      } else if (type === 'yellow' || type === 'jaune' || type === 'y') {
+        p.yellow++; playedIds.add(pid);
+      } else if (type === 'red' || type === 'rouge' || type === 'r') {
+        p.red++; playedIds.add(pid);
+      } else if (type === 'mvp') {
+        p.mvp++; playedIds.add(pid);
+      }
+    });
+    playedIds.forEach(pid => {
+      const p = byId[pid];
+      p.matchesPlayed++;
+      p.mins += (m.minutesByPlayer && m.minutesByPlayer[pid]) || 90;
+    });
+  });
+  // Forme simple : 6 + (buts/match)*4 − (cartons/match)*2
+  players.forEach(p => {
+    if (p.matchesPlayed === 0) { p.form = 0; return; }
+    const goalRate = p.goals / p.matchesPlayed;
+    const cardPenalty = (p.yellow + p.red * 3) / p.matchesPlayed;
+    p.form = Math.max(4, Math.min(10, Math.round(6 + goalRate * 4 - cardPenalty * 2)));
+  });
 }
 
 function computeAge(dateStr) {
@@ -295,6 +415,8 @@ async function rebuildCDDGlobals() {
   const allTeams = adapter.getTeams();
   const rawPlayers = adapter.getPlayers();
   const players = rawPlayers.map((p,i) => buildViewPlayer(p, i));
+  // Agrège les vraies stats depuis arb_m (matches arbitrés du coach actif)
+  applyRealStats(players);
 
   // Club view — pull FFF config from active team
   const fffCfg = activeTeam?.fff || null;
@@ -369,9 +491,9 @@ async function rebuildCDDGlobals() {
     ],
   };
 
-  // Next match — synthesized (will be overwritten by FFF if available)
+  // Next match — par défaut "À déterminer" jusqu'à ce que FFF nous donne un vrai match
   window.CDD_NEXT_MATCH = {
-    date: "À venir",
+    date: "À déterminer",
     home: clubName || "Mon équipe",
     away: "À déterminer",
     homeBadge: clubName?.[0] || "?",
@@ -380,6 +502,7 @@ async function rebuildCDDGlobals() {
     weather: "",
     competition: fffCfg?.label || (activeTeam?.name + ' · Championnat'),
     daysLeft: 0,
+    noUpcoming: true, // ← flag pour l'UI : afficher un placeholder explicite
   };
 
   // Default placeholders — overridden by FFF data
@@ -387,67 +510,146 @@ async function rebuildCDDGlobals() {
   window.CDD_STANDINGS = [];
   window.CDD_TOP_SCORERS = [];
 
-  // Convo from lineupTemplate if present
+  // ─── Convoc : taille configurable par équipe (14/16/18/20 ou libre) ───
   const lt = activeTeam?.lineupTemplate;
+  let convocCount = 14; // 11 titulaires + 3 remplaçants (défaut foot amateur)
+  try {
+    const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+    if (allSet[activeTeam?.id] && typeof allSet[activeTeam.id].count === 'number') {
+      convocCount = allSet[activeTeam.id].count;
+    } else if (allSet[activeTeam?.id] && allSet[activeTeam.id].count === null) {
+      convocCount = null; // illimité
+    }
+  } catch (e) {}
+
+  // STATUTS NON-DISPO : 'rest', 'injured', 'suspended'
+  const unavailable = new Set(['rest', 'injured', 'suspended']);
+  const availablePlayers = players.filter(p => !unavailable.has(p.status));
+  const absentPlayers = players.filter(p => unavailable.has(p.status));
+
+  // Titulaires : ceux marqués isStarter, dans la limite des dispos
+  let starters = lt?.startersIds
+    ? lt.startersIds.filter(id => availablePlayers.some(p => p.id === id))
+    : availablePlayers.filter(p => p.isStarter).slice(0, 11).map(p => p.id);
+
+  // ⚠️ COMPLETER A 11 TITULAIRES : puise dans dispos (banc puis reserve)
+  // pour garantir une équipe complète, sinon banc d'origine en priorite.
+  const startersSetInit = new Set(starters);
+  // 1ere passe : non-reserve
+  let fillers = availablePlayers.filter(p =>
+    !startersSetInit.has(p.id) && p.status !== 'reserve'
+  );
+  fillers.sort((a, b) => {
+    const aBench = lt?.benchIds?.includes(a.id) ? 0 : 1;
+    const bBench = lt?.benchIds?.includes(b.id) ? 0 : 1;
+    return aBench - bBench;
+  });
+  while (starters.length < 11 && fillers.length > 0) {
+    starters.push(fillers.shift().id);
+  }
+  // 2eme passe : si encore < 11, puiser dans les reservistes
+  if (starters.length < 11) {
+    const sNow = new Set(starters);
+    const reservistsNow = availablePlayers.filter(p =>
+      !sNow.has(p.id) && p.status === 'reserve'
+    );
+    while (starters.length < 11 && reservistsNow.length > 0) {
+      starters.push(reservistsNow.shift().id);
+    }
+  }
+
+  // Remplaçants : convocCount - starters parmi les dispos restants
+  const startersSet = new Set(starters);
+  let benchPool = availablePlayers.filter(p => !startersSet.has(p.id) && p.status !== 'reserve');
+  // #41 — Si benchPool insuffisant, puiser dans les 'reserve' (joueurs surnumeraires)
+  // pour atteindre la taille demandee (ou au moins 3 remplaçants mini).
+  // #44 — Banc EXACTEMENT convocCount - 11 (pas de min force). Reste va en reserve.
+  let bench;
+  if (convocCount === null) {
+    // Illimite : tous les dispos non-reserve sur le banc
+    bench = benchPool.map(p => p.id);
+  } else {
+    const benchTarget = Math.max(0, convocCount - starters.length);
+    if (benchPool.length < benchTarget) {
+      // Pas assez de dispos hors reserve : puiser dans la reserve pour atteindre la cible
+      const reservists = availablePlayers.filter(p =>
+        !startersSet.has(p.id) && p.status === 'reserve' && !benchPool.some(b => b.id === p.id)
+      );
+      benchPool = [...benchPool, ...reservists];
+    }
+    bench = (lt?.benchIds && lt.benchIds.length)
+      ? lt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchTarget)
+      : benchPool.slice(0, benchTarget).map(p => p.id);
+    if (bench.length < benchTarget) {
+      const inBench = new Set(bench);
+      benchPool.forEach(p => {
+        if (bench.length < benchTarget && !inBench.has(p.id)) {
+          bench.push(p.id);
+          inBench.add(p.id);
+        }
+      });
+    }
+  }
+
+  // Absents : TOUS (plus de slice(0,3))
+  const absent = absentPlayers.map(p => {
+    const reasonMap = { rest: 'Indisponible', injured: 'Blessure', suspended: 'Suspendu' };
+    return {
+      id: p.id,
+      reason: reasonMap[p.status] || p.statusReason || 'Indispo',
+      note: p.statusReason || (p.statusUntil ? `Jusqu'au ${p.statusUntil}` : ''),
+    };
+  });
+
+  // Joueurs en réserve non convoqués (filtre statut + non dans la convoc)
+  const convocIds = new Set([...starters, ...bench, ...absent.map(a => a.id)]);
+  const reserve = players.filter(p =>
+    !convocIds.has(p.id) && p.status !== 'reserve' && !unavailable.has(p.status)
+  ).map(p => p.id);
+
+  // Warnings convoc : taille atteinte ? 11 titulaires ?
+  const targetSize = convocCount === null ? (11 + (benchPool.length)) : convocCount;
+  const warnings = [];
+  if (starters.length < 11) {
+    warnings.push({ level: 'error', text: `Seulement ${starters.length}/11 titulaires disponibles. Manque ${11 - starters.length} joueur(s).` });
+  }
+  if (convocCount !== null && (starters.length + bench.length) < convocCount) {
+    warnings.push({ level: 'warn', text: `Convoc à ${starters.length + bench.length}/${convocCount} joueurs (manque ${convocCount - starters.length - bench.length}).` });
+  }
+
   window.CDD_CONVO = {
     match: window.CDD_NEXT_MATCH,
-    starters: lt?.startersIds || players.filter(p => p.isStarter).slice(0, 11).map(p => p.id),
-    bench: lt?.benchIds || players.filter(p => !p.isStarter && p.status !== 'reserve').slice(0, 5).map(p => p.id),
-    absent: players.filter(p => p.raw.status === 'rest').slice(0, 3).map(p => ({
-      id: p.id, reason: p.raw.statut === 'Suspendu' ? 'Suspendu' : 'Blessure', note: 'Indispo ce week-end'
-    })),
+    starters,
+    bench,
+    absent,
+    reserve, // ← dispo mais non convoqués (cliquables pour ajouter)
+    convocCount,
+    targetSize,
+    warnings,
     shareCode: "AS-" + (activeTeam?.id || '').slice(-6).toUpperCase(),
   };
 
-  // Static-ish data (would also come from FFF API normally)
-  // Overridden below if FFF config exists.
-  const FALLBACK_LAST = [
-    { date:"17/05", opp:"FC HOUILLES",       venue:"H", score:[3,1], result:"W", scorers:["Mehdi", "Sékou"] },
-    { date:"10/05", opp:"AS POISSY",         venue:"E", score:[2,2], result:"D", scorers:["Elias", "Mehdi"] },
-    { date:"03/05", opp:"PSG U15 RÉG.",      venue:"H", score:[1,3], result:"L", scorers:["Sékou"] },
-    { date:"26/04", opp:"CERGY-PONTOISE",    venue:"E", score:[4,0], result:"W", scorers:["Nayel (2)", "Marley"] },
-    { date:"19/04", opp:"VAUREAL FC",        venue:"H", score:[2,0], result:"W", scorers:["Mehdi", "Nayel"] },
-  ];
-  const FALLBACK_STANDINGS = [
-    { rank:1, club:"PSG U15 RÉG.",    pl:8, w:7, d:1, l:0, gf:28, ga:6,  pts:22, form:["W","W","W","D","W","W","W","W"], hi: true },
-    { rank:2, club: clubName || "Mon équipe", pl:8, w:6, d:1, l:1, gf:24, ga:9, pts:19, form:["W","W","D","W","W","L","W","W"], me: true },
-    { rank:3, club:"FC PONTOISE",     pl:8, w:5, d:2, l:1, gf:21, ga:11, pts:17, form:["W","D","W","W","D","W","L","W"] },
-    { rank:4, club:"AS POISSY",       pl:8, w:4, d:2, l:2, gf:16, ga:13, pts:14, form:["L","D","W","W","D","L","W","W"] },
-    { rank:5, club:"CERGY-PONT.",     pl:8, w:3, d:2, l:3, gf:14, ga:15, pts:11, form:["D","L","W","W","D","L","W","L"] },
-    { rank:6, club:"VAUREAL FC",      pl:8, w:2, d:3, l:3, gf:11, ga:15, pts:9,  form:["L","D","W","D","L","D","W","L"] },
-    { rank:7, club:"FC HOUILLES",     pl:8, w:2, d:1, l:5, gf:9,  ga:18, pts:7,  form:["L","L","W","D","L","W","L","L"] },
-    { rank:8, club:"ÉCQUEVILLY US",   pl:8, w:0, d:2, l:6, gf:5,  ga:21, pts:2,  form:["L","D","L","L","L","L","D","L"] },
-  ];
-
-  // Only use fallback if no FFF config — but we'll override later with FFF data if it's available
-  window.CDD_LAST_MATCHES = fffCfg ? [] : FALLBACK_LAST;
-  window.CDD_STANDINGS = fffCfg ? [] : FALLBACK_STANDINGS;
+  // Pas de fallback fictif — derniers matchs et classement viennent de FFF (async)
+  // ou du moteur de matchs arbitrés (arb_m), jamais de mocks.
+  window.CDD_LAST_MATCHES = [];
+  window.CDD_STANDINGS = [];
   // Top scorers: ALWAYS from internal data (arb_m matches arbitrés par le coach).
-  // No fake mocks — if no matches recorded yet, the leaderboard stays empty.
   window.CDD_TOP_SCORERS = buildTopScorers(players);
 
-  window.CDD_LIVE_MATCH = {
-    minute: 67, half: 2,
-    home: activeClub?.name || "FCMH", homeScore: 2,
-    away: "FC PONTOISE", awayScore: 1,
-    events: [
-      { min: 12, type:"goal",   side:"home", player: players[4]?.first+' '+players[4]?.last || "Daouda", desc:"Tête sur centre", assist: players[14]?.first+' '+players[14]?.last },
-      { min: 23, type:"yellow", side:"away", player:"M. Diallo", desc:"Tacle en retard" },
-      { min: 45, type:"half",   side:"-",    player:"", desc:"Mi-temps · 1-1" },
-      { min: 58, type:"goal",   side:"home", player: players[8]?.first+' '+players[8]?.last || "Doumbia", desc:"Coup-franc direct" },
-      { min: 64, type:"yellow", side:"home", player: players[1]?.first+' '+players[1]?.last, desc:"Contestation" },
-    ],
-    poss: 58, shots: [9, 6], onTarget: [5, 3], corners: [4, 3], fouls: [7, 11],
-  };
+  // Match live : aucun par défaut. Rempli par le moteur d'arbitrage si match en cours.
+  let liveMatch = null;
+  try {
+    const live = JSON.parse(localStorage.getItem('arb_live') || localStorage.getItem('cdd_v2_live_match') || 'null');
+    if (live && live.startedAt && !live.endedAt) liveMatch = live;
+  } catch (e) {}
+  window.CDD_LIVE_MATCH = liveMatch;
 
-  window.CDD_OBSERVATIONS = {
-    [players[8]?.id]: [
-      { date:"17/05", tag:"Match", txt:"Énorme match — 1 but, 2 passes. Discipline tactique top niveau." }
-    ],
-    [players[4]?.id]: [
-      { date:"17/05", tag:"Match", txt:"Doublé de buts dont une tête splendide. Pressing exemplaire." }
-    ]
-  };
+  // Observations coach — vide par défaut, à remplir par le coach via fiche joueur
+  let observations = {};
+  try {
+    observations = JSON.parse(localStorage.getItem('cdd_observations') || '{}');
+  } catch (e) {}
+  window.CDD_OBSERVATIONS = observations;
 
   window.CDD_POS_COLOR = {
     GK: "#f5c451", DC: "#3b82f6", DG: "#3b82f6", DD: "#3b82f6",
@@ -458,10 +660,7 @@ async function rebuildCDDGlobals() {
   console.log(`%c[CDD bridge] Globals rebuilt: ${players.length} players, club=${activeClub?.name}, team=${activeTeam?.name}`,
     'color:#c8f169;font-weight:700');
 
-  // Use fallback data immediately so the app renders FAST
-  window.CDD_LAST_MATCHES = FALLBACK_LAST;
-  window.CDD_STANDINGS = FALLBACK_STANDINGS;
-  // Buteurs: only from REAL recorded matches (arb_m) — no mock fillers
+  // Pas de fallback fictif — listes vides jusqu'à FFF ou premier match arbitré
   window.CDD_TOP_SCORERS = buildTopScorers(players);
 
   // Render NOW with fallback, then fetch FFF in background if useful
@@ -598,6 +797,59 @@ async function applyFFFData(fffCfg, clubName, players) {
   window.dispatchEvent(new CustomEvent('cdd-fff-loaded'));
   console.log('%c[FFF] Data applied ✓', 'color:#c8f169;font-weight:900');
 }
+
+// ─── API publique : régler la taille de la convoc d'une équipe ───
+window.CDD_CONVOC = {
+  setSize(teamId, count) {
+    // count = number | null (illimité)
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+      all[teamId] = { count, updatedAt: Date.now() };
+      localStorage.setItem('cdd_convoc_settings', JSON.stringify(all));
+    } catch (e) {}
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+  getSize(teamId) {
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+      return all[teamId]?.count ?? 16;
+    } catch (e) { return 16; }
+  },
+  // Ajoute un joueur à la convoc en starters ou bench (selon disponibilité)
+  addToConvoc(teamId, playerId, slot = 'bench') {
+    // Met à jour le lineupTemplate dans arb_teams
+    try {
+      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+      const team = teams.find(t => t.id === teamId);
+      if (!team) return;
+      if (!team.lineupTemplate) team.lineupTemplate = {};
+      const lt = team.lineupTemplate;
+      lt.startersIds = lt.startersIds || [];
+      lt.benchIds = lt.benchIds || [];
+      // Retirer d'abord du joueur des deux listes
+      lt.startersIds = lt.startersIds.filter(id => id !== playerId);
+      lt.benchIds    = lt.benchIds.filter(id    => id !== playerId);
+      if (slot === 'starter') lt.startersIds.push(playerId);
+      else                    lt.benchIds.push(playerId);
+      lt.updatedAt = Date.now();
+      localStorage.setItem('arb_teams', JSON.stringify(teams));
+    } catch (e) {}
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+  removeFromConvoc(teamId, playerId) {
+    try {
+      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+      const team = teams.find(t => t.id === teamId);
+      if (!team || !team.lineupTemplate) return;
+      const lt = team.lineupTemplate;
+      lt.startersIds = (lt.startersIds || []).filter(id => id !== playerId);
+      lt.benchIds    = (lt.benchIds    || []).filter(id => id !== playerId);
+      lt.updatedAt = Date.now();
+      localStorage.setItem('arb_teams', JSON.stringify(teams));
+    } catch (e) {}
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+};
 
 // Expose
 window.CDD_REBUILD = rebuildCDDGlobals;

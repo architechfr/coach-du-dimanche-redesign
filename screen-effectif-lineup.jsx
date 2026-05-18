@@ -41,7 +41,15 @@ function ScreenEffectif({ go, tweaks }) {
   }
 
   if (statusFilter !== "all") {
-    list = list.filter(p => (p.raw?.status || p.status) === statusFilter);
+    if (statusFilter === 'unavailable') {
+      // Infirmerie : blesses + suspendus + indispos
+      list = list.filter(p => {
+        const s = p.raw?.status || p.status;
+        return s === 'rest' || s === 'injured' || s === 'suspended';
+      });
+    } else {
+      list = list.filter(p => (p.raw?.status || p.status) === statusFilter);
+    }
   }
 
   // Apply sort
@@ -106,10 +114,11 @@ function ScreenEffectif({ go, tweaks }) {
           <div className="ef-fp-k">STATUT</div>
           <div className="ef-fp-row">
             {[
-              { id: "all",     l: "Tous" },
-              { id: "active",  l: "✓ Dispo" },
-              { id: "rest",    l: "⏸ Indispo" },
-              { id: "reserve", l: "★ Réserve" },
+              { id: "all",         l: "Tous" },
+              { id: "active",      l: "✓ Dispo" },
+              { id: "unavailable", l: "🩹 Infirmerie" },
+              { id: "rest",        l: "⏸ Indispo" },
+              { id: "reserve",     l: "★ Réserve" },
             ].map(s => (
               <button key={s.id} className={`ef-fp-chip ${statusFilter===s.id?"on":""}`} onClick={()=>setStatusFilter(s.id)}>
                 {s.l}
@@ -195,7 +204,18 @@ function ScreenLineup({ go, tweaks }) {
       const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
       const s = activeTeam && all[activeTeam.id];
       if (s && s.formation && s.starters && Array.isArray(s.bench) && Array.isArray(s.reserve)) {
-        return { formation: s.formation, starters: s.starters, bench: s.bench, reserve: s.reserve };
+        // ⚠️ Garde-fou : si la formation sauvée n'existe pas dans CDD_FORMATIONS
+        // (par ex. 'custom' venant de Compo libre), retomber sur basedOn ou 4-3-3.
+        let formation = s.formation;
+        if (!CDD_FORMATIONS[formation]) {
+          formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : '4-3-3';
+          // Auto-corrige le localStorage pour ne plus re-crasher au prochain reload
+          try {
+            all[activeTeam.id] = { ...s, formation };
+            localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
+          } catch (e) {}
+        }
+        return { formation, starters: s.starters, bench: s.bench, reserve: s.reserve };
       }
     } catch (e) {}
     // 2. FFF lineupTemplate sinon isStarter
@@ -220,7 +240,8 @@ function ScreenLineup({ go, tweaks }) {
   const [showFormationPicker, setShowFormationPicker] = useState(false);
   const [reserveSearch, setReserveSearch] = useState('');
 
-  const slots = CDD_FORMATIONS[lineup.formation];
+  // Garde-fou : si lineup.formation est inconnue, prendre 4-3-3 par défaut (12 emplacements)
+  const slots = CDD_FORMATIONS[lineup.formation] || CDD_FORMATIONS['4-3-3'];
   const playerOf = (pid) => pid && CDD_PLAYERS.find(p => p.id === pid);
   const starterPlayers = slots.map((_, i) => playerOf(lineup.starters[i])).filter(Boolean);
   const benchPlayers = lineup.bench.map(pid => playerOf(pid)).filter(Boolean);
@@ -374,6 +395,19 @@ function ScreenLineup({ go, tweaks }) {
 
   return (
     <div className="scr scr-lineup fade-in" data-screen-label="03 Lineup">
+
+      <div className="cl-quick-actions" style={{
+        display:'flex', gap:8, padding:'10px 14px 0',
+      }}>
+        <button className="tv-btn" onClick={() => go("tactique")}
+                style={{flex:1, fontSize:13}}>
+          🎬 TACTIQUE
+        </button>
+        <button className="tv-btn" onClick={() => go("tv")}
+                style={{flex:1, fontSize:13}}>
+          📷 VISUEL COMPO
+        </button>
+      </div>
 
       <div className="lu-top">
         <div className="lu-top-l">

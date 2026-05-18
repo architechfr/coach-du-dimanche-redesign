@@ -19,7 +19,8 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
-  getFirestore, doc, setDoc, onSnapshot, serverTimestamp
+  getFirestore, doc, setDoc, onSnapshot, serverTimestamp,
+  collection, query, where
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -32,8 +33,12 @@ const firebaseConfig = {
   measurementId: "G-MH2NT3JPTF"
 };
 
-const COLL_CONVOC = 'cdd_v2_convoc';
-const COLL_VOTES  = 'cdd_v2_votes';
+const COLL_CONVOC  = 'cdd_v2_convoc';
+const COLL_VOTES   = 'cdd_v2_votes';
+const COLL_MATCHES = 'cdd_v2_matches';
+const COLL_PLAYERS = 'cdd_v2_players';
+
+const VALID_STATUSES = ['active', 'rest', 'injured', 'suspended', 'reserve'];
 
 let app, db;
 try {
@@ -163,6 +168,101 @@ function watchVotes(matchId, callback) {
   );
 }
 
+/* ---------- API Sauvegarde match dans le cloud (#11) ---------- */
+
+async function saveMatchToCloud(match) {
+  if (!db) throw new Error('Firestore non initialisé');
+  if (!match || !match.id) throw new Error('match.id requis');
+  const matchId = match.id;
+  // Strip _prev (snapshots undo) pour reduire la taille
+  const cleanEv = (match.ev || []).map(e => {
+    const { _prev, ...rest } = e || {};
+    return rest;
+  });
+  const payload = {
+    id: match.id,
+    teamA: { n: match.tA && match.tA.n, c: match.tA && match.tA.c, score: match.sA, players: (match.tA && match.tA.p) || [], bench: (match.tA && match.tA.bench) || [] },
+    teamB: { n: match.tB && match.tB.n, c: match.tB && match.tB.c, score: match.sB, players: (match.tB && match.tB.p) || [], bench: (match.tB && match.tB.bench) || [] },
+    status: match.st,
+    period: match.ch,
+    config: match.cfg || {},
+    events: cleanEv,
+    yellows: { A: match.yA || 0, B: match.yB || 0 },
+    reds:    { A: match.rA || 0, B: match.rB || 0 },
+    subs:    { A: match.uA || 0, B: match.uB || 0 },
+    addTime: match.at || 0,
+    savedAt: serverTimestamp(),
+    coachId: getVoterId(),
+  };
+  await setDoc(doc(db, COLL_MATCHES, matchId), payload, { merge: true });
+  return { ok: true, matchId };
+}
+
+function watchMatchFromCloud(matchId, callback) {
+  if (!db) { callback(null); return () => {}; }
+  return onSnapshot(
+    doc(db, COLL_MATCHES, matchId),
+    snap => callback(snap.exists() ? snap.data() : null),
+    err => { console.warn('[cddSync] watchMatch error:', err.message); callback(null); }
+  );
+}
+
+/* ---------- API Statuts joueurs (sync coach ↔ devices) ---------- */
+
+async function setPlayerStatus(teamId, playerId, statusId, statusMeta) {
+  if (!db) throw new Error('Firestore non initialisé');
+  if (!teamId || !playerId) throw new Error('teamId/playerId requis');
+  if (!VALID_STATUSES.includes(statusId)) {
+    throw new Error('statusId invalide : ' + statusId);
+  }
+  const payload = {
+    playerId,
+    teamId,
+    status: statusId,
+    statusMeta: statusMeta || {},
+    statusUpdatedAt: serverTimestamp(),
+    statusUpdatedBy: getVoterId(),
+  };
+  await setDoc(doc(db, COLL_PLAYERS, String(playerId)), payload, { merge: true });
+  return { ok: true, playerId };
+}
+
+function watchPlayerStatuses(teamId, callback) {
+  if (!db) {
+    console.warn('[cddSync] watchPlayerStatuses: db non initialisé');
+    callback({});
+    return () => {};
+  }
+  if (!teamId) {
+    console.warn('[cddSync] watchPlayerStatuses: teamId manquant');
+    callback({});
+    return () => {};
+  }
+  const q = query(collection(db, COLL_PLAYERS), where('teamId', '==', teamId));
+  return onSnapshot(
+    q,
+    snap => {
+      const byId = {};
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        if (d && d.playerId) {
+          byId[d.playerId] = {
+            status: d.status || 'active',
+            statusMeta: d.statusMeta || {},
+            statusUpdatedAt: d.statusUpdatedAt || null,
+            statusUpdatedBy: d.statusUpdatedBy || null,
+          };
+        }
+      });
+      callback(byId);
+    },
+    err => {
+      console.warn('[cddSync] watchPlayerStatuses error:', err.message);
+      callback({});
+    }
+  );
+}
+
 /* ---------- Expose globally ---------- */
 
 window.cddSync = {
@@ -173,6 +273,10 @@ window.cddSync = {
   watchConvocResponses,
   sendVote,
   watchVotes,
+  saveMatchToCloud,
+  watchMatchFromCloud,
+  setPlayerStatus,
+  watchPlayerStatuses,
   getMatchId,
   getVoterId,
 };

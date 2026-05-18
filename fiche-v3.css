@@ -219,3 +219,99 @@
   line-height: 1;
 }
 .fi-obs-del:hover { background: rgba(239,68,68,.2); }
+
+
+/* ─── Onglet Profil (édition fiche joueur) ─── */
+.fi-profil { padding: 12px 14px 80px; }
+.fi-profil-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+@media (min-width: 640px) {
+  .fi-profil-grid { grid-template-columns: 1fr 1fr; }
+}
+.fi-pf-section {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.fi-pf-h {
+  font-family: var(--f-display);
+  font-size: 11px;
+  letter-spacing: .14em;
+  font-weight: 800;
+  color: var(--tx-3);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.fi-pf-l {
+  display: block;
+  margin-bottom: 12px;
+}
+.fi-pf-l > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--tx-2);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.fi-pf-i {
+  width: 100%;
+  height: 42px;
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15px;
+  padding: 0 12px;
+  font-family: var(--f-body);
+  outline: none;
+  transition: border-color .15s;
+}
+.fi-pf-i:focus {
+  border-color: var(--acc);
+}
+.fi-pf-i.mono { font-family: 'Courier New', monospace; letter-spacing: .04em; }
+.fi-pf-i[type="file"] {
+  padding: 8px;
+  height: auto;
+  font-size: 13px;
+}
+.fi-pf-radio {
+  display: flex;
+  gap: 6px;
+}
+.fi-pf-rc {
+  flex: 1;
+  height: 42px;
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  color: var(--tx-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+.fi-pf-rc.on {
+  background: var(--acc);
+  color: #000;
+  border-color: var(--acc);
+}
+.fi-pf-photo .fi-pf-photo-prev {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fi-pf-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 0 14px;
+}
+.fi-pf-actions button { flex: 1; height: 48px; font-size: 14px; }

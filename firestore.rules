@@ -1,0 +1,111 @@
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║  COACH DU DIMANCHE V2 — Firestore Security Rules                  ║
+// ║  Projet Firebase : arbitre-sport                                  ║
+// ║  À déployer via la console Firebase ou `firebase deploy --only firestore:rules` ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// Stratégie : pas d'authentification Firebase pour l'instant (l'app utilise
+// un voterId UUID local). On valide donc le SCHÉMA des écritures pour éviter
+// les corruptions, et on borne la taille des documents pour limiter l'abus.
+// À durcir plus tard avec Firebase Auth (signature des règles "isCoach" en bas).
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ───────────────────────────────────────────────────
+    function isString(v)  { return v is string;  }
+    function isNumber(v)  { return v is number;  }
+    function isBool(v)    { return v is bool;    }
+    function isMap(v)     { return v is map;     }
+    function strLen(v, max) { return isString(v) && v.size() <= max; }
+    function validStatus(s) {
+      return s in ['active', 'rest', 'injured', 'suspended', 'reserve'];
+    }
+
+    // ─── /cdd_v2_players/{playerId} ────────────────────────────────
+    // Statuts joueurs + métadonnées (blessure, suspension, indispo, etc.)
+    match /cdd_v2_players/{playerId} {
+      allow read: if true;
+
+      allow create, update: if
+        // Champs obligatoires
+        request.resource.data.keys().hasAll(['playerId','teamId','status'])
+        // Validation des types
+        && isString(request.resource.data.playerId)
+        && isString(request.resource.data.teamId)
+        && validStatus(request.resource.data.status)
+        // Tailles bornées (anti-abus)
+        && strLen(request.resource.data.playerId, 80)
+        && strLen(request.resource.data.teamId,   80)
+        // playerId cohérent avec l'ID du doc
+        && request.resource.data.playerId == playerId
+        // statusMeta optionnel mais doit être un objet si présent
+        && (!('statusMeta' in request.resource.data) || isMap(request.resource.data.statusMeta))
+        // statusUpdatedBy = voterId, optionnel
+        && (!('statusUpdatedBy' in request.resource.data) || strLen(request.resource.data.statusUpdatedBy, 60));
+
+      // teamId immuable après création
+      allow update: if request.resource.data.teamId == resource.data.teamId;
+
+      // Pas de delete par les clients
+      allow delete: if false;
+    }
+
+    // ─── /cdd_v2_convoc/{matchId} ──────────────────────────────────
+    // Réponses parents (yes/no/may). Pattern existant — règles permissives.
+    match /cdd_v2_convoc/{matchId} {
+      allow read: if true;
+      allow write: if
+        request.resource.data.keys().hasAny(['responses'])
+        && (!('responses' in request.resource.data) || isMap(request.resource.data.responses));
+    }
+
+    // ─── /cdd_v2_votes/{matchId} ───────────────────────────────────
+    // Votes post-match anonymes par voterId.
+    match /cdd_v2_votes/{matchId} {
+      allow read: if true;
+      allow write: if
+        request.resource.data.keys().hasAny(['voters'])
+        && (!('voters' in request.resource.data) || isMap(request.resource.data.voters));
+    }
+
+    // ─── /cdd_v2_matches/{matchId} ─────────────────────────────────
+    // Sauvegarde du match en cours (feuille de match cloud).
+    match /cdd_v2_matches/{matchId} {
+      allow read: if true;
+      allow write: if
+        // Champs attendus selon le payload côté firebase-sync.js saveMatchToCloud
+        request.resource.data.keys().hasAny(['id','teamA','teamB','status','events'])
+        // Pas de doc démesuré (events array peut grossir vite)
+        && request.resource.data.size() <= 50;
+    }
+
+    // ─── Bloque tout le reste par défaut ───────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║  ÉVOLUTION FUTURE — Quand Firebase Auth sera branché              ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// Remplacer les `allow write: if ...` permissifs par des règles auth-based :
+//
+//   function isOwner() {
+//     return request.auth != null
+//         && request.auth.token.email == 'archi.tech.fr@gmail.com';
+//   }
+//   function isCoach(teamId) {
+//     return request.auth != null && (
+//       isOwner()
+//       || exists(/databases/$(database)/documents/cdd_v2_teams/$(teamId)/staff/$(request.auth.uid))
+//     );
+//   }
+//
+// Puis sur /cdd_v2_players/{playerId} :
+//   allow create, update: if isCoach(request.resource.data.teamId) && [validations schéma...]
+//   allow delete: if isOwner();

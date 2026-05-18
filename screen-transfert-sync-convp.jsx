@@ -76,17 +76,17 @@ function ScreenTransfert({ go, tweaks }) {
             <span>📦 {Object.values(selectedTeams).filter(v=>v).length} équipe(s)</span>
           </div>
 
-          <div className="tr-qr">
-            <div className="tr-qr-grid">
-              {[...Array(225)].map((_,i) => (
-                <span key={i} style={{
-                  background: (i*7+i%13+Math.floor(i/15)) % 3 === 0 ? "#fff" : "#000"
-                }}/>
-              ))}
-              <div className="tr-qr-mark tl"/>
-              <div className="tr-qr-mark tr"/>
-              <div className="tr-qr-mark bl"/>
-            </div>
+          <div className="tr-qr" style={{display:'flex', justifyContent:'center', padding:'12px 0'}}>
+            {window.QRCode ? (
+              <window.QRCode
+                value={(typeof transferUrl !== 'undefined' && transferUrl)
+                       || `${window.location.origin}/?transfer=${encodeURIComponent(JSON.stringify(Object.keys(selectedTeams).filter(k => selectedTeams[k])))}`}
+                size={200}/>
+            ) : (
+              <div style={{width:200, height:200, background:'#fff', display:'flex',
+                            alignItems:'center', justifyContent:'center', color:'#888',
+                            fontSize:11, borderRadius:6}}>Chargement QR…</div>
+            )}
           </div>
 
           <div className="tr-cta">
