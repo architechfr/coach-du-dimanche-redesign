@@ -252,6 +252,45 @@ window.ScreenArbitre = ScreenArbitre;
 function ScreenLecteur({ go, tweaks }) {
   const [tab, setTab] = useState("prochain");
   const next = CDD_NEXT_MATCH;
+  // --- Convoc parent : état + persistance Firestore + localStorage ---
+  const playerIdFromUrl = (() => {
+    const fromSearch = new URLSearchParams(window.location.search).get('p');
+    if (fromSearch) return fromSearch;
+    const hash = window.location.hash || '';
+    const q = hash.split('?')[1];
+    if (q) return new URLSearchParams(q).get('p');
+    return null;
+  })();
+  const playerId = playerIdFromUrl || (CDD_PLAYERS[0]?.id || 'demo_player');
+  const playerDisplay = (() => {
+    const p = CDD_PLAYERS.find(x => x.id === playerId);
+    return p ? `${p.first} ${p.last}` : "Sékou";
+  })();
+  const matchId = (typeof window.cddSync !== 'undefined' && window.cddSync.matchId) || 'demo';
+  const [resp, setResp] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(`cdd_v2_convoc_${matchId}`) || '{}');
+      return cached[playerId]?.resp || null;
+    } catch (e) { return null; }
+  });
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(null);
+  const sendResponse = async (newResp) => {
+    setSending(true);
+    setSendError(null);
+    setResp(newResp);
+    try {
+      if (window.cddSync?.sendConvocResponse) {
+        await window.cddSync.sendConvocResponse(matchId, playerId, newResp, playerDisplay);
+      }
+    } catch (err) {
+      console.warn('[lecteur] sendResponse failed:', err.message);
+      setSendError(err.message || 'Erreur envoi');
+    } finally {
+      setSending(false);
+    }
+  };
+
 
   return (
     <div className="scr scr-lecteur fade-in" data-screen-label="12 Lecteur public">
@@ -308,15 +347,39 @@ function ScreenLecteur({ go, tweaks }) {
             <div className="lec-convo-yes">
               <div className="lec-convo-yes-ic">✓</div>
               <div className="lec-convo-yes-t">
-                <b>Sékou est convoqué !</b>
+                <b>{playerDisplay} est convoqué !</b>
                 <em>Titulaire · Milieu offensif · #10</em>
               </div>
             </div>
             <div className="lec-convo-cta">
-              <button className="lec-btn-resp lec-btn-yes">✓ JE VIENS</button>
-              <button className="lec-btn-resp lec-btn-no">✕ Absent</button>
-              <button className="lec-btn-resp lec-btn-may">?</button>
+              <button
+                className={`lec-btn-resp lec-btn-yes ${resp === 'yes' ? 'on' : ''}`}
+                disabled={sending}
+                onClick={() => sendResponse('yes')}>
+                ✓ JE VIENS
+              </button>
+              <button
+                className={`lec-btn-resp lec-btn-no ${resp === 'no' ? 'on' : ''}`}
+                disabled={sending}
+                onClick={() => sendResponse('no')}>
+                ✕ Absent
+              </button>
+              <button
+                className={`lec-btn-resp lec-btn-may ${resp === 'may' ? 'on' : ''}`}
+                disabled={sending}
+                onClick={() => sendResponse('may')}>
+                ?
+              </button>
             </div>
+            {resp && (
+              <div className="lec-convo-confirm" style={{padding:"10px 14px", textAlign:"center", color:"var(--accent,#c8f169)", fontSize:13, fontWeight:600}}>
+                {sending ? "Envoi en cours…" :
+                 sendError ? `⚠ ${sendError} (sauvegardé localement)` :
+                 resp === 'yes' ? "✓ Réponse envoyée : présent" :
+                 resp === 'no'  ? "✓ Réponse envoyée : absent" :
+                                  "✓ Réponse envoyée : peut-être"}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -396,10 +459,33 @@ window.ScreenLecteur = ScreenLecteur;
 function ScreenVote({ go, tweaks }) {
   const [votes, setVotes] = useState({}); // playerId -> 1-5
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(null);
   const starters = CDD_CONVO.starters.map(id => CDD_PLAYERS.find(p => p.id === id)).filter(Boolean);
 
   const setRating = (id, r) => setVotes(v => ({...v, [id]: r}));
   const allRated = starters.every(p => votes[p.id]);
+
+  const submitVote = async () => {
+    setSending(true);
+    setSendError(null);
+    try {
+      if (window.cddSync?.sendVote) {
+        await window.cddSync.sendVote(
+          window.cddSync.matchId,
+          window.cddSync.voterId,
+          votes
+        );
+      }
+      setSubmitted(true);
+    } catch (err) {
+      console.warn('[vote] submit failed:', err.message);
+      setSendError(err.message || 'Erreur envoi');
+      setSubmitted(true);
+    } finally {
+      setSending(false);
+    }
+  };
 
   if (submitted) {
     return (
@@ -476,9 +562,16 @@ function ScreenVote({ go, tweaks }) {
       </div>
 
       <div className="vote-submit">
-        <button className="btn-cta" disabled={!allRated} onClick={() => setSubmitted(true)}>
-          {allRated ? <><span>ENVOYER MES NOTES</span><span className="arr">→</span></> : <span>Note tous les joueurs pour valider</span>}
+        <button className="btn-cta" disabled={!allRated || sending} onClick={submitVote}>
+          {sending ? <span>Envoi en cours…</span>
+                   : allRated ? <><span>ENVOYER MES NOTES</span><span className="arr">→</span></>
+                              : <span>Note tous les joueurs pour valider</span>}
         </button>
+        {sendError && (
+          <div style={{textAlign:"center", marginTop:8, color:"#ff8a8a", fontSize:12}}>
+            ⚠ {sendError} — notes sauvegardées localement
+          </div>
+        )}
       </div>
     </div>
   );

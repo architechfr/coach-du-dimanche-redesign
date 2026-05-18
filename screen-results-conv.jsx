@@ -236,6 +236,34 @@ function ScreenConvocations({ go, tweaks }) {
     ...a,
   }));
 
+  // --- Live réponses parents (Firestore via cddSync) ---
+  const matchId = (typeof window.cddSync !== 'undefined' && window.cddSync.matchId) || 'demo';
+  const [parentResponses, setParentResponses] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`cdd_v2_convoc_${matchId}`) || '{}'); }
+    catch (e) { return {}; }
+  });
+  useEffect(() => {
+    if (!window.cddSync?.watchConvocResponses) return;
+    const unsubscribe = window.cddSync.watchConvocResponses(matchId, (responses) => {
+      setParentResponses(responses);
+    });
+    return () => { try { unsubscribe?.(); } catch (e) {} };
+  }, [matchId]);
+  const respBadge = (playerId) => {
+    const r = parentResponses[playerId];
+    if (!r) return null;
+    const label = r.resp === 'yes' ? '👍' : r.resp === 'no' ? '👎' : '❓';
+    const title = r.resp === 'yes' ? 'Parent : présent' : r.resp === 'no' ? 'Parent : absent' : 'Parent : peut-être';
+    return <span className="cv-parent-resp" title={title} style={{marginLeft:6, fontSize:14, opacity:0.9}}>{label}</span>;
+  };
+  const respCounts = Object.values(parentResponses).reduce((acc, r) => {
+    if (r?.resp === 'yes') acc.yes++;
+    else if (r?.resp === 'no') acc.no++;
+    else if (r?.resp === 'may') acc.may++;
+    return acc;
+  }, { yes:0, no:0, may:0 });
+  const totalResponded = respCounts.yes + respCounts.no + respCounts.may;
+
   return (
     <div className="scr scr-conv fade-in" data-screen-label="07 Convocations">
 
@@ -264,6 +292,27 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-stat"><b className="mono">{conv.shareCode.slice(-4)}</b><em>code</em></div>
       </div>
 
+      {/* Réponses parents live (Firestore) */}
+      <div className="cv-parent-bar" style={{
+        margin:"8px 14px 14px", padding:"10px 12px",
+        background:"rgba(200,241,105,0.06)", borderRadius:10, border:"1px solid rgba(200,241,105,0.18)",
+        display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:12
+      }}>
+        <span style={{fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", opacity:0.8}}>
+          Réponses parents
+        </span>
+        <span style={{display:"flex", gap:12, fontSize:13}}>
+          <span title="Présents">👍 <b className="num">{respCounts.yes}</b></span>
+          <span title="Absents">👎 <b className="num">{respCounts.no}</b></span>
+          <span title="Peut-être">❓ <b className="num">{respCounts.may}</b></span>
+          <span style={{opacity:0.5}}>·</span>
+          <span title="Total répondu">
+            <b className="num">{totalResponded}</b>
+            <span style={{opacity:0.5}}>/{starterPlayers.length + benchPlayers.length}</span>
+          </span>
+        </span>
+      </div>
+
       <div className="cv-sec">
         <div className="cv-sec-h">
           <span className="cv-sec-k">TITULAIRES · {starterPlayers.length}</span>
@@ -273,7 +322,7 @@ function ScreenConvocations({ go, tweaks }) {
           {starterPlayers.map(p => (
             <div className="cv-row" key={p.id}>
               <span className="cv-num num">#{p.num}</span>
-              <span className="cv-name">{p.first} <b>{p.last}</b></span>
+              <span className="cv-name">{p.first} <b>{p.last}</b>{respBadge(p.id)}</span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               <span className="cv-check on">✓</span>
             </div>
@@ -289,7 +338,7 @@ function ScreenConvocations({ go, tweaks }) {
           {benchPlayers.map(p => (
             <div className="cv-row" key={p.id}>
               <span className="cv-num num">#{p.num}</span>
-              <span className="cv-name">{p.first} <b>{p.last}</b></span>
+              <span className="cv-name">{p.first} <b>{p.last}</b>{respBadge(p.id)}</span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               <span className="cv-check on">✓</span>
             </div>
