@@ -1,4 +1,4 @@
-/* global React, ReactDOM, ScreenHome, ScreenEffectif, ScreenLineup, ScreenMatch, ScreenFiche, ScreenResults, ScreenConvocations, ScreenSettings, ScreenOnboarding, TweaksPanel, TweakSection, TweakColor, TweakRadio, TweakSelect, useTweaks */
+/* global React, ReactDOM, ScreenHome, ScreenEffectif, ScreenLineup, ScreenMatch, ScreenFiche, ScreenResults, ScreenConvocations, ScreenSettings, ScreenOnboarding, ScreenTV, ScreenTactique, ScreenCompoLibre, TweaksPanel, TweakSection, TweakColor, TweakRadio, TweakSelect, useTweaks */
 
 const { useState, useEffect, useMemo } = React;
 
@@ -50,6 +50,9 @@ const NAV = [
   { id:"sync",         label:"Sync cloud",    ic:"☁",   icon:GearIcon,   bottom:false },
   { id:"set",          label:"Réglages",      ic:"⚙",   icon:GearIcon,   bottom:false },
   { id:"onb",          label:"Onboarding",    ic:"✦",   icon:SparkIcon,  bottom:false },
+  { id:"tv",           label:"Présentation TV", ic:"📺", icon:PitchIcon,  bottom:false },
+  { id:"tactique",     label:"Tactique",      ic:"🎬",  icon:PitchIcon,  bottom:false },
+  { id:"compo-libre",  label:"Compo libre",   ic:"🎯",  icon:PitchIcon,  bottom:false },
 ];
 
 function HomeIcon() {
@@ -255,6 +258,9 @@ function App() {
             {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}
             {screen === "fiche"        && <ScreenFiche go={go} tweaks={t} player={currentPlayer}/>}
             {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t}/>}
+            {screen === "tv"           && <ScreenTV go={go} tweaks={t}/>}
+            {screen === "tactique"     && <ScreenTactique go={go} tweaks={t}/>}
+            {screen === "compo-libre"  && <ScreenCompoLibre go={go} tweaks={t}/>}
             {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
             {screen === "arb"          && <ScreenArbitre go={go} tweaks={t}/>}
             {screen === "lecteur"      && <ScreenLecteur go={go} tweaks={t}/>}

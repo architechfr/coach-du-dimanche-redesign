@@ -375,6 +375,23 @@ function ScreenLineup({ go, tweaks }) {
   return (
     <div className="scr scr-lineup fade-in" data-screen-label="03 Lineup">
 
+      <div className="cl-quick-actions" style={{
+        display:'flex', gap:8, padding:'10px 14px 0',
+      }}>
+        <button className="tv-btn" onClick={() => go("compo-libre")}
+                style={{flex:1, fontSize:12}}>
+          🎯 COMPO LIBRE
+        </button>
+        <button className="tv-btn" onClick={() => go("tactique")}
+                style={{flex:1, fontSize:12}}>
+          🎬 TACTIQUE
+        </button>
+        <button className="tv-btn" onClick={() => go("tv")}
+                style={{flex:1, fontSize:12}}>
+          📺 TV
+        </button>
+      </div>
+
       <div className="lu-top">
         <div className="lu-top-l">
           <span className="lu-top-k">FORMATION{saved && <em className="lu-saved"> · ✓ Enregistré</em>}</span>
