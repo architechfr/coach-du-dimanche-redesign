@@ -103,5 +103,8 @@ function playerLabel(p) {
   return '#'+p.num+(p.first ? ' '+p.first : '');
 }
 
-window.MATCH_HELPERS = { newMatch, loadMatch, saveMatch, gMatch, gMin, buildDefaultTeams, playerLabel };
-window.MATCH_SFX = { playWhistle, playGoal, playCard, playBuzzer, vibrate };
+// MUTATION au lieu d'assignment pour éviter race condition avec screen-match-live-v2.jsx
+if (!window.MATCH_HELPERS) window.MATCH_HELPERS = {};
+Object.assign(window.MATCH_HELPERS, { newMatch, loadMatch, saveMatch, gMatch, gMin, buildDefaultTeams, playerLabel });
+if (!window.MATCH_SFX) window.MATCH_SFX = {};
+Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });

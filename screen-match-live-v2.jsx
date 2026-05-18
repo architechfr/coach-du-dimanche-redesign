@@ -728,17 +728,20 @@ function ScreenMatchV2({ go, tweaks }) {
   );
 }
 
-// Replace the existing ScreenMatch
-window.ScreenMatch = ScreenMatchV2;
-window.MATCH_HELPERS = {
-  ...window.MATCH_HELPERS,
-  isPlayerOut, getYellowsForPlayer
-};
-
-// Helper fns exposed
+// Helper fns exposed (déclarés avant l'attach pour éviter le hoisting Babel)
 function isPlayerOut(M, t, lbl) {
   return M.ev.some(e => e.t === t && e.tp === 'red' && e.pl === lbl);
 }
 function getYellowsForPlayer(M, t, lbl) {
   return M.ev.filter(e => e.t === t && e.tp === 'yellow' && e.pl === lbl).length;
 }
+
+// Replace the existing ScreenMatch
+window.ScreenMatch = ScreenMatchV2;
+
+// Attach helpers en MUTANT l'objet (évite la race condition avec match-engine.js).
+// Si window.MATCH_HELPERS n'existe pas encore (chargement parallèle), on crée la base
+// puis match-engine.js complètera par mutation aussi.
+if (!window.MATCH_HELPERS) window.MATCH_HELPERS = {};
+window.MATCH_HELPERS.isPlayerOut = isPlayerOut;
+window.MATCH_HELPERS.getYellowsForPlayer = getYellowsForPlayer;
