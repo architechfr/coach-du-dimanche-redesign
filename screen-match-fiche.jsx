@@ -17,18 +17,35 @@ function ScreenFiche({ go, tweaks, player }) {
   const obs = CDD_OBSERVATIONS[p.id] || [];
 
   // ----- Status override -----
+  // Fallback IDs alignés sur ceux exposés par CDD_COACH.STATUS_OPTIONS
+  // (active / rest / injured / suspended / reserve) pour éviter les
+  // collisions de namespaces si CDD_COACH n'est pas encore chargé.
   const STATUS_OPTIONS = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [
-    { id:'dispo',     l:'Disponible',  cls:'ok'  },
-    { id:'indispo',   l:'Indisponible',cls:'no'  },
-    { id:'reserve',   l:'Réserve',     cls:'res' },
-    { id:'blesse',    l:'Blessé',      cls:'no'  },
-    { id:'suspendu',  l:'Suspendu',    cls:'no'  },
+    { id:'active',    l:'✓ Disponible',   cls:'ok'   },
+    { id:'rest',      l:'⏸ Indisponible', cls:'warn' },
+    { id:'injured',   l:'🩹 Blessé',      cls:'bad'  },
+    { id:'suspended', l:'⛔ Suspendu',    cls:'bad'  },
+    { id:'reserve',   l:'★ Réserve',     cls:'info' },
   ];
+  // On passe l'objet `p` complet (pas seulement p.id) — getStatus est désormais tolérant.
   const currentStatus = (window.CDD_COACH && window.CDD_COACH.getStatus)
-    ? window.CDD_COACH.getStatus(p.id) || 'dispo'
-    : (p.status || 'dispo');
+    ? window.CDD_COACH.getStatus(p) || 'active'
+    : (p.status || 'active');
   const statusObj = STATUS_OPTIONS.find(s => s.id === currentStatus) || STATUS_OPTIONS[0];
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+
+  // Patch refresh : re-render à chaque changement statut/rebuild data.
+  // Indispensable car `p` est un objet capturé au render — sans cet effet,
+  // le clic enregistre bien dans localStorage mais la fiche ne relit pas.
+  useEffect(() => {
+    const onChange = () => triggerRefresh();
+    window.addEventListener('cdd-player-changed', onChange);
+    window.addEventListener('cdd-data-rebuilt',   onChange);
+    return () => {
+      window.removeEventListener('cdd-player-changed', onChange);
+      window.removeEventListener('cdd-data-rebuilt',   onChange);
+    };
+  }, []);
 
   // ----- Name override -----
   const [editingName, setEditingName] = useState(false);

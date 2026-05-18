@@ -16,17 +16,9 @@ function CountdownPill({ days }) {
   );
 }
 
-// #45 — Mapping FR : W (Win)=V (Victoire), D (Draw)=N (Nul), L (Loss)=D (Défaite)
-function mapResultFR(r) {
-  if (r === 'W' || r === 'V') return 'V';
-  if (r === 'D' && r !== 'L') return 'N'; // D anglais = Draw -> N (Nul)
-  if (r === 'N') return 'N';
-  return 'D'; // L (Loss) -> D (Défaite)
-}
 function FormDot({ r, big }) {
-  // Note: la classe CSS reste fd-w/fd-d/fd-l (couleurs vert/jaune/rouge)
   const cls = r === "W" ? "fd-w" : r === "D" ? "fd-d" : "fd-l";
-  return <span className={`fd ${cls} ${big?"fd-big":""}`}>{mapResultFR(r)}</span>;
+  return <span className={`fd ${cls} ${big?"fd-big":""}`}>{r}</span>;
 }
 
 // ---------- Visuel jour/nuit auto selon heure ----------
@@ -47,40 +39,8 @@ function ScreenHome({ go, tweaks }) {
   const topScorer = sorted[0];
   const topAssist = sorted[1];
 
-  // Detection match en cours (#20) — bouton REPRENDRE si match interrompu
-  const liveMatch = (window.MATCH_HELPERS && window.MATCH_HELPERS.getLiveMatch)
-                  ? window.MATCH_HELPERS.getLiveMatch()
-                  : null;
-
   return (
     <div className="scr scr-home fade-in" data-screen-label="01 Home">
-
-      {/* Bouton REPRENDRE match en cours (#20) */}
-      {liveMatch && (
-        <button onClick={() => go('match')}
-                style={{
-                  width:'calc(100% - 28px)', margin:'14px',
-                  padding:'14px 16px', borderRadius:14,
-                  background:'linear-gradient(135deg, #ef4444, #dc2626)',
-                  color:'#fff', border:'none', cursor:'pointer',
-                  display:'flex', alignItems:'center', gap:12,
-                  boxShadow:'0 6px 20px rgba(239,68,68,.4)',
-                  textAlign:'left', fontFamily:'inherit',
-                }}>
-          <span style={{fontSize:28}}>🔴</span>
-          <span style={{flex:1}}>
-            <div style={{fontSize:11, fontWeight:800, letterSpacing:'.12em', opacity:.8}}>
-              MATCH EN COURS
-            </div>
-            <div style={{fontSize:15, fontWeight:900, marginTop:2}}>
-              {(liveMatch.tA && liveMatch.tA.n) || 'Mon équipe'} {liveMatch.sA||0} - {liveMatch.sB||0} {(liveMatch.tB && liveMatch.tB.n) || 'Adversaire'}
-            </div>
-            <div style={{fontSize:11, opacity:.85, marginTop:2}}>
-              ▶ REPRENDRE LE MATCH
-            </div>
-          </span>
-        </button>
-      )}
 
       {/* HERO — next match avec visuel coach jour/nuit auto */}
       <div className={`home-hero hero-${tweaks.hero}`}>

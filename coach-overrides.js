@@ -77,9 +77,16 @@ window.CDD_COACH = {
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
-  getStatus(player) {
+  // Accepte soit un objet joueur, soit un ID — tolérant aux 2 formes
+  // d'appel (legacy `getStatus(p.id)` et nouveau `getStatus(p)`).
+  getStatus(playerOrId) {
     const overrides = this.getStatusOverrides();
-    return overrides[player.id] || player.raw?.status || player.status || 'active';
+    const id = (typeof playerOrId === 'string' || typeof playerOrId === 'number')
+      ? String(playerOrId)
+      : playerOrId?.id;
+    const pObj = (typeof playerOrId === 'object') ? playerOrId : null;
+    if (id && overrides[id]) return overrides[id];
+    return pObj?.raw?.status || pObj?.status || 'active';
   },
 
   // Stats

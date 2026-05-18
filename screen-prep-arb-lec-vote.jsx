@@ -1,13 +1,5 @@
 /* global React, CDD_NEXT_MATCH, CDD_PLAYERS, CDD_LAST_MATCHES, CDD_STANDINGS, CDD_CONVO, FutCard, POSITION_LABEL */
 
-// #45 W/L/D -> V/N/D
-function mapResultFR(r) {
-  if (r === 'W') return 'V';
-  if (r === 'D') return 'N';
-  if (r === 'L') return 'D';
-  return r || '?';
-}
-
 /* ============================================================
    SCREEN — Préparation match (J-7 dashboard)
    Combine: prochain match, adversaire (forme + classement),
@@ -20,8 +12,7 @@ function ScreenPrep({ go, tweaks }) {
   const lastMatches = (typeof CDD_LAST_MATCHES !== 'undefined' && Array.isArray(CDD_LAST_MATCHES)) ? CDD_LAST_MATCHES : [];
   const convo = CDD_CONVO || { starters:[], bench:[], absent:[] };
   // L'adversaire du prochain match (depuis CDD_NEXT_MATCH.away si possible, sinon "FC PONTOISE" placeholder)
-  const oppName = (next.away && next.away !== 'À déterminer') ? next.away : null;
-  const noUpcoming = !oppName || next.noUpcoming;
+  const oppName = next.away || "FC PONTOISE";
   const opp = standings.find(s => s.club === oppName) || standings.find(s => !s.me) || null;
   const me  = standings.find(s => s.me) || null;
   const lastMatch = lastMatches[0] || null;
@@ -41,13 +32,13 @@ function ScreenPrep({ go, tweaks }) {
           <div className="prep-hero-title">{next.competition}</div>
           <div className="prep-hero-vs">
             <span className="prep-team me">
-              <i className="prep-badge me">{(CDD_CLUB?.short || 'F').charAt(0)}</i>
-              <em>{CDD_CLUB?.short || 'MON CLUB'}</em>
+              <i className="prep-badge me">F</i>
+              <em>FCMH</em>
             </span>
             <span className="prep-vs-l">VS</span>
             <span className="prep-team them">
-              <em>{noUpcoming ? 'À DÉTERMINER' : oppName}</em>
-              <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>
+              <em>FC PONTOISE</em>
+              <i className="prep-badge them">P</i>
             </span>
           </div>
           <div className="prep-hero-when">
@@ -58,24 +49,20 @@ function ScreenPrep({ go, tweaks }) {
         </div>
       </div>
 
-      {/* KPI strip — cliquables (renvoient vers Convocations / Effectif filtre Infirmerie) */}
+      {/* KPI strip */}
       <div className="prep-kpis">
-        <button className="prep-kpi prep-kpi-btn" onClick={() => go('convocations')}
-                title="Voir la convocation complete">
+        <div className="prep-kpi">
           <b className="num">{convoCount}</b>
           <em>Convoqués</em>
-        </button>
-        <button className="prep-kpi prep-kpi-btn warn"
-                onClick={() => go('effectif', { statusFilter: 'unavailable' })}
-                title="Ouvrir l'infirmerie">
+        </div>
+        <div className="prep-kpi warn">
           <b className="num">{absCount}</b>
           <em>Absents</em>
-        </button>
-        <button className="prep-kpi prep-kpi-btn" onClick={() => go('convocations')}
-                title="Voir les titulaires">
+        </div>
+        <div className="prep-kpi">
           <b className="num">{CDD_CONVO.starters.length}</b>
           <em>Titulaires</em>
-        </button>
+        </div>
         <div className="prep-kpi acc">
           <b>{next.daysLeft}</b>
           <em className="num">jour{next.daysLeft>1?"s":""}</em>
@@ -100,7 +87,7 @@ function ScreenPrep({ go, tweaks }) {
                 <em>Forme</em>
                 <div className="prep-opp-form">
                   {(opp.form||[]).map((r,i) => (
-                    <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{mapResultFR(r)}</span>
+                    <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{r}</span>
                   ))}
                   {(!opp.form || opp.form.length === 0) && <span style={{opacity:0.5, fontSize:11}}>—</span>}
                 </div>
@@ -447,7 +434,7 @@ function ScreenLecteur({ go, tweaks }) {
         <div className="lec-cal">
           {CDD_LAST_MATCHES.slice(0, 5).map((m,i) => (
             <div className={`lec-cal-row rs-${m.result.toLowerCase()}`} key={i}>
-              <span className={`rs-cal-result rs-${m.result.toLowerCase()}`}>{mapResultFR(m.result)}</span>
+              <span className={`rs-cal-result rs-${m.result.toLowerCase()}`}>{m.result}</span>
               <span className="lec-cal-opp">
                 <em>{m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}</em>
                 {m.opp}
@@ -460,48 +447,19 @@ function ScreenLecteur({ go, tweaks }) {
       )}
 
       {tab === "class" && (
-        <div className="rs-standings">
-          <div className="rs-thead">
-            <span className="rs-th-r">#</span>
-            <span className="rs-th-c">CLUB</span>
-            <span className="rs-th-n">J</span>
-            <span className="rs-th-n">V</span>
-            <span className="rs-th-n">N</span>
-            <span className="rs-th-n">D</span>
-            <span className="rs-th-n" title="Forfaits">F</span>
-            <span className="rs-th-n" title="Pénalité">P</span>
-            <span className="rs-th-n">BP</span>
-            <span className="rs-th-n">BC</span>
-            <span className="rs-th-n">+/-</span>
-            <span className="rs-th-n">PTS</span>
-          </div>
-          {(!CDD_STANDINGS || CDD_STANDINGS.length === 0) ? (
-            <div className="rs-cal-empty">
-              <div className="rs-cal-empty-ic">🏆</div>
-              <div className="rs-cal-empty-t">Classement non chargé</div>
-              <div className="rs-cal-empty-d">Le classement sera mis à jour bientôt</div>
-            </div>
-          ) : CDD_STANDINGS.map((s,i) => (
-            <div key={i} className={`rs-row ${s.me?"me":""} ${s.hi?"hi":""}`}>
-              <span className="rs-r-rank">
-                {s.rank}
-                {s.rank <= 2 && <i className="rs-r-mark up"/>}
-                {s.rank >= 7 && <i className="rs-r-mark dn"/>}
-              </span>
+        <div className="rs-standings" style={{padding:"0 14px"}}>
+          {CDD_STANDINGS.slice(0, 6).map((s,i) => (
+            <div key={i} className={`rs-row ${s.me?"me":""}`}>
+              <span className="rs-r-rank">{s.rank}</span>
               <span className="rs-r-c">
-                <span className="rs-c-name" title={s.club}>{s.club}</span>
+                <span className="rs-badge" style={{background:`hsl(${(s.rank*47)%360},35%,28%)`}}>{s.club[0]}</span>
+                <span className="rs-c-name">{s.club}</span>
               </span>
               <span className="num">{s.pl}</span>
               <span className="num">{s.w}</span>
               <span className="num">{s.d}</span>
               <span className="num">{s.l}</span>
-              <span className={`num ${s.forfeits > 0 ? "warn" : "dim"}`}>{s.forfeits || 0}</span>
-              <span className={`num ${s.penalty < 0 ? "neg" : "dim"}`}>{s.penalty || 0}</span>
-              <span className="num dim">{s.gf}</span>
-              <span className="num dim">{s.ga}</span>
-              <span className={`num ${(s.diff || (s.gf-s.ga)) > 0 ? "pos" : (s.diff || (s.gf-s.ga)) < 0 ? "neg" : "dim"}`}>
-                {(s.diff || (s.gf-s.ga)) > 0 ? "+" : ""}{s.diff || (s.gf-s.ga)}
-              </span>
+              <span className="num dim">{s.gf-s.ga > 0 ? "+" : ""}{s.gf-s.ga}</span>
               <b className="num rs-r-pts">{s.pts}</b>
             </div>
           ))}

@@ -114,8 +114,8 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
         </span>
         <span className="pc-row-num">#{player.num}</span>
         <span className="pc-row-name">
-          <span className="pc-row-first">{player.first || ''}</span>
-          <span className="pc-row-last">{(player.last || '').toUpperCase()}</span>
+          <span className="pc-row-first">{player.last || ''}</span>
+          <span className="pc-row-last">{player.first || ''}</span>
         </span>
         <span className={`pc-row-form pc-row-form-${player.form>=8?"hot":player.form>=6?"ok":"cold"}`}>
           {player.form>=8 ? "🔥" : player.form>=6 ? "●" : "↓"}
@@ -169,12 +169,9 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
         <div className="pc-shirt" style={{ color: r.ink }}>#{player.num}</div>
       </div>
 
-      {/* NAME — prénom en gros + nom de famille en plus petit */}
+      {/* NAME */}
       <div className="pc-name" style={{ color: r.ink }}>
-        <span className="pc-name-first">{player.first || ''}</span>
-        {player.last && (
-          <span className="pc-name-last">{(player.last || '').toUpperCase()}</span>
-        )}
+        {(player.first || player.last || '').toUpperCase()}
       </div>
 
       <div className="pc-divider" style={{ background: r.ink, opacity:.35 }} />

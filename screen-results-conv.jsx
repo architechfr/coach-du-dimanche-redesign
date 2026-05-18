@@ -1,13 +1,5 @@
 /* global React, CDD_STANDINGS, CDD_TOP_SCORERS, CDD_LAST_MATCHES, CDD_CLUB, CDD_CONVO, CDD_PLAYERS, CDD_NEXT_MATCH, FutCard, POSITION_LABEL */
 
-// #45 — W/L/D anglais -> V/N/D francais
-function mapResultFR(r) {
-  if (r === 'W') return 'V';
-  if (r === 'D') return 'N';
-  if (r === 'L') return 'D';
-  return r || '?';
-}
-
 /* ============================================================
    SCREEN — Résultats / Championship
    ============================================================ */
@@ -174,7 +166,7 @@ function ScreenResults({ go, tweaks }) {
                     return (
                       <div key={i} className={`rs-jrn-m ${m.played?'played':'pending'} ${isMyMatch?'mine':''} rs-${(m.result||'').toLowerCase()}`}>
                         {m.played && m.result && isMyMatch && (
-                          <span className={`rs-jrn-result rs-${m.result.toLowerCase()}`}>{mapResultFR(m.result)}</span>
+                          <span className={`rs-jrn-result rs-${m.result.toLowerCase()}`}>{m.result}</span>
                         )}
                         {!m.played && isMyMatch && <span className="rs-jrn-date">{m.date}</span>}
                         {!isMyMatch && <span className="rs-jrn-date dim">{m.date}</span>}
@@ -239,34 +231,10 @@ function ScreenConvocations({ go, tweaks }) {
   const next = conv.match;
   const starterPlayers = conv.starters.map(id => CDD_PLAYERS.find(p=>p.id===id)).filter(Boolean);
   const benchPlayers = conv.bench.map(id => CDD_PLAYERS.find(p=>p.id===id)).filter(Boolean);
-  const reservePlayers = (conv.reserve || []).map(id => CDD_PLAYERS.find(p=>p.id===id)).filter(Boolean);
   const absentEntries = conv.absent.map(a => ({
     p: CDD_PLAYERS.find(p=>p.id===a.id),
     ...a,
   }));
-
-  // #44 — Picker statut rapide depuis la ligne convoc
-  const [statusPickerPlayer, setStatusPickerPlayer] = useState(null);
-  const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
-
-  // ─── Picker taille convoc (14 / 16 / 18 / 20 / libre) ───
-  const [showSizePicker, setShowSizePicker] = useState(false);
-  const teamId = window.CDD?.getActiveTeam?.()?.id;
-  const currentSize = conv.convocCount;
-  const setSize = (n) => {
-    if (!teamId || !window.CDD_CONVOC) return;
-    window.CDD_CONVOC.setSize(teamId, n);
-    setShowSizePicker(false);
-  };
-  const addPlayer = (pid) => {
-    if (!teamId || !window.CDD_CONVOC) return;
-    window.CDD_CONVOC.addToConvoc(teamId, pid, 'bench');
-  };
-  const removePlayer = (pid) => {
-    if (!teamId || !window.CDD_CONVOC) return;
-    if (!confirm('Retirer ce joueur de la convocation ?')) return;
-    window.CDD_CONVOC.removeFromConvoc(teamId, pid);
-  };
 
   // --- Live réponses parents (Firestore via cddSync) ---
   const matchId = (typeof window.cddSync !== 'undefined' && window.cddSync.matchId) || 'demo';
@@ -309,13 +277,9 @@ function ScreenConvocations({ go, tweaks }) {
             <span>📅 {next.date}</span>
             <span>🏟️ {next.venue}</span>
           </div>
-          <div className="cv-hero-share" style={{display:'flex', gap:8}}>
+          <div className="cv-hero-share">
             <button className="btn-cta" onClick={() => go("share")}>
               ↗ PARTAGER AUX PARENTS
-            </button>
-            <button className="btn-cta" onClick={() => go("tv")}
-                    style={{background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.14)'}}>
-              📺 PRÉSENTATION TV
             </button>
           </div>
         </div>
@@ -325,46 +289,8 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-stat"><b className="num">{starterPlayers.length}</b><em>Titulaires</em></div>
         <div className="cv-stat"><b className="num">{benchPlayers.length}</b><em>Remplaçants</em></div>
         <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>
-        <button className="cv-stat cv-stat-btn" onClick={() => setShowSizePicker(true)}
-                title="Régler la taille de la convocation">
-          <b className="num">{currentSize === null ? '∞' : currentSize}</b>
-          <em>Taille ✎</em>
-        </button>
+        <div className="cv-stat"><b className="mono">{conv.shareCode.slice(-4)}</b><em>code</em></div>
       </div>
-
-      {showSizePicker && (
-        <div className="fi-sp-overlay" onClick={() => setShowSizePicker(false)}>
-          <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}>
-            <div className="fi-sp-h">
-              <span className="fi-sp-t">TYPE DE MATCH · TAILLE CONVOC</span>
-              <button className="fi-sp-x" onClick={() => setShowSizePicker(false)}>✕</button>
-            </div>
-            <div className="fi-sp-list">
-              {[
-                { n: 14, ic: '🏆', label: 'Championnat', sub: '11 titulaires + 3 remplaçants' },
-                { n: 16, ic: '🤝', label: 'Amical',      sub: '11 titulaires + 5 remplaçants' },
-                { n: 15, ic: '🏟️', label: 'Coupe',       sub: '11 titulaires + 4 remplaçants' },
-                { n: 18, ic: '🎯', label: 'Tournoi',     sub: '11 titulaires + 7 remplaçants' },
-                { n: 20, ic: '🎉', label: 'Grand match', sub: '11 titulaires + 9 remplaçants' },
-                { n: null, ic: '♾', label: 'Illimitée',  sub: 'Tous les disponibles' },
-              ].map(opt => (
-                <button key={String(opt.n)}
-                  className={`fi-sp-opt ${currentSize===opt.n?'on':''}`}
-                  onClick={() => setSize(opt.n)}>
-                  <span className="fi-sp-l" style={{display:'flex', alignItems:'center', gap:10}}>
-                    <span style={{fontSize:20}}>{opt.ic}</span>
-                    <span style={{flex:1, textAlign:'left'}}>
-                      <div style={{fontWeight:700}}>{opt.label}</div>
-                      <div style={{fontSize:11, opacity:.7}}>{opt.sub}</div>
-                    </span>
-                  </span>
-                  {currentSize === opt.n && <span className="fi-sp-tick">✓</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Réponses parents live (Firestore) */}
       <div className="cv-parent-bar" style={{
@@ -387,27 +313,6 @@ function ScreenConvocations({ go, tweaks }) {
         </span>
       </div>
 
-      {/* Warnings convoc (#33) — 11 titulaires + taille atteinte */}
-      {conv.warnings && conv.warnings.length > 0 && (
-        <div style={{margin:'0 14px 14px'}}>
-          {conv.warnings.map((w, i) => (
-            <div key={i} style={{
-              padding:'10px 12px',
-              marginBottom: 8,
-              background: w.level === 'error' ? 'rgba(255,80,80,.12)' : 'rgba(255,170,40,.12)',
-              border: '1px solid ' + (w.level === 'error' ? 'rgba(255,80,80,.35)' : 'rgba(255,170,40,.35)'),
-              borderRadius: 10,
-              fontSize: 13,
-              color: w.level === 'error' ? '#ff9a9a' : '#ffc788',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <span style={{fontSize:18}}>{w.level === 'error' ? '⚠️' : '🟧'}</span>
-              <span style={{flex:1, fontWeight:600}}>{w.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="cv-sec">
         <div className="cv-sec-h">
           <span className="cv-sec-k">TITULAIRES · {starterPlayers.length}</span>
@@ -415,15 +320,11 @@ function ScreenConvocations({ go, tweaks }) {
         </div>
         <div className="cv-list">
           {starterPlayers.map(p => (
-            <div className="cv-row cv-row-clickable" key={p.id}
-                 onClick={() => go("fiche", p)}
-                 title="Toucher pour modifier le profil / statut">
+            <div className="cv-row" key={p.id}>
               <span className="cv-num num">#{p.num}</span>
-              <span className="cv-name"><b>{p.first}</b> {(p.last || '').toUpperCase()}{respBadge(p.id)}</span>
+              <span className="cv-name">{p.first} <b>{p.last}</b>{respBadge(p.id)}</span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-              <button className="cv-action"
-                      onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
-                      title="Retirer de la convocation">−</button>
+              <span className="cv-check on">✓</span>
             </div>
           ))}
         </div>
@@ -435,15 +336,11 @@ function ScreenConvocations({ go, tweaks }) {
         </div>
         <div className="cv-list">
           {benchPlayers.map(p => (
-            <div className="cv-row cv-row-clickable" key={p.id}
-                 onClick={() => go("fiche", p)}
-                 title="Toucher pour modifier le profil / statut">
+            <div className="cv-row" key={p.id}>
               <span className="cv-num num">#{p.num}</span>
-              <span className="cv-name"><b>{p.first}</b> {(p.last || '').toUpperCase()}{respBadge(p.id)}</span>
+              <span className="cv-name">{p.first} <b>{p.last}</b>{respBadge(p.id)}</span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-              <button className="cv-action"
-                      onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
-                      title="Retirer de la convocation">−</button>
+              <span className="cv-check on">✓</span>
             </div>
           ))}
         </div>
@@ -454,103 +351,16 @@ function ScreenConvocations({ go, tweaks }) {
           <span className="cv-sec-k abs">ABSENTS · {absentEntries.length}</span>
         </div>
         <div className="cv-list">
-          {absentEntries.length === 0 ? (
-            <div className="cv-empty" style={{padding:'12px 14px', opacity:.6, fontSize:13}}>
-              Aucun absent — personne en blessé / suspendu / indisponible.
-            </div>
-          ) : absentEntries.map((a,i) => a.p && (
-            <div className="cv-row abs cv-row-clickable" key={i}>
-              <span className="cv-num num"
-                    onClick={() => go("fiche", a.p)}
-                    style={{cursor:'pointer'}}>#{a.p.num}</span>
-              <span className="cv-name"
-                    onClick={() => go("fiche", a.p)}
-                    style={{cursor:'pointer'}}>
-                <b>{a.p.first}</b> {(a.p.last || '').toUpperCase()}
-                {a.note && <em> — {a.note}</em>}
-              </span>
-              {/* #44 — Badge statut CLIQUABLE pour changer rapidement */}
-              <button
-                onClick={(e) => { e.stopPropagation(); setStatusPickerPlayer(a.p); }}
-                title="Modifier le statut"
-                style={{
-                  background:'rgba(255,170,40,.14)',
-                  border:'1px solid rgba(255,170,40,.4)',
-                  color:'#ffc788', fontWeight:700, fontSize:11,
-                  padding:'4px 10px', borderRadius:6,
-                  cursor:'pointer', marginRight:6,
-                }}>
-                {a.reason} ✎
-              </button>
-              {/* Bouton + pour CONVOQUER quand meme malgre indispo */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.CDD_CONVOC && window.CDD_CONVOC.addToConvoc && teamId) {
-                    window.CDD_CONVOC.addToConvoc(teamId, a.p.id, 'bench');
-                  }
-                }}
-                title="Convoquer quand meme (indispo overridable)"
-                style={{
-                  background:'rgba(200,241,105,.14)',
-                  border:'1px solid rgba(200,241,105,.4)',
-                  color:'#c8f169', fontWeight:800, fontSize:12,
-                  width:28, height:28, borderRadius:7,
-                  cursor:'pointer',
-                }}>+</button>
+          {absentEntries.map((a,i) => a.p && (
+            <div className="cv-row abs" key={i}>
+              <span className="cv-num num">#{a.p.num}</span>
+              <span className="cv-name">{a.p.first} <b>{a.p.last}</b><em>{a.note}</em></span>
+              <span className="cv-pos abs-reason">{a.reason}</span>
+              <span className="cv-check abs">✕</span>
             </div>
           ))}
         </div>
       </div>
-
-      {reservePlayers.length > 0 && (
-        <div className="cv-sec">
-          <div className="cv-sec-h">
-            <span className="cv-sec-k">DISPONIBLES NON CONVOQUÉS · {reservePlayers.length}</span>
-            <span className="cv-sec-d">Touche le + pour ajouter à la convoc</span>
-          </div>
-          <div className="cv-list">
-            {reservePlayers.map(p => (
-              <div className="cv-row cv-row-add cv-row-clickable" key={p.id}
-                   onClick={() => go("fiche", p)}
-                   title="Toucher pour voir le profil">
-                <span className="cv-num num">#{p.num}</span>
-                <span className="cv-name"><b>{p.first}</b> {(p.last || '').toUpperCase()}</span>
-                <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-                <button className="cv-action cv-action-add"
-                        onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
-                        title="Ajouter à la convocation">+</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* #44 Picker statut rapide */}
-      {statusPickerPlayer && (
-        <div className="fi-sp-overlay" onClick={() => setStatusPickerPlayer(null)}>
-          <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}>
-            <div className="fi-sp-h">
-              <span className="fi-sp-t">STATUT DE {(statusPickerPlayer.first||'').toUpperCase()}</span>
-              <button className="fi-sp-x" onClick={() => setStatusPickerPlayer(null)}>✕</button>
-            </div>
-            <div className="fi-sp-list">
-              {STATUS_QUICK.map(s => (
-                <button key={s.id}
-                  className={`fi-sp-opt fi-sp-opt-${s.cls}`}
-                  onClick={() => {
-                    if (window.CDD_COACH && window.CDD_COACH.setStatusOverride) {
-                      window.CDD_COACH.setStatusOverride(statusPickerPlayer.id, s.id);
-                    }
-                    setStatusPickerPlayer(null);
-                  }}>
-                  <span className="fi-sp-l">{s.l}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
