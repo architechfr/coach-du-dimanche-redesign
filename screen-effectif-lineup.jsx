@@ -228,7 +228,17 @@ function ScreenLineup({ go, tweaks }) {
     const starters = {};
     startersIds.slice(0, slots.length).forEach((pid, i) => { starters[i] = pid; });
     const used = new Set(Object.values(starters));
-    const benchArr = CDD_PLAYERS.filter(p => !used.has(p.id) && p.status !== 'reserve').slice(0, 7).map(p => p.id);
+    // #44 — Banc aligne sur convocCount du type de match (Championnat=3, Amical=5...)
+    let benchTarget = 3;
+    try {
+      const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
+      if (activeTeam && allSet[activeTeam.id]) {
+        const cc = allSet[activeTeam.id].count;
+        if (typeof cc === 'number') benchTarget = Math.max(0, cc - 11);
+        else if (cc === null) benchTarget = 99;
+      }
+    } catch (e) {}
+    const benchArr = CDD_PLAYERS.filter(p => !used.has(p.id) && p.status !== 'reserve').slice(0, benchTarget).map(p => p.id);
     benchArr.forEach(pid => used.add(pid));
     const reserveArr = CDD_PLAYERS.filter(p => !used.has(p.id)).map(p => p.id);
     return { formation, starters, bench: benchArr, reserve: reserveArr };
