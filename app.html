@@ -111,11 +111,4 @@ window.addEventListener('beforeinstallprompt', (e) => {
   window.deferredInstallPrompt = e;
   console.info('[PWA] install prompt captured, bouton "Installer l\'app" actif');
 });
-window.addEventListener('appinstalled', () => {
-  window.deferredInstallPrompt = null;
-  console.info('[PWA] app installée');
-});
-</script>
-
-</body>
-</html>
+window.addEventListener('appinstalled',

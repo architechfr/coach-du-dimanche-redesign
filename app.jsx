@@ -436,9 +436,4 @@ window.ScreenFicheMatch = ScreenFicheMatch;
 window.App = App;
 
 // Render. Listen for data rebuilds (real-data mode) to force refresh.
-(function() {
-  const root = ReactDOM.createRoot(document.getElementById("root"));
-  function render() { root.render(<App/>); }
-  window.addEventListener('cdd-data-rebuilt', render);
-  render();
-})();
+(function(

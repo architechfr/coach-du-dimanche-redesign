@@ -609,10 +609,4 @@ function FormationDiagram({ formationKey }) {
       <circle cx="50" cy="50" r="7" fill="none" stroke="rgba(255,255,255,.15)" strokeWidth=".3"/>
       {slots.map((s, i) => {
         const color = CDD_POS_COLOR[s.pos] || "#c8f169";
-        return <circle key={i} cx={s.x} cy={s.y} r="3.5" fill={color} stroke="#fff" strokeWidth=".6"/>;
-      })}
-    </svg>
-  );
-}
-
-window.ScreenLineup = ScreenLineup;
+        return <ci
