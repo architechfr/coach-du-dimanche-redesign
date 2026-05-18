@@ -134,10 +134,44 @@ function TacEditor({ teamId, schemeId, onBack }) {
   // Charger ou initialiser le scheme
   const initial = () => {
     if (schemeId === 'new') {
+      // Reprendre la formation actuelle du lineup (cdd_lineup_template) si dispo
+      let players = DEFAULT_PLAYERS.map(p => ({ ...p }));
+      let basedOn = null;
+      try {
+        const activeTeam = window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam();
+        if (activeTeam) {
+          const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+          const lineup = all[activeTeam.id];
+          if (lineup && lineup.formation) {
+            // Récupérer les slots de la formation choisie
+            const formationName = (lineup.formation && window.CDD_FORMATIONS && window.CDD_FORMATIONS[lineup.formation])
+              ? lineup.formation
+              : (lineup.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[lineup.basedOn])
+                ? lineup.basedOn
+                : '4-3-3';
+            const slots = window.CDD_FORMATIONS[formationName];
+            if (slots && slots.length === 11) {
+              players = slots.map((slot, i) => {
+                const pid = lineup.starters && lineup.starters[i];
+                const p = pid && window.CDD_PLAYERS && window.CDD_PLAYERS.find(x => x.id === pid);
+                return {
+                  id: 'p' + (i + 1),
+                  num: (p && p.num) || (i + 1),
+                  x: slot.x, y: slot.y,
+                  label: (p && (p.first || '#' + p.num)) || slot.pos || '',
+                };
+              });
+              basedOn = formationName;
+            }
+          }
+        }
+      } catch (e) { console.warn('[tactique] init from lineup KO', e); }
+
       return {
         id: 'sch_' + Date.now(),
-        name: 'Nouveau schéma',
-        players: DEFAULT_PLAYERS.map(p => ({ ...p })),
+        name: basedOn ? `Schéma (${basedOn})` : 'Nouveau schéma',
+        formation: basedOn,
+        players,
         ball: { x: 50, y: 50 },
         arrows: [],
         updatedAt: Date.now(),

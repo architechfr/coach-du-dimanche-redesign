@@ -668,11 +668,13 @@ function ScreenMatchV2({ go, tweaks }) {
           onCancel={() => setActiveFlow(null)}/>
       )}
 
-      {/* Sub flow */}
+      {/* Sub flow — mode 'all' : amateur, pas de limite de changements
+           (un joueur peut sortir, rentrer, ressortir autant que voulu) */}
       {activeFlow?.kind === 'sub-out' && (
         <PlayerPicker
           title="🔻 Joueur sortant"
-          team={team} mode="field" M={M}
+          subtitle="Tape sur celui qui sort du terrain"
+          team={team} mode="all" M={M}
           onPick={handleSubOut(activeFlow.side)}
           onCancel={() => setActiveFlow(null)}/>
       )}
@@ -680,7 +682,7 @@ function ScreenMatchV2({ go, tweaks }) {
         <PlayerPicker
           title="🔺 Joueur entrant"
           subtitle={`Pour ${MATCH_HELPERS.playerLabel(subOut)}`}
-          team={team} mode="bench" M={M}
+          team={team} mode="all" M={M}
           onPick={handleSubIn(activeFlow.side)}
           onCancel={() => { setSubOut(null); setActiveFlow(null); }}/>
       )}

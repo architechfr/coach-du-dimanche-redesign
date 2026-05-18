@@ -491,9 +491,9 @@ async function rebuildCDDGlobals() {
     ],
   };
 
-  // Next match — synthesized (will be overwritten by FFF if available)
+  // Next match — par défaut "À déterminer" jusqu'à ce que FFF nous donne un vrai match
   window.CDD_NEXT_MATCH = {
-    date: "À venir",
+    date: "À déterminer",
     home: clubName || "Mon équipe",
     away: "À déterminer",
     homeBadge: clubName?.[0] || "?",
@@ -502,6 +502,7 @@ async function rebuildCDDGlobals() {
     weather: "",
     competition: fffCfg?.label || (activeTeam?.name + ' · Championnat'),
     daysLeft: 0,
+    noUpcoming: true, // ← flag pour l'UI : afficher un placeholder explicite
   };
 
   // Default placeholders — overridden by FFF data
@@ -511,7 +512,7 @@ async function rebuildCDDGlobals() {
 
   // ─── Convoc : taille configurable par équipe (14/16/18/20 ou libre) ───
   const lt = activeTeam?.lineupTemplate;
-  let convocCount = 16; // 11 tit + 5 remp par défaut (compatibilité)
+  let convocCount = 14; // 11 titulaires + 3 remplaçants (défaut foot amateur)
   try {
     const allSet = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
     if (allSet[activeTeam?.id] && typeof allSet[activeTeam.id].count === 'number') {
