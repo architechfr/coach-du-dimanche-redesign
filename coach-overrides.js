@@ -55,12 +55,14 @@ window.CDD_COACH = {
     all[playerId] = { first: (first||'').trim(), last: (last||'').trim().toUpperCase() };
     try { localStorage.setItem('cdd_player_name_override', JSON.stringify(all)); } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
   resetName(playerId) {
     const all = this.getNameOverrides();
     delete all[playerId];
     try { localStorage.setItem('cdd_player_name_override', JSON.stringify(all)); } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
 
   getStatusOverrides() {
@@ -73,6 +75,7 @@ window.CDD_COACH = {
     else all[playerId] = statusId;
     try { localStorage.setItem('cdd_player_status_override', JSON.stringify(all)); } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
   getStatus(player) {
     const overrides = this.getStatusOverrides();
@@ -90,12 +93,14 @@ window.CDD_COACH = {
     all[playerId][key] = value;
     try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
   resetStats(playerId) {
     const all = this.getStatsOverrides();
     delete all[playerId];
     try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
 
   // ─── Profil joueur (poste, licence, taille, pied, parents…) ───

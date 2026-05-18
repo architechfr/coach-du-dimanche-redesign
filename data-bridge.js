@@ -552,16 +552,36 @@ async function rebuildCDDGlobals() {
 
   // Remplaçants : convocCount - starters parmi les dispos restants
   const startersSet = new Set(starters);
-  const benchPool = availablePlayers.filter(p => !startersSet.has(p.id) && p.status !== 'reserve');
+  let benchPool = availablePlayers.filter(p => !startersSet.has(p.id) && p.status !== 'reserve');
+  // #41 — Si benchPool insuffisant, puiser dans les 'reserve' (joueurs surnumeraires)
+  // pour atteindre la taille demandee (ou au moins 3 remplaçants mini).
+  const MIN_BENCH = 3;
   let bench;
   if (convocCount === null) {
-    // Illimité = tous les dispos non-titulaires non-réserve
-    bench = benchPool.map(p => p.id);
+    // Illimité = tous les dispos (banc + reserve), 3 mini si possible
+    const reservistsAll = availablePlayers.filter(p => !startersSet.has(p.id) && p.status === 'reserve');
+    bench = [...benchPool, ...reservistsAll].map(p => p.id);
   } else {
-    const benchSize = Math.max(0, convocCount - starters.length);
+    const benchTarget = Math.max(MIN_BENCH, convocCount - starters.length);
+    if (benchPool.length < benchTarget) {
+      const reservists = availablePlayers.filter(p =>
+        !startersSet.has(p.id) && p.status === 'reserve' && !benchPool.some(b => b.id === p.id)
+      );
+      benchPool = [...benchPool, ...reservists];
+    }
     bench = (lt?.benchIds && lt.benchIds.length)
-      ? lt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchSize)
-      : benchPool.slice(0, benchSize).map(p => p.id);
+      ? lt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchTarget)
+      : benchPool.slice(0, benchTarget).map(p => p.id);
+    // Si lt.benchIds donne moins que la cible, completer avec le reste du pool
+    if (bench.length < benchTarget) {
+      const inBench = new Set(bench);
+      benchPool.forEach(p => {
+        if (bench.length < benchTarget && !inBench.has(p.id)) {
+          bench.push(p.id);
+          inBench.add(p.id);
+        }
+      });
+    }
   }
 
   // Absents : TOUS (plus de slice(0,3))
