@@ -1,9 +1,11 @@
 /* global React, CDD_PLAYERS, CDD_FORMATIONS, CDD_CLUB, CDD_NEXT_MATCH, CDD_CONVO, POSITION_LABEL */
 
 /* ============================================================
-   SCREEN — Visuel équipe (export image WhatsApp / Instagram)
+   SCREEN — Mode Vestiaire (projection compo + export image)
    ============================================================
-   Terrain vert + 11 joueurs aux postes avec photo + numéro + nom.
+   Affiche la convocation du match (titulaires aux postes + remplaçants en bas)
+   pour vérifier la compo dans le vestiaire avant le coup d'envoi.
+   Source : CDD_CONVO (overlay match si défini, sinon compo type saison).
    Header : logo club + nom + adversaire.
    Footer : sponsors (configurables) + coach.
    Export PNG via html2canvas (lazy CDN) + partage natif navigator.share.
@@ -37,8 +39,11 @@ function ScreenTV({ go, tweaks }) {
   const [showSponsorEditor, setShowSponsorEditor] = useStateTV(false);
   const [sponsors, setSponsors] = useStateTV(loadSponsors);
 
+  // Formation + positions des slots viennent de la compo type (le coach les a réglées là).
+  // Mais les joueurs affichés viennent de la CONVOCATION du match (CDD_CONVO), pas du
+  // template figé — c'est tout l'intérêt du Mode Vestiaire : voir la vraie compo du jour.
   let formation = '4-3-3';
-  let startersMap = {};
+  let templateStartersMap = {};
   try {
     const activeTeam = window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam();
     if (activeTeam) {
@@ -48,7 +53,7 @@ function ScreenTV({ go, tweaks }) {
         const f = s.formation;
         if (f && window.CDD_FORMATIONS && window.CDD_FORMATIONS[f]) formation = f;
         else if (s.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[s.basedOn]) formation = s.basedOn;
-        startersMap = s.starters;
+        templateStartersMap = s.starters;
       }
     }
   } catch (e) {}
@@ -56,14 +61,40 @@ function ScreenTV({ go, tweaks }) {
   const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[formation]) ||
                 (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
   const playerOf = (pid) => pid && window.CDD_PLAYERS && window.CDD_PLAYERS.find(p => p.id === pid);
+
+  // Titulaires convoqués (overlay-aware via data-bridge → CDD_CONVO.starters)
+  const convoStartersIds = (window.CDD_CONVO && window.CDD_CONVO.starters) || [];
+  const convoBenchIds    = (window.CDD_CONVO && window.CDD_CONVO.bench)    || [];
+  const hasMatchOverlay  = !!(window.CDD_CONVO && window.CDD_CONVO.hasMatchOverlay);
+
+  // Placement : on garde la position template d'un joueur convoqué, et on case les
+  // remplacés (joueur du template non convoqué pour ce match) dans les slots libres.
+  const convoSet = new Set(convoStartersIds);
+  const placedSet = new Set();
+  const effectiveStartersMap = {};
+  slots.forEach((_, i) => {
+    const tplPid = templateStartersMap[i];
+    if (tplPid && convoSet.has(tplPid)) {
+      effectiveStartersMap[i] = tplPid;
+      placedSet.add(tplPid);
+    }
+  });
+  const remaining = convoStartersIds.filter(pid => !placedSet.has(pid));
+  slots.forEach((_, i) => {
+    if (!effectiveStartersMap[i] && remaining.length > 0) {
+      effectiveStartersMap[i] = remaining.shift();
+    }
+  });
+  // Fallback ultime : si pas de convoc du tout, on retombe sur template.starters puis sur isStarter
   let starterPlayers = slots.map((slot, i) => {
-    let pid = startersMap[i];
+    let pid = effectiveStartersMap[i] || templateStartersMap[i];
     if (!pid) {
       const fallback = (window.CDD_PLAYERS || []).filter(p => p.isStarter)[i];
       if (fallback) pid = fallback.id;
     }
     return playerOf(pid);
   });
+  const benchPlayers = convoBenchIds.map(playerOf).filter(Boolean);
 
   const club = window.CDD_CLUB || { name: 'MON CLUB', team: 'EQUIPE', colors: ['#22c55e', '#000'] };
   const match = window.CDD_NEXT_MATCH || {};
@@ -109,10 +140,10 @@ function ScreenTV({ go, tweaks }) {
   const fillCount = starterPlayers.filter(Boolean).length;
 
   return (
-    <div className="scr scr-tv fade-in" data-screen-label="08 Visuel compo">
+    <div className="scr scr-tv fade-in" data-screen-label="08 Mode vestiaire">
 
       <div className="tv-toolbar">
-        <div className="tv-tb-title">VISUEL COMPO</div>
+        <div className="tv-tb-title">MODE VESTIAIRE</div>
         <div className="tv-tb-actions">
           <button className="tv-btn" onClick={() => setShowSponsorEditor(true)}
                   title="Configurer les sponsors">
@@ -129,9 +160,21 @@ function ScreenTV({ go, tweaks }) {
 
       {fillCount < 11 && (
         <div className="tv-warn">
-          ⚠️ Seulement {fillCount}/11 joueurs sur la compo. Va dans Compo pour finaliser, puis reviens ici.
+          ⚠️ Seulement {fillCount}/11 titulaires convoqués. Complète la convocation puis reviens ici.
         </div>
       )}
+
+      {/* Source : convoc adaptée pour ce match, ou compo type saison */}
+      <div className="tv-source-badge" style={{
+        margin:'0 14px 10px', padding:'8px 12px', borderRadius:8,
+        background: hasMatchOverlay ? 'rgba(249,115,22,0.10)' : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${hasMatchOverlay ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.10)'}`,
+        fontSize:11.5, color:'rgba(255,255,255,0.85)', letterSpacing:.2,
+      }}>
+        {hasMatchOverlay
+          ? <><b style={{color:'#f97316'}}>Convocation adaptée pour ce match</b> · {convoStartersIds.length} titulaires · {benchPlayers.length} remplaçants</>
+          : <><b>Compo type saison</b> · aucune convocation spécifique pour ce match · {convoStartersIds.length} titulaires · {benchPlayers.length} remplaçants</>}
+      </div>
 
       {/* ─── Zone capturée pour l'export ─── */}
       <div className="tv-card" ref={cardRef}>
@@ -257,6 +300,47 @@ function ScreenTV({ go, tweaks }) {
             </g>
           </svg>
         </div>
+
+        {/* BANC / REMPLAÇANTS — inclus dans la capture export */}
+        {benchPlayers.length > 0 && (
+          <div className="tv-card-bench" style={{
+            padding:'10px 14px 12px',
+            background:'rgba(0,0,0,0.35)',
+            borderTop:'1px solid rgba(255,255,255,0.08)',
+          }}>
+            <div style={{
+              fontSize:9.5, fontWeight:800, letterSpacing:'.12em',
+              color:'rgba(255,255,255,0.55)', marginBottom:8, textTransform:'uppercase',
+            }}>
+              Sur le banc · {benchPlayers.length}
+            </div>
+            <div style={{
+              display:'flex', flexWrap:'wrap', gap:6,
+            }}>
+              {benchPlayers.map(p => (
+                <div key={p.id} style={{
+                  display:'flex', alignItems:'center', gap:7,
+                  padding:'5px 9px 5px 5px',
+                  background:'rgba(255,255,255,0.06)',
+                  border:'1px solid rgba(255,255,255,0.10)',
+                  borderRadius:18, fontSize:12,
+                }}>
+                  <span style={{
+                    minWidth:22, height:22, borderRadius:11,
+                    background: primary, color: secondary,
+                    display:'inline-flex', alignItems:'center', justifyContent:'center',
+                    fontWeight:900, fontSize:11, padding:'0 5px',
+                  }}>{p.num}</span>
+                  <span style={{fontWeight:700, color:'#fff'}}>{p.first}</span>
+                  {p.pos && <span style={{
+                    fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.55)',
+                    letterSpacing:.4, marginLeft:1,
+                  }}>{(window.POSITION_LABEL && window.POSITION_LABEL[p.pos]) || p.pos}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* SPONSORS si configurés */}
         {sponsors.length > 0 && (
