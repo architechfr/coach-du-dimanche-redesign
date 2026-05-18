@@ -12,7 +12,8 @@ function ScreenPrep({ go, tweaks }) {
   const lastMatches = (typeof CDD_LAST_MATCHES !== 'undefined' && Array.isArray(CDD_LAST_MATCHES)) ? CDD_LAST_MATCHES : [];
   const convo = CDD_CONVO || { starters:[], bench:[], absent:[] };
   // L'adversaire du prochain match (depuis CDD_NEXT_MATCH.away si possible, sinon "FC PONTOISE" placeholder)
-  const oppName = next.away || "FC PONTOISE";
+  const oppName = (next.away && next.away !== 'À déterminer') ? next.away : null;
+  const noUpcoming = !oppName || next.noUpcoming;
   const opp = standings.find(s => s.club === oppName) || standings.find(s => !s.me) || null;
   const me  = standings.find(s => s.me) || null;
   const lastMatch = lastMatches[0] || null;
@@ -32,13 +33,13 @@ function ScreenPrep({ go, tweaks }) {
           <div className="prep-hero-title">{next.competition}</div>
           <div className="prep-hero-vs">
             <span className="prep-team me">
-              <i className="prep-badge me">F</i>
-              <em>FCMH</em>
+              <i className="prep-badge me">{(CDD_CLUB?.short || 'F').charAt(0)}</i>
+              <em>{CDD_CLUB?.short || 'MON CLUB'}</em>
             </span>
             <span className="prep-vs-l">VS</span>
             <span className="prep-team them">
-              <em>FC PONTOISE</em>
-              <i className="prep-badge them">P</i>
+              <em>{noUpcoming ? 'À DÉTERMINER' : oppName}</em>
+              <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>
             </span>
           </div>
           <div className="prep-hero-when">
@@ -49,20 +50,24 @@ function ScreenPrep({ go, tweaks }) {
         </div>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip — cliquables (renvoient vers Convocations / Effectif filtre Infirmerie) */}
       <div className="prep-kpis">
-        <div className="prep-kpi">
+        <button className="prep-kpi prep-kpi-btn" onClick={() => go('convocations')}
+                title="Voir la convocation complete">
           <b className="num">{convoCount}</b>
           <em>Convoqués</em>
-        </div>
-        <div className="prep-kpi warn">
+        </button>
+        <button className="prep-kpi prep-kpi-btn warn"
+                onClick={() => go('effectif', { statusFilter: 'unavailable' })}
+                title="Ouvrir l'infirmerie">
           <b className="num">{absCount}</b>
           <em>Absents</em>
-        </div>
-        <div className="prep-kpi">
+        </button>
+        <button className="prep-kpi prep-kpi-btn" onClick={() => go('convocations')}
+                title="Voir les titulaires">
           <b className="num">{CDD_CONVO.starters.length}</b>
           <em>Titulaires</em>
-        </div>
+        </button>
         <div className="prep-kpi acc">
           <b>{next.daysLeft}</b>
           <em className="num">jour{next.daysLeft>1?"s":""}</em>

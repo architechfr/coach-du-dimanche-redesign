@@ -41,7 +41,15 @@ function ScreenEffectif({ go, tweaks }) {
   }
 
   if (statusFilter !== "all") {
-    list = list.filter(p => (p.raw?.status || p.status) === statusFilter);
+    if (statusFilter === 'unavailable') {
+      // Infirmerie : blesses + suspendus + indispos
+      list = list.filter(p => {
+        const s = p.raw?.status || p.status;
+        return s === 'rest' || s === 'injured' || s === 'suspended';
+      });
+    } else {
+      list = list.filter(p => (p.raw?.status || p.status) === statusFilter);
+    }
   }
 
   // Apply sort
@@ -106,10 +114,11 @@ function ScreenEffectif({ go, tweaks }) {
           <div className="ef-fp-k">STATUT</div>
           <div className="ef-fp-row">
             {[
-              { id: "all",     l: "Tous" },
-              { id: "active",  l: "✓ Dispo" },
-              { id: "rest",    l: "⏸ Indispo" },
-              { id: "reserve", l: "★ Réserve" },
+              { id: "all",         l: "Tous" },
+              { id: "active",      l: "✓ Dispo" },
+              { id: "unavailable", l: "🩹 Infirmerie" },
+              { id: "rest",        l: "⏸ Indispo" },
+              { id: "reserve",     l: "★ Réserve" },
             ].map(s => (
               <button key={s.id} className={`ef-fp-chip ${statusFilter===s.id?"on":""}`} onClick={()=>setStatusFilter(s.id)}>
                 {s.l}
@@ -390,17 +399,13 @@ function ScreenLineup({ go, tweaks }) {
       <div className="cl-quick-actions" style={{
         display:'flex', gap:8, padding:'10px 14px 0',
       }}>
-        <button className="tv-btn" onClick={() => go("compo-libre")}
-                style={{flex:1, fontSize:12}}>
-          🎯 COMPO LIBRE
-        </button>
         <button className="tv-btn" onClick={() => go("tactique")}
-                style={{flex:1, fontSize:12}}>
+                style={{flex:1, fontSize:13}}>
           🎬 TACTIQUE
         </button>
         <button className="tv-btn" onClick={() => go("tv")}
-                style={{flex:1, fontSize:12}}>
-          📺 TV
+                style={{flex:1, fontSize:13}}>
+          📷 VISUEL COMPO
         </button>
       </div>
 
@@ -609,4 +614,10 @@ function FormationDiagram({ formationKey }) {
       <circle cx="50" cy="50" r="7" fill="none" stroke="rgba(255,255,255,.15)" strokeWidth=".3"/>
       {slots.map((s, i) => {
         const color = CDD_POS_COLOR[s.pos] || "#c8f169";
-        return <ci
+        return <circle key={i} cx={s.x} cy={s.y} r="3.5" fill={color} stroke="#fff" strokeWidth=".6"/>;
+      })}
+    </svg>
+  );
+}
+
+window.ScreenLineup = ScreenLineup;

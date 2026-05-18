@@ -230,7 +230,7 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly }) {
 // ──────────────────────────────────────────────────────────
 // Action grid — BUT / JAUNE / ROUGE / CHANGE per team
 // ──────────────────────────────────────────────────────────
-function ActionGrid({ side, M, disabled, onGoal, onCard, onSub }) {
+function ActionGrid({ side, M, disabled, onGoal, onCard, onSub, onInjury }) {
   const tName = side === 'A' ? M.tA.n : M.tB.n;
   return (
     <div className={`mv-actions mv-actions-${side}`}>
@@ -252,6 +252,12 @@ function ActionGrid({ side, M, disabled, onGoal, onCard, onSub }) {
           <span className="mv-action-ic">⇅</span>
           <span className="mv-action-l">CHANGE</span>
         </button>
+        {onInjury && (
+          <button className="mv-action mv-action-injury" disabled={disabled} onClick={() => onInjury(side)}>
+            <span className="mv-action-ic">🩹</span>
+            <span className="mv-action-l">BLESSÉ</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -566,6 +572,27 @@ function ScreenMatchV2({ go, tweaks }) {
     }
   };
 
+  // ─── Blessure flow (#16) ────────────────────────────
+  const handleInjury = (side) => {
+    setActiveFlow({ kind: 'injury', side });
+  };
+  const handleInjuryPick = (side) => (player) => {
+    const playerLbl = MATCH_HELPERS.playerLabel(player);
+    const mn = MATCH_HELPERS.gMin(M);
+    // Enregistre l'événement injury
+    if (MATCH_HELPERS.setInjured) {
+      MATCH_HELPERS.setInjured(M, side, player.id);
+    } else {
+      // Fallback si helper pas dispo
+      M.ev.push({ tp:'injury', t: side, mn, pl: playerLbl, ts: Date.now() });
+    }
+    MATCH_SFX.vibrate(150);
+    // Proposer immédiatement un sub : on garde le joueur blessé comme subOut
+    setSubOut(player);
+    setActiveFlow({ kind: 'sub-in', side });
+    rerender();
+  };
+
   // ─── Sub flow ──────────────────────────────────────
   const [subOut, setSubOut] = useStateMV(null);
   const handleSubOut = (side) => (player) => {
@@ -616,12 +643,18 @@ function ScreenMatchV2({ go, tweaks }) {
         <PreMatchSetup M={M} onStart={startMatch} rerender={rerender}/>
       )}
 
+      {/* Vue Composition en match (#17) */}
+      {showLineup && (
+        <LineupOverlay M={M} onClose={() => setShowLineup(false)}/>
+      )}
+
       {!M.notStarted && (
         <>
           <ActionGrid side="A" M={M} disabled={disabled}
             onGoal={() => setActiveFlow({ kind:'goal', side:'A' })}
             onCard={handleCard}
-            onSub={(side) => setActiveFlow({ kind:'sub-out', side })}/>
+            onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
+            onInjury={handleInjury}/>
 
           <ActionGrid side="B" M={M} disabled={disabled}
             onGoal={() => setActiveFlow({ kind:'goal', side:'B' })}
@@ -665,6 +698,16 @@ function ScreenMatchV2({ go, tweaks }) {
           title={activeFlow.color === 'yellow' ? '🟨 Carton jaune' : '🟥 Carton rouge'}
           team={team} mode="field" M={M}
           onPick={handleCardPick(activeFlow.side, activeFlow.color)}
+          onCancel={() => setActiveFlow(null)}/>
+      )}
+
+      {/* Blessure flow (#16) — pick joueur blesse, puis sub-in auto */}
+      {activeFlow?.kind === 'injury' && (
+        <PlayerPicker
+          title="🩹 Joueur blessé"
+          subtitle="Tape sur le joueur blessé. Tu pourras le remplacer juste après."
+          team={team} mode="all" M={M}
+          onPick={handleInjuryPick(activeFlow.side)}
           onCancel={() => setActiveFlow(null)}/>
       )}
 
@@ -760,6 +803,165 @@ function getYellowsForPlayer(M, t, lbl) {
 }
 
 // Replace the existing ScreenMatch
+
+// ──────────────────────────────────────────────────────────
+// Vue Composition en match (#17) — terrain + banc + sortis + indispo
+// ──────────────────────────────────────────────────────────
+function LineupOverlay({ M, onClose }) {
+  const team = M.tA;
+  const injured = new Set();
+  const excluded = new Set();
+  (M.ev || []).forEach(e => {
+    if (e.t !== 'A') return;
+    if (e.tp === 'injury' && e.pl) injured.add(e.pl);
+    if (e.tp === 'red' && e.pl) excluded.add(e.pl);
+  });
+  const subs = (M.ev || []).filter(e => e.tp === 'sub' && e.t === 'A');
+  const lbl = (p) => '#' + p.num + (p.first ? ' ' + p.first : '');
+  const onField = new Set((team.p || []).map(lbl));
+  const onBench = new Set((team.bench || []).map(lbl));
+  subs.forEach(s => {
+    if (s.out && onField.has(s.out)) { onField.delete(s.out); onBench.add(s.out); }
+    if (s.inn && onBench.has(s.inn)) { onBench.delete(s.inn); onField.add(s.inn); }
+  });
+  const allPlayers = [...(team.p || []), ...(team.bench || [])];
+  const playerByLbl = {};
+  allPlayers.forEach(p => { playerByLbl[lbl(p)] = p; });
+  const fieldPlayers = [...onField].map(l => playerByLbl[l]).filter(Boolean);
+  const benchPlayers = [...onBench].map(l => playerByLbl[l]).filter(Boolean);
+  const injuredPlayers = [...injured].map(l => playerByLbl[l]).filter(Boolean);
+  const excludedPlayers = [...excluded].map(l => playerByLbl[l]).filter(Boolean);
+
+  const primary = team.c || '#22c55e';
+  const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
+
+  return (
+    <div className="mv-modal-overlay" onClick={onClose} style={{zIndex:9999}}>
+      <div className="mv-modal" onClick={e => e.stopPropagation()}
+           style={{maxWidth:'92%', width:'500px', maxHeight:'92vh', overflow:'auto'}}>
+        <div className="mv-modal-h">
+          <div>
+            <div className="mv-modal-k">COMPOSITION EN COURS</div>
+            <h2 className="mv-modal-t">{team.n}</h2>
+            <div className="mv-modal-s">
+              {fieldPlayers.length} sur le terrain · {benchPlayers.length} au banc
+              {injuredPlayers.length > 0 && ` · ${injuredPlayers.length} blessé(s)`}
+              {excludedPlayers.length > 0 && ` · ${excludedPlayers.length} exclu(s)`}
+            </div>
+          </div>
+          <button className="mv-modal-x" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{padding:'12px', background:'rgba(0,0,0,.2)', borderRadius:10, margin:'12px'}}>
+          <svg viewBox="0 0 100 110" width="100%" style={{maxHeight:'320px', display:'block'}}>
+            <defs>
+              <linearGradient id="lo-grass" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#1f7a3a"/>
+                <stop offset="100%" stopColor="#1c6e35"/>
+              </linearGradient>
+            </defs>
+            <rect width="100" height="110" fill="url(#lo-grass)"/>
+            <g stroke="rgba(255,255,255,.55)" strokeWidth=".3" fill="none">
+              <rect x="2" y="2" width="96" height="106"/>
+              <line x1="2" y1="55" x2="98" y2="55"/>
+              <circle cx="50" cy="55" r="9"/>
+              <rect x="22" y="2"  width="56" height="13"/>
+              <rect x="22" y="95" width="56" height="13"/>
+            </g>
+            {fieldPlayers.slice(0, 11).map((p, i) => {
+              const slot = slots[i] || { x:50, y:55 };
+              const x = slot.x;
+              const y = 6 + (slot.y / 92) * 94;
+              return (
+                <g key={i} transform={`translate(${x}, ${y})`}>
+                  <circle r="6" fill={primary} stroke="#fff" strokeWidth=".5"/>
+                  <text textAnchor="middle" dominantBaseline="central"
+                        fontSize="5" fontWeight="900" fill="#000"
+                        fontFamily="Inter, sans-serif" y=".5">
+                    {p.num}
+                  </text>
+                  <g transform="translate(0, 10)">
+                    <rect x="-12" y="-2" width="24" height="3.5" rx=".5" fill="rgba(0,0,0,.85)"/>
+                    <text textAnchor="middle" dominantBaseline="central"
+                          fontSize="2.4" fontWeight="700" fill="#fff"
+                          fontFamily="Inter, sans-serif">
+                      {(p.first || '').slice(0, 12)}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        <div style={{padding:'0 12px 16px'}}>
+          {benchPlayers.length > 0 && (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em',
+                           color:'rgba(255,255,255,.55)', marginBottom:6,
+                           textTransform:'uppercase'}}>
+                ⏱ AU BANC · {benchPlayers.length}
+              </div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                {benchPlayers.map(p => (
+                  <span key={p.id} style={{
+                    padding:'4px 10px', borderRadius:6,
+                    background:'rgba(255,255,255,.06)', fontSize:12,
+                    border:'1px solid rgba(255,255,255,.1)',
+                  }}>
+                    <b style={{color:primary, marginRight:6}}>#{p.num}</b>
+                    {p.first || p.last}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {injuredPlayers.length > 0 && (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em',
+                           color:'#ff9a3d', marginBottom:6, textTransform:'uppercase'}}>
+                🩹 BLESSÉS · {injuredPlayers.length}
+              </div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                {injuredPlayers.map(p => (
+                  <span key={p.id} style={{
+                    padding:'4px 10px', borderRadius:6,
+                    background:'rgba(255,160,40,.1)', fontSize:12,
+                    border:'1px solid rgba(255,160,40,.3)',
+                  }}>
+                    <b style={{marginRight:6}}>#{p.num}</b>
+                    {p.first || p.last}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {excludedPlayers.length > 0 && (
+            <div>
+              <div style={{fontSize:11, fontWeight:700, letterSpacing:'.1em',
+                           color:'#ff5b5b', marginBottom:6, textTransform:'uppercase'}}>
+                🟥 EXCLUS · {excludedPlayers.length}
+              </div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                {excludedPlayers.map(p => (
+                  <span key={p.id} style={{
+                    padding:'4px 10px', borderRadius:6,
+                    background:'rgba(255,80,80,.12)', fontSize:12,
+                    border:'1px solid rgba(255,80,80,.3)',
+                  }}>
+                    <b style={{marginRight:6}}>#{p.num}</b>
+                    {p.first || p.last}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 window.ScreenMatch = ScreenMatchV2;
 
 // Attach helpers en MUTANT l'objet (évite la race condition avec match-engine.js).
