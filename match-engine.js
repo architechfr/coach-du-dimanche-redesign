@@ -42,6 +42,13 @@ function saveMatch(M) {
   try { localStorage.setItem('cdd_match_'+M.id, JSON.stringify(M)); } catch (e) {}
 }
 function newMatch(tA, tB, cfg = {}) {
+  // Cloisonnement #20 : tag le match avec le club et l'equipe active
+  let clubId = null, tmId = null;
+  try {
+    const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+    clubId = ctx.clubId || localStorage.getItem('arb_current_club');
+    tmId = ctx.teamId;
+  } catch (e) {}
   return {
     id: 'm_' + Date.now().toString(36),
     st: 'paused', notStarted: true,
@@ -55,6 +62,12 @@ function newMatch(tA, tB, cfg = {}) {
     rA: 0, rB: 0,
     uA: 0, uB: 0,
     ev: [],
+    // #20 cloisonnement
+    clubId,
+    tmId,
+    startedAt: null,
+    savedAt: null,
+    endedAt: null,
   };
 }
 
@@ -218,12 +231,80 @@ function checkAlerts(M, onAlert) {
   _alertsFired.set(M, fired);
 }
 
+// ─── Recuperer un match en cours pour reprise (#20) ───
+// Cherche un match dont st !== 'finished' && !notStarted dans le localStorage.
+// Filtre par club actif si dispo.
+function getLiveMatch() {
+  try {
+    const activeClub = JSON.parse(localStorage.getItem('cdd_active_context') || '{}').clubId
+                     || localStorage.getItem('arb_current_club');
+    let best = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('cdd_match_')) continue;
+      try {
+        const m = JSON.parse(localStorage.getItem(k) || 'null');
+        if (!m) continue;
+        if (m.notStarted || m.st === 'finished') continue;
+        // Filtre par club actif si match tagge
+        if (activeClub && m.clubId && m.clubId !== activeClub) continue;
+        // Garder le plus recent (par tSt ou savedAt)
+        const t = m.savedAt || m.tSt || 0;
+        if (!best || t > (best.savedAt || best.tSt || 0)) best = m;
+      } catch (e) {}
+    }
+    return best;
+  } catch (e) { return null; }
+}
+
+// ─── Calculer les exploits joueurs depuis M.ev (#19) ───
+// doubles, triples (hat-tricks), sortie blanche pour le gardien.
+function computeExploits(M) {
+  if (!M || !M.ev) return { goals: {}, assists: {}, yellows: {}, reds: {}, mvp: null, hatTricks: [], doubles: [], cleanSheet: false };
+  const goals = {};
+  const assists = {};
+  const yellows = {};
+  const reds = {};
+  const mins = {};
+  M.ev.forEach(e => {
+    if (!e || !e.t) return;
+    if (e.t !== 'A') return; // mon equipe seulement
+    if (e.tp === 'goal'   && e.pl) goals[e.pl] = (goals[e.pl] || 0) + 1;
+    if (e.tp === 'goal'   && e.passer) assists[e.passer] = (assists[e.passer] || 0) + 1;
+    if (e.tp === 'yellow' && e.pl) yellows[e.pl] = (yellows[e.pl] || 0) + 1;
+    if (e.tp === 'red'    && e.pl) reds[e.pl] = (reds[e.pl] || 0) + 1;
+  });
+  const hatTricks = Object.keys(goals).filter(p => goals[p] >= 3);
+  const doubles   = Object.keys(goals).filter(p => goals[p] === 2);
+  const cleanSheet = (M.sB || 0) === 0 && M.st === 'finished';
+  // MVP = meilleur buteur (par defaut), ou plus de passes si egal
+  let mvp = null, mvpScore = 0;
+  Object.keys(goals).forEach(p => {
+    const score = goals[p] * 3 + (assists[p] || 0);
+    if (score > mvpScore) { mvpScore = score; mvp = p; }
+  });
+  return { goals, assists, yellows, reds, mins, mvp, hatTricks, doubles, cleanSheet };
+}
+
+// ─── Editer un event post-match (#19) ───
+function editEvent(M, eventIdx, patch) {
+  if (!M || !M.ev || !M.ev[eventIdx]) return false;
+  M.ev[eventIdx] = { ...M.ev[eventIdx], ...patch, _edited: true };
+  // Recompter le score si on a modifie un but
+  if (patch.tp === 'goal' || M.ev[eventIdx].tp === 'goal') {
+    M.sA = M.ev.filter(e => e.tp === 'goal' && e.t === 'A').length;
+    M.sB = M.ev.filter(e => e.tp === 'goal' && e.t === 'B').length;
+  }
+  return true;
+}
+
 // MUTATION au lieu d'assignment pour éviter race condition avec screen-match-live-v2.jsx
 if (!window.MATCH_HELPERS) window.MATCH_HELPERS = {};
 Object.assign(window.MATCH_HELPERS, {
   newMatch, loadMatch, saveMatch, gMatch, gMin, buildDefaultTeams, playerLabel,
   requestWakeLock, releaseWakeLock, goFullscreen, exitFullscreen,
   startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
+  getLiveMatch, computeExploits, editEvent,
 });
 if (!window.MATCH_SFX) window.MATCH_SFX = {};
 Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });
