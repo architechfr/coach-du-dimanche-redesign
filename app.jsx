@@ -1,4 +1,4 @@
-/* global React, ReactDOM, ScreenHome, ScreenEffectif, ScreenLineup, ScreenMatch, ScreenFiche, ScreenResults, ScreenConvocations, ScreenSettings, ScreenOnboarding, ScreenTV, ScreenTactique, ScreenCompoLibre, TweaksPanel, TweakSection, TweakColor, TweakRadio, TweakSelect, useTweaks */
+/* global React, ReactDOM, ScreenHome, ScreenEffectif, ScreenLineup, ScreenMatch, ScreenFiche, ScreenResults, ScreenConvocations, ScreenSettings, ScreenOnboarding, ScreenTV, ScreenTactique, TweaksPanel, TweakSection, TweakColor, TweakRadio, TweakSelect, useTweaks */
 
 const { useState, useEffect, useMemo } = React;
 
@@ -50,9 +50,8 @@ const NAV = [
   { id:"sync",         label:"Sync cloud",    ic:"☁",   icon:GearIcon,   bottom:false },
   { id:"set",          label:"Réglages",      ic:"⚙",   icon:GearIcon,   bottom:false },
   { id:"onb",          label:"Onboarding",    ic:"✦",   icon:SparkIcon,  bottom:false },
-  { id:"tv",           label:"Présentation TV", ic:"📺", icon:PitchIcon,  bottom:false },
+  { id:"tv",           label:"Visuel compo",  ic:"📷",  icon:PitchIcon,  bottom:false },
   { id:"tactique",     label:"Tactique",      ic:"🎬",  icon:PitchIcon,  bottom:false },
-  { id:"compo-libre",  label:"Compo libre",   ic:"🎯",  icon:PitchIcon,  bottom:false },
 ];
 
 function HomeIcon() {
@@ -260,7 +259,6 @@ function App() {
             {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t}/>}
             {screen === "tv"           && <ScreenTV go={go} tweaks={t}/>}
             {screen === "tactique"     && <ScreenTactique go={go} tweaks={t}/>}
-            {screen === "compo-libre"  && <ScreenCompoLibre go={go} tweaks={t}/>}
             {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
             {screen === "arb"          && <ScreenArbitre go={go} tweaks={t}/>}
             {screen === "lecteur"      && <ScreenLecteur go={go} tweaks={t}/>}
@@ -420,6 +418,8 @@ function ScreenFicheMatch({ go, tweaks }) {
           ))}
         </div>
       )}
+      <FicheMatchSyncBtn match={m}/>
+
       <div style={{padding:"20px", display:"flex", gap:10}}>
         <button className="btn-cta ghost" style={{flex:1}} onClick={() => go("results")}>
           ← Saison
@@ -431,9 +431,73 @@ function ScreenFicheMatch({ go, tweaks }) {
     </div>
   );
 }
+// ─── Bouton sync match dans le cloud (#11) ───
+function FicheMatchSyncBtn({ match }) {
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+  const onSync = async () => {
+    if (!window.cddSync || !window.cddSync.saveMatchToCloud) {
+      setMsg('❌ Sync cloud non disponible');
+      setTimeout(() => setMsg(''), 2500);
+      return;
+    }
+    let M = null;
+    try {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('cdd_match_'));
+      for (const k of keys) {
+        const m = JSON.parse(localStorage.getItem(k) || 'null');
+        if (m && (!M || (m.tSt && (!M.tSt || m.tSt > M.tSt)))) M = m;
+      }
+    } catch (e) {}
+    if (!M) {
+      setMsg('❌ Aucun match en mémoire à sauvegarder');
+      setTimeout(() => setMsg(''), 2500);
+      return;
+    }
+    setBusy(true);
+    setMsg('Sauvegarde en cours…');
+    try {
+      const res = await window.cddSync.saveMatchToCloud(M);
+      setMsg('✅ Match sauvé dans le cloud (' + res.matchId.slice(-6) + ')');
+      setTimeout(() => setMsg(''), 3500);
+    } catch (e) {
+      setMsg('❌ ' + (e.message || 'Erreur'));
+      setTimeout(() => setMsg(''), 4000);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div style={{padding:"0 20px 8px"}}>
+      <button onClick={onSync} disabled={busy}
+              style={{
+                width:'100%', padding:'14px', borderRadius:12,
+                background:'linear-gradient(135deg, #06b6d4, #0891b2)',
+                color:'#fff', border:'none', fontWeight:800, fontSize:14,
+                letterSpacing:'.04em', cursor:'pointer',
+                opacity: busy ? 0.6 : 1,
+                boxShadow:'0 4px 14px rgba(6,182,212,.35)'
+              }}>
+        {busy ? '⏳ Sauvegarde…' : '☁️ SAUVEGARDER CE MATCH DANS LE CLOUD'}
+      </button>
+      {msg && (
+        <div style={{textAlign:'center', marginTop:8, fontSize:12,
+                     color: msg.startsWith('✅') ? '#c8f169' : msg.startsWith('❌') ? '#ff8a8a' : 'rgba(255,255,255,.7)'}}>
+          {msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 window.ScreenFicheMatch = ScreenFicheMatch;
 
 window.App = App;
 
 // Render. Listen for data rebuilds (real-data mode) to force refresh.
-(function(
+(function() {
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  function render() { root.render(<App/>); }
+  window.addEventListener('cdd-data-rebuilt', render);
+  render();
+})();

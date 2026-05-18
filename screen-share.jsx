@@ -133,26 +133,16 @@ function ScreenSharePartage({ go, tweaks }) {
       <div className="sp-qr-card">
         <div className="sp-qr-k">LIEN COURT · CODE {token}</div>
         <div className="sp-qr-wrap">
-          {/* SVG QR placeholder (déterministe selon token) */}
-          <svg className="sp-qr" viewBox="0 0 21 21" preserveAspectRatio="none" aria-hidden="true">
-            <rect width="21" height="21" fill="#fff"/>
-            {Array.from({length:21*21}, (_, i) => {
-              const x = i % 21, y = Math.floor(i / 21);
-              const hash = (token.charCodeAt(0)+token.charCodeAt(token.length-1)+x*7+y*11) % 3;
-              if (hash !== 0) return null;
-              return <rect key={i} x={x} y={y} width="1" height="1" fill="#000"/>;
-            })}
-            {/* Position markers */}
-            <rect x="0" y="0" width="7" height="7" fill="#fff"/>
-            <rect x="0" y="0" width="7" height="7" fill="none" stroke="#000" strokeWidth="1"/>
-            <rect x="2" y="2" width="3" height="3" fill="#000"/>
-            <rect x="14" y="0" width="7" height="7" fill="#fff"/>
-            <rect x="14" y="0" width="7" height="7" fill="none" stroke="#000" strokeWidth="1"/>
-            <rect x="16" y="2" width="3" height="3" fill="#000"/>
-            <rect x="0" y="14" width="7" height="7" fill="#fff"/>
-            <rect x="0" y="14" width="7" height="7" fill="none" stroke="#000" strokeWidth="1"/>
-            <rect x="2" y="16" width="3" height="3" fill="#000"/>
-          </svg>
+          {/* Vrai QR genere via qr-helper.jsx (lazy CDN) */}
+          {window.QRCode ? (
+            <window.QRCode value={`https://${baseUrl}/?t=${token}`} size={160}/>
+          ) : (
+            <div className="sp-qr" style={{
+              width:160, height:160, background:'#fff',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              color:'#888', fontSize:11, borderRadius:6
+            }}>Chargement QR…</div>
+          )}
         </div>
         <div className="sp-url">
           <span className="sp-url-prefix">https://</span>

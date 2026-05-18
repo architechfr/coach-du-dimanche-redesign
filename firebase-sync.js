@@ -32,8 +32,9 @@ const firebaseConfig = {
   measurementId: "G-MH2NT3JPTF"
 };
 
-const COLL_CONVOC = 'cdd_v2_convoc';
-const COLL_VOTES  = 'cdd_v2_votes';
+const COLL_CONVOC  = 'cdd_v2_convoc';
+const COLL_VOTES   = 'cdd_v2_votes';
+const COLL_MATCHES = 'cdd_v2_matches';
 
 let app, db;
 try {
@@ -163,6 +164,45 @@ function watchVotes(matchId, callback) {
   );
 }
 
+/* ---------- API Sauvegarde match dans le cloud (#11) ---------- */
+
+async function saveMatchToCloud(match) {
+  if (!db) throw new Error('Firestore non initialisé');
+  if (!match || !match.id) throw new Error('match.id requis');
+  const matchId = match.id;
+  // Strip _prev (snapshots undo) pour reduire la taille
+  const cleanEv = (match.ev || []).map(e => {
+    const { _prev, ...rest } = e || {};
+    return rest;
+  });
+  const payload = {
+    id: match.id,
+    teamA: { n: match.tA && match.tA.n, c: match.tA && match.tA.c, score: match.sA, players: (match.tA && match.tA.p) || [], bench: (match.tA && match.tA.bench) || [] },
+    teamB: { n: match.tB && match.tB.n, c: match.tB && match.tB.c, score: match.sB, players: (match.tB && match.tB.p) || [], bench: (match.tB && match.tB.bench) || [] },
+    status: match.st,
+    period: match.ch,
+    config: match.cfg || {},
+    events: cleanEv,
+    yellows: { A: match.yA || 0, B: match.yB || 0 },
+    reds:    { A: match.rA || 0, B: match.rB || 0 },
+    subs:    { A: match.uA || 0, B: match.uB || 0 },
+    addTime: match.at || 0,
+    savedAt: serverTimestamp(),
+    coachId: getVoterId(),
+  };
+  await setDoc(doc(db, COLL_MATCHES, matchId), payload, { merge: true });
+  return { ok: true, matchId };
+}
+
+function watchMatchFromCloud(matchId, callback) {
+  if (!db) { callback(null); return () => {}; }
+  return onSnapshot(
+    doc(db, COLL_MATCHES, matchId),
+    snap => callback(snap.exists() ? snap.data() : null),
+    err => { console.warn('[cddSync] watchMatch error:', err.message); callback(null); }
+  );
+}
+
 /* ---------- Expose globally ---------- */
 
 window.cddSync = {
@@ -173,6 +213,8 @@ window.cddSync = {
   watchConvocResponses,
   sendVote,
   watchVotes,
+  saveMatchToCloud,
+  watchMatchFromCloud,
   getMatchId,
   getVoterId,
 };
