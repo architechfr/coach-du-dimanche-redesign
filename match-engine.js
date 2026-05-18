@@ -68,6 +68,10 @@ function newMatch(tA, tB, cfg = {}) {
     startedAt: null,
     savedAt: null,
     endedAt: null,
+    // #36 tracking temps pause
+    pauseStartedAt: null,    // timestamp ms du dernier passage en pause
+    pauseTotalMs: 0,         // somme cumulee de toutes les pauses
+    inHalftime: false,       // true entre fin de mi-temps N et reprise mi-temps N+1
   };
 }
 
@@ -105,6 +109,29 @@ function gMin(M) {
 function fmtTime(ms) {
   const s = Math.floor(ms/1000);
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+// #36 — Temps de pause cumule (pauseStartedAt + pauseTotalMs)
+function gPauseMs(M) {
+  if (!M) return 0;
+  let t = M.pauseTotalMs || 0;
+  if (M.pauseStartedAt) t += Date.now() - M.pauseStartedAt;
+  return t;
+}
+// Temps reel ecoule depuis le coup d'envoi (jeu + pauses)
+function gRealMs(M) {
+  if (!M || !M.startedAt) return 0;
+  if (M.endedAt) return M.endedAt - M.startedAt;
+  return Date.now() - M.startedAt;
+}
+// Format MM:SS pour affichage chrono arbitre
+function fmtMMSS(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+// Vrai si on est entre 2 mi-temps (pause halftime, pas pause normale)
+function isInHalftime(M) {
+  return !!(M && M.inHalftime && M.st === 'paused' && !M.notStarted && M.ch < M.cfg.hs);
 }
 
 // Player helpers
@@ -309,6 +336,7 @@ Object.assign(window.MATCH_HELPERS, {
   requestWakeLock, releaseWakeLock, goFullscreen, exitFullscreen,
   startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
   getLiveMatch, computeExploits, editEvent,
+  gPauseMs, gRealMs, fmtMMSS, isInHalftime,
 });
 if (!window.MATCH_SFX) window.MATCH_SFX = {};
 Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });

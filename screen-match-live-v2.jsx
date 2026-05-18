@@ -82,12 +82,24 @@ function GoalFlow({ team, side, M, onDone, onCancel }) {
       }}
       onCancel={() => setStep('scorer')}
       hint={
-        <div className="mv-noop-row">
-          <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'unknown' })}>
-            Sans passeur
+        <div className="mv-noop-row" style={{display:'flex', flexWrap:'wrap', gap:6}}>
+          <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'solo' })}>
+            🎯 Action indiv.
+          </button>
+          <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'free-kick' })}>
+            ⚡ Coup-franc direct
+          </button>
+          <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'corner' })}>
+            🚩 Corner
+          </button>
+          <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'cross' })}>
+            ↪ Sur centre
           </button>
           <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'recovery' })}>
-            🛡️ Erreur adv.
+            🛡 Erreur adv.
+          </button>
+          <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'rebound' })}>
+            🔄 Rebond / mêlée
           </button>
           <button className="mv-chip-line" onClick={() => onDone({ scorer, passer: null, type: 'pending' })}>
             ⏰ À renseigner
@@ -194,7 +206,8 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
           }}>
             {M.tA.n[0]}
           </div>
-          <div className="mv-team-n">{M.tA.n}</div>
+          {/* #38 — nom club agrandi */}
+          <div className="mv-team-n" style={{fontSize:'17px', fontWeight:900, letterSpacing:'.04em'}}>{M.tA.n}</div>
         </div>
 
         <div className="mv-score-block">
@@ -205,14 +218,92 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
             </button>
             <span className="mv-score-num num">{M.sB}</span>
           </div>
-          {M.st !== 'finished' && !M.notStarted && (
-            <div className="mv-live-badge">
-              {M.st === 'live' && <span className="mv-live-dot"/>}
-              <span>{M.st === 'live' ? 'LIVE' : 'PAUSE'} · </span>
-              <span className="num">{minute}'</span>
-              <span> · {M.ch}<sup>e</sup> mi-temps</span>
-            </div>
-          )}
+
+          {/* #36 — Gros chrono style arbitre */}
+          {M.st !== 'finished' && !M.notStarted && (() => {
+            const realMs = MATCH_HELPERS.gRealMs ? MATCH_HELPERS.gRealMs(M) : 0;
+            const pauseMs = MATCH_HELPERS.gPauseMs ? MATCH_HELPERS.gPauseMs(M) : 0;
+            const inHt = MATCH_HELPERS.isInHalftime ? MATCH_HELPERS.isInHalftime(M) : false;
+            const matchMs = MATCH_HELPERS.gMatch ? MATCH_HELPERS.gMatch(M) : 0;
+            return (
+              <div className="mv-chrono-block" style={{
+                margin:'8px auto 0', display:'flex', flexDirection:'column',
+                alignItems:'center', gap:4,
+              }}>
+                {/* GROS chrono jeu */}
+                <div style={{
+                  fontFamily: 'var(--f-display, sans-serif)',
+                  fontSize: 36, fontWeight: 900, letterSpacing: '.04em',
+                  color: M.st === 'live' ? '#c8f169' : '#fbbf24',
+                  fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+                  textShadow: M.st === 'live' ? '0 0 18px rgba(200,241,105,.4)' : 'none',
+                }}>
+                  {MATCH_HELPERS.fmtMMSS ? MATCH_HELPERS.fmtMMSS(matchMs) : minute + ":00"}
+                </div>
+                {/* Sous-titre LIVE/PAUSE + mi-temps */}
+                <div style={{
+                  display:'flex', alignItems:'center', gap:8, fontSize:11, fontWeight:700,
+                  letterSpacing:'.1em', textTransform:'uppercase',
+                  color: M.st === 'live' ? '#c8f169' : inHt ? '#fbbf24' : '#ff8a3d',
+                }}>
+                  {M.st === 'live' && <span className="mv-live-dot" style={{animation:'pulse 1.2s infinite'}}/>}
+                  <span>{inHt ? 'MI-TEMPS' : M.st === 'live' ? 'LIVE' : 'PAUSE'}</span>
+                  <span style={{opacity:.5}}>·</span>
+                  <span>{M.ch}<sup>e</sup> MT</span>
+                  {M.at > 0 && <><span style={{opacity:.5}}>·</span><span>+{M.at}'</span></>}
+                </div>
+                {/* Temps pause visible si en pause */}
+                {M.st === 'paused' && M.pauseStartedAt && (
+                  <div style={{
+                    fontSize: 12, color:'#ff8a3d', fontWeight:700,
+                    fontVariantNumeric:'tabular-nums', marginTop:2,
+                    display:'flex', gap:6, alignItems:'center',
+                  }}>
+                    <span>⏸</span>
+                    <span>Pause depuis {MATCH_HELPERS.fmtMMSS(Date.now() - M.pauseStartedAt)}</span>
+                  </div>
+                )}
+                {/* Temps reel ecoule (au cas ou) */}
+                {M.startedAt && (M.st === 'paused' || inHt) && (
+                  <div style={{fontSize:10, color:'rgba(255,255,255,.4)', marginTop:2}}>
+                    Temps réel depuis coup d'envoi : {MATCH_HELPERS.fmtMMSS(realMs)}
+                  </div>
+                )}
+
+                {/* #40 Countdown mi-temps : 15 min qui descendent vers 0 */}
+                {inHt && M.htStart && (() => {
+                  const htDurMs = (M.htDur || 15) * 60 * 1000;
+                  const elapsedHt = Date.now() - M.htStart;
+                  const remainHt = Math.max(0, htDurMs - elapsedHt);
+                  const isLow = remainHt < 60000;  // <1 min
+                  return (
+                    <div style={{
+                      marginTop: 10, padding: '10px 18px', borderRadius: 12,
+                      background: isLow ? 'rgba(255,80,80,.18)' : 'rgba(251,191,36,.14)',
+                      border: '1px solid ' + (isLow ? 'rgba(255,80,80,.4)' : 'rgba(251,191,36,.35)'),
+                      display: 'flex', alignItems: 'center', gap: 12,
+                    }}>
+                      <span style={{fontSize: 20}}>{isLow ? '🔔' : '☕'}</span>
+                      <div>
+                        <div style={{fontSize:10, fontWeight:800, letterSpacing:'.1em',
+                                     color: isLow ? '#ff9a9a' : '#fbbf24',
+                                     textTransform:'uppercase'}}>
+                          PAUSE MI-TEMPS · {Math.floor((M.htDur || 15))}min
+                        </div>
+                        <div style={{
+                          fontSize: 22, fontWeight: 900, fontVariantNumeric: 'tabular-nums',
+                          color: '#fff', marginTop: 2, lineHeight: 1,
+                          textShadow: isLow ? '0 0 8px rgba(255,80,80,.4)' : 'none',
+                        }}>
+                          {MATCH_HELPERS.fmtMMSS(remainHt)} restantes
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
           {M.notStarted && <div className="mv-live-badge mv-pre">EN ATTENTE · COUP D'ENVOI</div>}
           {M.st === 'finished' && <div className="mv-live-badge mv-end">MATCH TERMINÉ</div>}
         </div>
@@ -226,7 +317,8 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
           }}>
             {M.tB.n[0]}
           </div>
-          <div className="mv-team-n">{M.tB.n}</div>
+          {/* #38 — nom club agrandi */}
+          <div className="mv-team-n" style={{fontSize:'17px', fontWeight:900, letterSpacing:'.04em'}}>{M.tB.n}</div>
         </div>
       </div>
 
@@ -260,11 +352,21 @@ function ActionGrid({ side, M, disabled, onGoal, onCard, onSub, onInjury }) {
           <span className="mv-action-l">BUT</span>
         </button>
         <button className="mv-action mv-action-yel" disabled={disabled} onClick={() => onCard(side, 'yellow')}>
-          <span className="mv-action-ic">▮</span>
+          <span className="mv-action-ic">
+            <span style={{
+              display:'inline-block', width:20, height:28, borderRadius:3,
+              background:'#FFD600', boxShadow:'0 2px 4px rgba(0,0,0,.4), inset 0 -3px 0 rgba(0,0,0,.18)',
+            }}/>
+          </span>
           <span className="mv-action-l">JAUNE</span>
         </button>
         <button className="mv-action mv-action-red" disabled={disabled} onClick={() => onCard(side, 'red')}>
-          <span className="mv-action-ic">▮</span>
+          <span className="mv-action-ic">
+            <span style={{
+              display:'inline-block', width:20, height:28, borderRadius:3,
+              background:'#E60026', boxShadow:'0 2px 4px rgba(0,0,0,.5), inset 0 -3px 0 rgba(0,0,0,.22)',
+            }}/>
+          </span>
           <span className="mv-action-l">ROUGE</span>
         </button>
         <button className="mv-action mv-action-sub" disabled={disabled} onClick={() => onSub(side)}>
@@ -477,7 +579,14 @@ function ScreenMatchV2({ go, tweaks }) {
     if (M.st === 'live') {
       M.tOff += Date.now() - M.tSt;
       M.st = 'paused';
+      M.pauseStartedAt = Date.now();
     } else if (M.st === 'paused') {
+      // Cumuler le temps passe en pause
+      if (M.pauseStartedAt) {
+        M.pauseTotalMs = (M.pauseTotalMs || 0) + (Date.now() - M.pauseStartedAt);
+        M.pauseStartedAt = null;
+      }
+      M.inHalftime = false; // si on reprend, on sort de la mi-temps
       M.tSt = Date.now();
       M.st = 'live';
     }
@@ -501,6 +610,8 @@ function ScreenMatchV2({ go, tweaks }) {
     if (M.st === 'live') M.tOff += Date.now() - M.tSt;
     M.ev.push({ tp:'half', mn: MATCH_HELPERS.gMin(M), ts: Date.now(), _prev: snap });
     M.ch++; M.tOff = 0; M.st = 'paused'; M.tSt = Date.now();
+    M.pauseStartedAt = Date.now();
+    M.inHalftime = true; // #37 — entre 2 mi-temps : bloquer actions
     if (M.ch === 2) { M.htStart = Date.now(); M.htDur = M.cfg.htd || 15; }
     MATCH_SFX.playWhistle();
     MATCH_SFX.vibrate(300);
@@ -669,7 +780,9 @@ function ScreenMatchV2({ go, tweaks }) {
     rerender();
   };
 
-  const disabled = M.notStarted || M.st === 'finished';
+  // #37 — Bloquer aussi les actions pendant la mi-temps (entre 2 periodes)
+  const inHt = MATCH_HELPERS.isInHalftime ? MATCH_HELPERS.isInHalftime(M) : false;
+  const disabled = M.notStarted || M.st === 'finished' || inHt;
   const team = activeFlow ? (activeFlow.side === 'A' ? M.tA : M.tB) : null;
 
   // ─── Render ────────────────────────────────────────
