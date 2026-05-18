@@ -103,8 +103,127 @@ function playerLabel(p) {
   return '#'+p.num+(p.first ? ' '+p.first : '');
 }
 
+// ─── Wake lock (empêche l'écran de s'éteindre pendant le match) ───
+let _wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if (!('wakeLock' in navigator)) return false;
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+    return true;
+  } catch (e) {
+    console.warn('[match] wakeLock failed:', e);
+    return false;
+  }
+}
+async function releaseWakeLock() {
+  try {
+    if (_wakeLock) { await _wakeLock.release(); _wakeLock = null; }
+  } catch (e) {}
+}
+
+// ─── Plein écran (immersion match) ───
+function goFullscreen(elem) {
+  const el = elem || document.documentElement;
+  try {
+    if (el.requestFullscreen) return el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+    if (el.msRequestFullscreen) return el.msRequestFullscreen();
+  } catch (e) { console.warn('[match] fullscreen failed:', e); }
+}
+function exitFullscreen() {
+  try {
+    if (document.exitFullscreen) return document.exitFullscreen();
+    if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
+  } catch (e) {}
+}
+
+// ─── Audio silence loop (iOS coupe le son sinon — V1 startAS) ───
+let _silenceAudio = null;
+function startSilenceLoop() {
+  try {
+    if (_silenceAudio) return;
+    // Loop d'1s d'audio silencieux pour garder le canal audio iOS actif
+    const ac = _ac(); if (!ac) return;
+    const buf = ac.createBuffer(1, ac.sampleRate * 1, ac.sampleRate);
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const g = ac.createGain();
+    g.gain.value = 0.00001; // quasi-silence mais audio actif
+    src.connect(g); g.connect(ac.destination);
+    src.start();
+    _silenceAudio = src;
+  } catch (e) { console.warn('[match] silence loop failed:', e); }
+}
+function stopSilenceLoop() {
+  try { if (_silenceAudio) { _silenceAudio.stop(); _silenceAudio = null; } } catch (e) {}
+}
+
+// ─── Temps additionnel ───
+function addAT(M, minutes) {
+  if (!M || M.notStarted || M.st === 'finished') return;
+  M.at = (M.at || 0) + minutes;
+  M.ev.push({ tp: 'at', mn: gMin(M), ts: Date.now(), val: minutes, ch: M.ch });
+}
+
+// ─── Setup adversaire ───
+function setOpponent(M, name, color, opts = {}) {
+  if (!M) return;
+  M.tB.n = name || M.tB.n;
+  M.tB.c = color || M.tB.c;
+  if (opts.players && Array.isArray(opts.players)) {
+    M.tB.p = opts.players.slice(0, 11).map((nm, i) => ({
+      num: i + 1, first: '', last: nm || '#' + (i+1), id: 'b_' + i, onField: true,
+    }));
+  }
+}
+
+// ─── Marquer un joueur blessé pendant le match ───
+function setInjured(M, side, playerId) {
+  if (!M) return;
+  const team = side === 'A' ? M.tA : M.tB;
+  const p = (team.p || []).find(x => x.id === playerId) || (team.bench || []).find(x => x.id === playerId);
+  if (p) {
+    p.injured = true;
+    M.ev.push({
+      tp: 'injury', mn: gMin(M), ts: Date.now(), t: side,
+      pl: playerLabel(p), playerId: p.id,
+    });
+  }
+}
+
+// ─── Vibreur 2'30 avant fin (chkAlerts V1) ───
+// Appelée par le screen toutes les secondes — déclenche les alertes
+const _alertsFired = new WeakMap();
+function checkAlerts(M, onAlert) {
+  if (!M || M.notStarted || M.st !== 'live') return;
+  const fired = _alertsFired.get(M) || {};
+  const elapsedMs = gMatch(M);
+  const halfMs = M.cfg.hd * 60 * 1000; // durée d'une mi-temps
+  const remainMs = halfMs - elapsedMs;
+  // 2'30 avant fin
+  if (!fired['ah_'+M.ch] && remainMs > 0 && remainMs <= 150000) {
+    fired['ah_'+M.ch] = true;
+    vibrate([200, 100, 200]);
+    if (onAlert) onAlert({ kind: 'before-end', remainMs });
+  }
+  // Fin officielle dépassée
+  if (!fired['end_'+M.ch] && remainMs <= 0 && elapsedMs > halfMs - 1000) {
+    fired['end_'+M.ch] = true;
+    playBuzzer();
+    vibrate([300, 200, 300, 200, 300]);
+    if (onAlert) onAlert({ kind: 'time-up' });
+  }
+  _alertsFired.set(M, fired);
+}
+
 // MUTATION au lieu d'assignment pour éviter race condition avec screen-match-live-v2.jsx
 if (!window.MATCH_HELPERS) window.MATCH_HELPERS = {};
-Object.assign(window.MATCH_HELPERS, { newMatch, loadMatch, saveMatch, gMatch, gMin, buildDefaultTeams, playerLabel });
+Object.assign(window.MATCH_HELPERS, {
+  newMatch, loadMatch, saveMatch, gMatch, gMin, buildDefaultTeams, playerLabel,
+  requestWakeLock, releaseWakeLock, goFullscreen, exitFullscreen,
+  startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
+});
 if (!window.MATCH_SFX) window.MATCH_SFX = {};
 Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });

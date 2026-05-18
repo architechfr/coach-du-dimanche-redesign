@@ -382,7 +382,26 @@ function ScreenMatchV2({ go, tweaks }) {
     M.st = 'live';
     MATCH_SFX.playWhistle();
     MATCH_SFX.vibrate(200);
+    // ─── Activer wake lock + plein écran + silence loop iOS ───
+    if (MATCH_HELPERS.requestWakeLock) MATCH_HELPERS.requestWakeLock();
+    if (MATCH_HELPERS.goFullscreen)    MATCH_HELPERS.goFullscreen();
+    if (MATCH_HELPERS.startSilenceLoop) MATCH_HELPERS.startSilenceLoop();
     rerender();
+  };
+
+  // ─── Ajouter du temps additionnel ───
+  const addAT = (minutes) => {
+    if (!MATCH_HELPERS.addAT) return;
+    MATCH_HELPERS.addAT(M, minutes);
+    MATCH_SFX.playWhistle();
+    MATCH_SFX.vibrate(100);
+    rerender();
+  };
+  const promptAT = () => {
+    const v = prompt('Combien de minutes de temps additionnel ?', '3');
+    if (v == null) return;
+    const n = parseInt(v, 10);
+    if (!isNaN(n) && n > 0 && n < 20) addAT(n);
   };
 
   const togglePause = () => {
@@ -441,6 +460,10 @@ function ScreenMatchV2({ go, tweaks }) {
     MATCH_SFX.playBuzzer();
     MATCH_SFX.vibrate(500);
     setShowHtModal(null);
+    // Libérer ressources terrain
+    if (MATCH_HELPERS.releaseWakeLock)  MATCH_HELPERS.releaseWakeLock();
+    if (MATCH_HELPERS.stopSilenceLoop)  MATCH_HELPERS.stopSilenceLoop();
+    if (MATCH_HELPERS.exitFullscreen)   MATCH_HELPERS.exitFullscreen();
     rerender();
   };
 
@@ -588,17 +611,9 @@ function ScreenMatchV2({ go, tweaks }) {
         onWhistle={() => { MATCH_SFX.playWhistle(); MATCH_SFX.vibrate(50); }}
         onShowOnly={() => setActiveFlow({ kind:'show-only' })}/>
 
-      {/* Pre-match overlay */}
+      {/* Pre-match overlay avec setup adversaire */}
       {M.notStarted && (
-        <div className="mv-prematch">
-          <div className="mv-prematch-glow"/>
-          <div className="mv-prematch-k">PRÉ-MATCH</div>
-          <div className="mv-prematch-t">Tout est prêt ?</div>
-          <div className="mv-prematch-s">Vérifie les équipes, puis lance le coup d'envoi.</div>
-          <button className="mv-prematch-btn" onClick={startMatch}>
-            <span>▶ LANCER LE MATCH</span>
-          </button>
-        </div>
+        <PreMatchSetup M={M} onStart={startMatch} rerender={rerender}/>
       )}
 
       {!M.notStarted && (
@@ -618,6 +633,12 @@ function ScreenMatchV2({ go, tweaks }) {
             {M.st === 'paused' && !M.notStarted && M.ch <= M.cfg.hs && (
               <button className="mv-ctrl mv-ctrl-resume" onClick={togglePause}>
                 ▶ {M.ch === 1 ? 'Reprendre' : `Reprendre ${M.ch}e mi-temps`}
+              </button>
+            )}
+            {M.st === 'live' && (
+              <button className="mv-ctrl mv-ctrl-at" onClick={promptAT}
+                      title="Temps additionnel">
+                +AT{M.at ? ` (${M.at}′)` : ''}
               </button>
             )}
             {M.ch < M.cfg.hs ? (
