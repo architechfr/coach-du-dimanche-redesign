@@ -202,7 +202,9 @@ function ScreenTV({ go, tweaks }) {
                 const p = starterPlayers[i];
                 if (!p) return null;
                 const x = slot.x;
-                const y = 6 + (slot.y / 92) * 94;
+                // #44 — Mapper sur 8..94 (au lieu de 6..100) pour que le label
+                // du gardien (slot.y=92) reste DANS le viewBox 0 0 100 110.
+                const y = 8 + (slot.y / 92) * 86;
                 const labelY = y + 10.5;
                 return (
                   <g key={'label-'+i} transform={`translate(${x}, ${labelY})`}>
@@ -224,7 +226,8 @@ function ScreenTV({ go, tweaks }) {
                 const p = starterPlayers[i];
                 if (!p) return null;
                 const x = slot.x;
-                const y = 6 + (slot.y / 92) * 94;
+                // #44 — meme mapping que les labels
+                const y = 8 + (slot.y / 92) * 86;
                 return (
                   <g key={'pion-'+i} transform={`translate(${x}, ${y})`}>
                     {/* halo flou */}

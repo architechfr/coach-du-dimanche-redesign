@@ -237,6 +237,10 @@ function ScreenConvocations({ go, tweaks }) {
     ...a,
   }));
 
+  // #44 — Picker statut rapide depuis la ligne convoc
+  const [statusPickerPlayer, setStatusPickerPlayer] = useState(null);
+  const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
+
   // ─── Picker taille convoc (14 / 16 / 18 / 20 / libre) ───
   const [showSizePicker, setShowSizePicker] = useState(false);
   const teamId = window.CDD?.getActiveTeam?.()?.id;
@@ -447,16 +451,45 @@ function ScreenConvocations({ go, tweaks }) {
               Aucun absent — personne en blessé / suspendu / indisponible.
             </div>
           ) : absentEntries.map((a,i) => a.p && (
-            <div className="cv-row abs cv-row-clickable" key={i}
-                 onClick={() => go("fiche", a.p)}
-                 title="Toucher pour modifier le statut">
-              <span className="cv-num num">#{a.p.num}</span>
-              <span className="cv-name">
+            <div className="cv-row abs cv-row-clickable" key={i}>
+              <span className="cv-num num"
+                    onClick={() => go("fiche", a.p)}
+                    style={{cursor:'pointer'}}>#{a.p.num}</span>
+              <span className="cv-name"
+                    onClick={() => go("fiche", a.p)}
+                    style={{cursor:'pointer'}}>
                 <b>{a.p.first}</b> {(a.p.last || '').toUpperCase()}
                 {a.note && <em> — {a.note}</em>}
               </span>
-              <span className="cv-pos abs-reason">{a.reason}</span>
-              <span className="cv-check abs">✕</span>
+              {/* #44 — Badge statut CLIQUABLE pour changer rapidement */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setStatusPickerPlayer(a.p); }}
+                title="Modifier le statut"
+                style={{
+                  background:'rgba(255,170,40,.14)',
+                  border:'1px solid rgba(255,170,40,.4)',
+                  color:'#ffc788', fontWeight:700, fontSize:11,
+                  padding:'4px 10px', borderRadius:6,
+                  cursor:'pointer', marginRight:6,
+                }}>
+                {a.reason} ✎
+              </button>
+              {/* Bouton + pour CONVOQUER quand meme malgre indispo */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.CDD_CONVOC && window.CDD_CONVOC.addToConvoc && teamId) {
+                    window.CDD_CONVOC.addToConvoc(teamId, a.p.id, 'bench');
+                  }
+                }}
+                title="Convoquer quand meme (indispo overridable)"
+                style={{
+                  background:'rgba(200,241,105,.14)',
+                  border:'1px solid rgba(200,241,105,.4)',
+                  color:'#c8f169', fontWeight:800, fontSize:12,
+                  width:28, height:28, borderRadius:7,
+                  cursor:'pointer',
+                }}>+</button>
             </div>
           ))}
         </div>
@@ -481,6 +514,32 @@ function ScreenConvocations({ go, tweaks }) {
                         title="Ajouter à la convocation">+</button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* #44 Picker statut rapide */}
+      {statusPickerPlayer && (
+        <div className="fi-sp-overlay" onClick={() => setStatusPickerPlayer(null)}>
+          <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}>
+            <div className="fi-sp-h">
+              <span className="fi-sp-t">STATUT DE {(statusPickerPlayer.first||'').toUpperCase()}</span>
+              <button className="fi-sp-x" onClick={() => setStatusPickerPlayer(null)}>✕</button>
+            </div>
+            <div className="fi-sp-list">
+              {STATUS_QUICK.map(s => (
+                <button key={s.id}
+                  className={`fi-sp-opt fi-sp-opt-${s.cls}`}
+                  onClick={() => {
+                    if (window.CDD_COACH && window.CDD_COACH.setStatusOverride) {
+                      window.CDD_COACH.setStatusOverride(statusPickerPlayer.id, s.id);
+                    }
+                    setStatusPickerPlayer(null);
+                  }}>
+                  <span className="fi-sp-l">{s.l}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

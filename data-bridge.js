@@ -532,16 +532,14 @@ async function rebuildCDDGlobals() {
     ? lt.startersIds.filter(id => availablePlayers.some(p => p.id === id))
     : availablePlayers.filter(p => p.isStarter).slice(0, 11).map(p => p.id);
 
-  // ⚠️ COMPLETER A 11 TITULAIRES : si des titulaires d'origine sont
-  // devenus absents, on puise dans les autres joueurs dispos pour
-  // garantir une équipe complète (11 joueurs sur le terrain).
+  // ⚠️ COMPLETER A 11 TITULAIRES : puise dans dispos (banc puis reserve)
+  // pour garantir une équipe complète, sinon banc d'origine en priorite.
   const startersSetInit = new Set(starters);
-  const fillers = availablePlayers.filter(p =>
+  // 1ere passe : non-reserve
+  let fillers = availablePlayers.filter(p =>
     !startersSetInit.has(p.id) && p.status !== 'reserve'
   );
-  // Ajouter les joueurs habituellement remplaçants en priorité, puis le reste
   fillers.sort((a, b) => {
-    // Banc d'origine d'abord, puis réserve, puis le reste
     const aBench = lt?.benchIds?.includes(a.id) ? 0 : 1;
     const bBench = lt?.benchIds?.includes(b.id) ? 0 : 1;
     return aBench - bBench;
@@ -549,21 +547,31 @@ async function rebuildCDDGlobals() {
   while (starters.length < 11 && fillers.length > 0) {
     starters.push(fillers.shift().id);
   }
+  // 2eme passe : si encore < 11, puiser dans les reservistes
+  if (starters.length < 11) {
+    const sNow = new Set(starters);
+    const reservistsNow = availablePlayers.filter(p =>
+      !sNow.has(p.id) && p.status === 'reserve'
+    );
+    while (starters.length < 11 && reservistsNow.length > 0) {
+      starters.push(reservistsNow.shift().id);
+    }
+  }
 
   // Remplaçants : convocCount - starters parmi les dispos restants
   const startersSet = new Set(starters);
   let benchPool = availablePlayers.filter(p => !startersSet.has(p.id) && p.status !== 'reserve');
   // #41 — Si benchPool insuffisant, puiser dans les 'reserve' (joueurs surnumeraires)
   // pour atteindre la taille demandee (ou au moins 3 remplaçants mini).
-  const MIN_BENCH = 3;
+  // #44 — Banc EXACTEMENT convocCount - 11 (pas de min force). Reste va en reserve.
   let bench;
   if (convocCount === null) {
-    // Illimité = tous les dispos (banc + reserve), 3 mini si possible
-    const reservistsAll = availablePlayers.filter(p => !startersSet.has(p.id) && p.status === 'reserve');
-    bench = [...benchPool, ...reservistsAll].map(p => p.id);
+    // Illimite : tous les dispos non-reserve sur le banc
+    bench = benchPool.map(p => p.id);
   } else {
-    const benchTarget = Math.max(MIN_BENCH, convocCount - starters.length);
+    const benchTarget = Math.max(0, convocCount - starters.length);
     if (benchPool.length < benchTarget) {
+      // Pas assez de dispos hors reserve : puiser dans la reserve pour atteindre la cible
       const reservists = availablePlayers.filter(p =>
         !startersSet.has(p.id) && p.status === 'reserve' && !benchPool.some(b => b.id === p.id)
       );
@@ -572,7 +580,6 @@ async function rebuildCDDGlobals() {
     bench = (lt?.benchIds && lt.benchIds.length)
       ? lt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchTarget)
       : benchPool.slice(0, benchTarget).map(p => p.id);
-    // Si lt.benchIds donne moins que la cible, completer avec le reste du pool
     if (bench.length < benchTarget) {
       const inBench = new Set(bench);
       benchPool.forEach(p => {
