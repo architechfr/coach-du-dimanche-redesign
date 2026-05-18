@@ -40,6 +40,7 @@ const NAV = [
   { id:"prep",         label:"Prépa J-7",     ic:"◈",   icon:CardIcon,   bottom:false },
   { id:"match",        label:"Live",          ic:"●",   icon:LiveIcon,   bottom:false },
   { id:"fiche",        label:"Fiche",         ic:"◌",   icon:CardIcon,   bottom:false },
+  { id:"fiche-match",  label:"Feuille match", ic:"⊞",   icon:ConvocIcon, bottom:false },
   { id:"vote",         label:"Vote",          ic:"☆",   icon:CupIcon,    bottom:false },
   { id:"arb",          label:"Arbitre",       ic:"⚑",   icon:LiveIcon,   bottom:false },
   { id:"lecteur",      label:"Lecteur",       ic:"△",   icon:SquadIcon,  bottom:false },
@@ -174,6 +175,7 @@ function App() {
       results: "CHAMPIONNAT",
       match: "MATCH LIVE",
       fiche: "FICHE JOUEUR",
+      "fiche-match": "FEUILLE DE MATCH",
       prep: "PRÉPA MATCH",
       arb: "MODE ARBITRE",
       lecteur: "AS MAGNY · LECTEUR",
@@ -233,6 +235,7 @@ function App() {
             {screen === "results"      && <ScreenResults go={go} tweaks={t}/>}
             {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}
             {screen === "fiche"        && <ScreenFiche go={go} tweaks={t} player={currentPlayer}/>}
+            {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t}/>}
             {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
             {screen === "arb"          && <ScreenArbitre go={go} tweaks={t}/>}
             {screen === "lecteur"      && <ScreenLecteur go={go} tweaks={t}/>}
@@ -340,6 +343,69 @@ function App() {
     </div>
   );
 }
+
+
+// ============================================================
+// SCREEN — Feuille de match (récap dernier match terminé)
+// ============================================================
+function ScreenFicheMatch({ go, tweaks }) {
+  const matches = (window.CDD_LAST_MATCHES || []).filter(m => m.played);
+  const m = matches[0]; // dernier match terminé
+  if (!m) {
+    return (
+      <div className="scr fade-in" style={{padding:"40px 20px", textAlign:"center"}}>
+        <div style={{fontSize:48, marginBottom:12}}>⚽</div>
+        <h2 style={{margin:"0 0 8px"}}>Pas encore de match</h2>
+        <p style={{opacity:0.7, fontSize:14, marginBottom:24}}>
+          La feuille de match s'affichera ici après le coup de sifflet final.
+        </p>
+        <button className="btn-cta" onClick={() => go("match")}>
+          <span>LANCER UN MATCH</span><span className="arr">→</span>
+        </button>
+      </div>
+    );
+  }
+  const resultLabel = m.result === "W" ? "VICTOIRE" : m.result === "D" ? "MATCH NUL" : "DÉFAITE";
+  const resultCls   = m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss";
+  return (
+    <div className="scr fade-in" style={{padding:"0 0 24px"}}>
+      <div style={{
+        padding:"24px 20px 20px",
+        background:`linear-gradient(180deg, var(--acc-3) 0%, transparent 100%)`,
+        textAlign:"center"
+      }}>
+        <div className={`chip ${resultCls}`} style={{fontSize:11, letterSpacing:"0.12em", marginBottom:12}}>
+          {resultLabel}
+        </div>
+        <div style={{fontSize:13, opacity:0.6, marginBottom:8}}>
+          {m.date} · {m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}
+        </div>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16, fontSize:18, fontWeight:700}}>
+          <span>{m.venue === "H" ? "AS MAGNY" : m.opp}</span>
+          <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{m.score[0]}–{m.score[1]}</span>
+          <span>{m.venue === "H" ? m.opp : "AS MAGNY"}</span>
+        </div>
+      </div>
+      {m.scorers && m.scorers.length > 0 && (
+        <div style={{padding:"20px"}}>
+          <div className="sec-h" style={{marginBottom:12}}><span className="t">Buteurs</span></div>
+          {m.scorers.map((s, i) => (
+            <div key={i} style={{padding:"8px 12px", borderBottom:"1px solid rgba(255,255,255,0.06)"}}>⚽ {s}</div>
+          ))}
+        </div>
+      )}
+      <div style={{padding:"20px", display:"flex", gap:10}}>
+        <button className="btn-cta ghost" style={{flex:1}} onClick={() => go("results")}>
+          ← Saison
+        </button>
+        <button className="btn-cta" style={{flex:1}} onClick={() => go("share")}>
+          ↗ Partager
+        </button>
+      </div>
+    </div>
+  );
+}
+window.ScreenFicheMatch = ScreenFicheMatch;
 
 window.App = App;
 

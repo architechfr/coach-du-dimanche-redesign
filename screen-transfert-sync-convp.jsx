@@ -108,12 +108,24 @@ function ScreenTransfert({ go, tweaks }) {
               { ic:"📋", l:"Copier",    c:"#6b7280" },
               { ic:"📤", l:"Plus...",   c:"#9ca3af" },
               { ic:"🔗", l:"Lien",      c:"#06b6d4" },
-            ].map((s,i) => (
-              <button key={i} className="tr-share-btn">
-                <span className="tr-share-ic" style={{background:s.c}}>{s.ic}</span>
-                <span className="tr-share-l">{s.l}</span>
-              </button>
-            ))}
+            ].map((s,i) => {
+              const url = `https://coach-du-dimanche-redesign.vercel.app/?import=${code}`;
+              const msg = `Rejoins mon équipe sur Coach du Dimanche ! Code: ${code}`;
+              const handlers = {
+                "WhatsApp": () => window.open(`https://wa.me/?text=${encodeURIComponent(msg + " · " + url)}`, "_blank"),
+                "Email":    () => window.location.href = `mailto:?subject=${encodeURIComponent("Invitation Coach du Dimanche")}&body=${encodeURIComponent(msg + "\n\n" + url)}`,
+                "SMS":      () => window.location.href = `sms:?body=${encodeURIComponent(msg + " · " + url)}`,
+                "Copier":   async () => { try { await navigator.clipboard.writeText(url); alert("Lien copié !"); } catch(e) { prompt("Copie ce lien :", url); } },
+                "Plus...":  async () => { try { await navigator.share({ title:"Coach du Dimanche", text:msg, url }); } catch(e) { /* user cancel */ } },
+                "Lien":     async () => { try { await navigator.clipboard.writeText(url); alert("Lien copié !"); } catch(e) { prompt("Copie ce lien :", url); } },
+              };
+              return (
+                <button key={i} className="tr-share-btn" onClick={handlers[s.l] || (()=>{})}>
+                  <span className="tr-share-ic" style={{background:s.c}}>{s.ic}</span>
+                  <span className="tr-share-l">{s.l}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="tr-share-link">
@@ -170,7 +182,7 @@ function ScreenSyncCloud({ go, tweaks }) {
           <em>flo***@gmail.com</em>
           <span className="sync-acc-chip">Google</span>
         </div>
-        <button className="sync-acc-sync">↻</button>
+        <button className="sync-acc-sync" onClick={() => alert("Sync compte cloud — disponible avec l'auth Google (V2.x)")}>↻</button>
       </div>
 
       <div className="sec-h"><span className="t">Mes clubs</span><span className="a">{clubs.length} actifs</span></div>
@@ -193,7 +205,18 @@ function ScreenSyncCloud({ go, tweaks }) {
             </div>
           </button>
         ))}
-        <button className="sync-club-add">
+        <button className="sync-club-add" onClick={() => {
+          const name = prompt("Nom du nouveau club :");
+          if (!name) return;
+          const team = prompt("Catégorie (ex: U15 D1) :", "U15 D1");
+          if (!team) return;
+          try {
+            const arr = JSON.parse(localStorage.getItem("arb_clubs") || "[]");
+            arr.push({ id:"club_"+Date.now(), name, team, players:0, color:"#"+Math.floor(Math.random()*16777215).toString(16) });
+            localStorage.setItem("arb_clubs", JSON.stringify(arr));
+            alert(`Club "${name}" ajouté. Recharge l'app pour le voir apparaître.`);
+          } catch(e) { alert("Erreur sauvegarde : " + e.message); }
+        }}>
           <div className="sync-club-add-ic">+</div>
           <span>Ajouter un club</span>
         </button>
@@ -219,8 +242,8 @@ function ScreenSyncCloud({ go, tweaks }) {
       </div>
 
       <div className="sync-actions">
-        <button className="btn-cta">↻ FORCER UNE SYNC</button>
-        <button className="btn-cta ghost">↧ Pull depuis cloud</button>
+        <button className="btn-cta" onClick={() => alert("Sync cloud Firestore — disponible avec l'auth Google (V2.x)")}>↻ FORCER UNE SYNC</button>
+        <button className="btn-cta ghost" onClick={() => alert("Pull cloud — disponible avec l'auth Google (V2.x)")}>↧ Pull depuis cloud</button>
       </div>
     </div>
   );

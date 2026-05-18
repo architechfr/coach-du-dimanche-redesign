@@ -1,0 +1,27 @@
+{
+  "name": "Coach du Dimanche",
+  "short_name": "Coach",
+  "description": "L'app du foot amateur. Convocations · Compo · Match live · Stats.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050709",
+  "theme_color": "#050709",
+  "icons": [
+    {
+      "src": "assets/visual/icon-app-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/logo-app.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": [
+    "sports"
+  ],
+  "lang": "fr-FR"
+}

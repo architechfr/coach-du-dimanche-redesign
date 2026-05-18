@@ -125,7 +125,7 @@ function ScreenPrep({ go, tweaks }) {
           </div>
           <div className="prep-action-arr">›</div>
         </button>
-        <button className="prep-action">
+        <button className="prep-action" onClick={() => go("share")}>
           <div className="prep-action-ic">📤</div>
           <div className="prep-action-l">
             <b>Partager aux parents</b>
@@ -342,7 +342,7 @@ function ScreenLecteur({ go, tweaks }) {
           <div className="lec-convo">
             <div className="lec-convo-search">
               <span>🔍</span>
-              <input placeholder="Cherche le prénom de ton enfant…" disabled/>
+              <input placeholder="Cherche le prénom de ton enfant…" defaultValue={playerDisplay}/>
             </div>
             <div className="lec-convo-yes">
               <div className="lec-convo-yes-ic">✓</div>

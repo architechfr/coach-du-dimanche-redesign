@@ -2,6 +2,12 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#050709">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Coach">
+<link rel="apple-touch-icon" href="assets/visual/icon-app-1024.png">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Coach du Dimanche — REAL DATA · Cloisonnement</title>
 
@@ -90,6 +96,19 @@
     hudRoot.render(<window.DebugHUD key={Date.now()} />);
   });
 })();
+</script>
+
+<script>
+// PWA install prompt capture
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.deferredInstallPrompt = e;
+  console.info('[PWA] install prompt captured, bouton "Installer l\'app" actif');
+});
+window.addEventListener('appinstalled', () => {
+  window.deferredInstallPrompt = null;
+  console.info('[PWA] app installée');
+});
 </script>
 
 </body>

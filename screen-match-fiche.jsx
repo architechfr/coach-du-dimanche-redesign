@@ -1,141 +1,6 @@
 /* global React, CDD_LIVE_MATCH, CDD_PLAYERS, CDD_OBSERVATIONS, FutCard, POSITION_LABEL */
 
-/* ============================================================
-   SCREEN — Match Live (broadcast)
-   ============================================================ */
-
-function ScreenMatch({ go, tweaks }) {
-  const m = CDD_LIVE_MATCH;
-  const [minute, setMinute] = useState(m.minute);
-  const [running, setRunning] = useState(true);
-  const [hScore, setHScore] = useState(m.homeScore);
-  const [aScore, setAScore] = useState(m.awayScore);
-
-  useEffect(() => {
-    if (!running) return;
-    const t = setInterval(() => setMinute(x => x + 1), 4000);
-    return () => clearInterval(t);
-  }, [running]);
-
-  const ev = [...m.events].reverse();
-
-  return (
-    <div className="scr scr-match fade-in" data-screen-label="04 Match Live">
-
-      {/* BROADCAST BAR */}
-      <div className="ml-broadcast">
-        <div className="ml-bb-bg"/>
-        <div className="ml-bb-overlay"/>
-        <div className="ml-bb-row">
-          <div className="ml-bb-team ml-bb-home">
-            <div className="ml-bb-badge me">M</div>
-            <div className="ml-bb-name">{m.home}</div>
-          </div>
-          <div className="ml-bb-score">
-            <span className="num">{hScore}</span>
-            <i>·</i>
-            <span className="num">{aScore}</span>
-          </div>
-          <div className="ml-bb-team ml-bb-away">
-            <div className="ml-bb-name">{m.away}</div>
-            <div className="ml-bb-badge them">P</div>
-          </div>
-        </div>
-
-        <div className="ml-bb-timer">
-          <div className="chip live">LIVE</div>
-          <div className="ml-bb-min num">{minute}<span>'</span></div>
-          <div className="ml-bb-half">2<sup>e</sup> MI-TEMPS</div>
-          <button className="ml-bb-pause" onClick={()=>setRunning(r=>!r)}>
-            {running ? "⏸" : "▶"}
-          </button>
-        </div>
-      </div>
-
-      {/* QUICK ACTIONS */}
-      <div className="ml-actions">
-        <button className="ml-act ml-act-goal" onClick={()=>setHScore(s=>s+1)}>
-          <span className="ml-act-ic">⚽</span>
-          <span className="ml-act-l">BUT</span>
-        </button>
-        <button className="ml-act ml-act-yel">
-          <span className="ml-act-ic">▮</span>
-          <span className="ml-act-l">JAUNE</span>
-        </button>
-        <button className="ml-act ml-act-red">
-          <span className="ml-act-ic">▮</span>
-          <span className="ml-act-l">ROUGE</span>
-        </button>
-        <button className="ml-act ml-act-sub">
-          <span className="ml-act-ic">⇅</span>
-          <span className="ml-act-l">CHANGE</span>
-        </button>
-      </div>
-
-      {/* STATS BAR */}
-      <div className="ml-stats">
-        <div className="ml-stats-t">STATS · TEMPS RÉEL</div>
-        <StatRow label="Possession" l={m.poss} r={100-m.poss} unit="%"/>
-        <StatRow label="Tirs"        l={m.shots[0]} r={m.shots[1]}/>
-        <StatRow label="Cadrés"      l={m.onTarget[0]} r={m.onTarget[1]}/>
-        <StatRow label="Corners"     l={m.corners[0]} r={m.corners[1]}/>
-        <StatRow label="Fautes"      l={m.fouls[0]} r={m.fouls[1]}/>
-      </div>
-
-      {/* TIMELINE */}
-      <div className="sec-h"><span className="t">Timeline</span><span className="a">{ev.length} événements</span></div>
-      <div className="ml-timeline">
-        {ev.map((e, i) => (
-          <div className={`ml-ev ml-ev-${e.type} ml-ev-${e.side}`} key={i}>
-            <div className="ml-ev-min num">{e.min}<i>'</i></div>
-            <div className="ml-ev-spine">
-              <div className="ml-ev-dot"/>
-              {i < ev.length-1 && <div className="ml-ev-line"/>}
-            </div>
-            <div className="ml-ev-body">
-              <div className="ml-ev-head">
-                <span className={`ml-ev-tag ml-ev-tag-${e.type}`}>
-                  {e.type === "goal" ? "BUT" :
-                   e.type === "yellow" ? "JAUNE" :
-                   e.type === "red" ? "ROUGE" :
-                   e.type === "sub" ? "REMPLACEMENT" :
-                   e.type === "half" ? "MI-TEMPS" : "INFO"}
-                </span>
-                {e.player && <span className="ml-ev-player">{e.player}</span>}
-              </div>
-              {e.desc && <div className="ml-ev-desc">{e.desc}</div>}
-              {e.assist && <div className="ml-ev-assist">Passe décisive · {e.assist}</div>}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="ml-end">
-        <button className="btn-cta ghost" onClick={()=>go("fiche-match")}>
-          FIN DE MATCH · FEUILLE
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StatRow({ label, l, r, unit }) {
-  const total = (l + r) || 1;
-  const lp = (l / total) * 100;
-  return (
-    <div className="ml-srow">
-      <span className="num l">{l}{unit||""}</span>
-      <div className="ml-sbar">
-        <div className="ml-sbar-l" style={{width: lp+"%"}}/>
-        <div className="ml-sbar-r" style={{width: (100-lp)+"%"}}/>
-      </div>
-      <span className="num r">{r}{unit||""}</span>
-      <span className="ml-srow-lbl">{label}</span>
-    </div>
-  );
-}
-
-window.ScreenMatch = ScreenMatch;
+/* ScreenMatch broadcast retiré (mort code) — V2 utilise screen-match-live-v2.jsx */
 
 
 /* ============================================================
@@ -147,7 +12,50 @@ function ScreenFiche({ go, tweaks, player }) {
   if (!p) return <div className="fi-empty">Aucun joueur</div>;
   const stats = p.stats;
   const [tab, setTab] = useState("stats");
+  const [, setRefresh] = useState(0);
+  const triggerRefresh = () => setRefresh(x => x + 1);
   const obs = CDD_OBSERVATIONS[p.id] || [];
+
+  // ----- Status override -----
+  const STATUS_OPTIONS = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [
+    { id:'dispo',     l:'Disponible',  cls:'ok'  },
+    { id:'indispo',   l:'Indisponible',cls:'no'  },
+    { id:'reserve',   l:'Réserve',     cls:'res' },
+    { id:'blesse',    l:'Blessé',      cls:'no'  },
+    { id:'suspendu',  l:'Suspendu',    cls:'no'  },
+  ];
+  const currentStatus = (window.CDD_COACH && window.CDD_COACH.getStatus)
+    ? window.CDD_COACH.getStatus(p.id) || 'dispo'
+    : (p.status || 'dispo');
+  const statusObj = STATUS_OPTIONS.find(s => s.id === currentStatus) || STATUS_OPTIONS[0];
+  const [showStatusPicker, setShowStatusPicker] = useState(false);
+
+  // ----- Name override -----
+  const [editingName, setEditingName] = useState(false);
+  const [editFirst, setEditFirst] = useState(p.first || '');
+  const [editLast,  setEditLast]  = useState(p.last  || '');
+
+  // ----- Stats edit -----
+  const [editingStats, setEditingStats] = useState(false);
+  const updateStat = (key, val) => {
+    if (window.CDD_COACH && window.CDD_COACH.setStatOverride) {
+      window.CDD_COACH.setStatOverride(p.id, key, val);
+    } else {
+      // Fallback : mute en mémoire
+      p.stats[key] = val;
+    }
+    triggerRefresh();
+  };
+  const resetStats = () => {
+    if (window.CDD_COACH && window.CDD_COACH.resetStats) {
+      window.CDD_COACH.resetStats(p.id);
+    }
+    setEditingStats(false);
+    triggerRefresh();
+  };
+
+  // ----- Note saisie -----
+  const [newNote, setNewNote] = useState('');
 
   // Radar 6 axes
   const radarPts = useMemo(() => {

@@ -278,7 +278,7 @@ function ScreenConvocations({ go, tweaks }) {
             <span>🏟️ {next.venue}</span>
           </div>
           <div className="cv-hero-share">
-            <button className="btn-cta">
+            <button className="btn-cta" onClick={() => go("share")}>
               ↗ PARTAGER AUX PARENTS
             </button>
           </div>

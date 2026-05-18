@@ -43,7 +43,7 @@ function ScreenHome({ go, tweaks }) {
 
         <div className="home-hero-top">
           <div className="chip live">{`J-${next.daysLeft} · À VENIR`}</div>
-          <button className="hero-share" aria-label="Partager">↗</button>
+          <button className="hero-share" aria-label="Partager" onClick={() => go("share")}>↗</button>
         </div>
 
         <div className="home-hero-vs">
@@ -184,7 +184,7 @@ function ScreenHome({ go, tweaks }) {
       </div>
 
       {/* DERNIERS MATCHS */}
-      <div className="sec-h"><span className="t">Derniers matchs</span><button className="a">Tous →</button></div>
+      <div className="sec-h"><span className="t">Derniers matchs</span><button className="a" onClick={() => go("results")}>Tous →</button></div>
       <div className="lm-list">
         {last.map((m,i) => (
           <button className={`lm-card lm-${m.result.toLowerCase()}`} key={i} onClick={() => go("fiche-match")}>
