@@ -223,6 +223,54 @@ window.ScreenResults = ScreenResults;
 
 
 /* ============================================================
+   MODALE — Fiche joueur en overlay (popup, pas navigation)
+   #49 — Joueurs cliquables sur page Convocations
+   ============================================================ */
+
+function PlayerFicheModal({ player, onClose, onOpenFull }) {
+  if (!player) return null;
+  const FC = window.FutCard;
+  const POS_LABEL = window.POSITION_LABEL || {};
+  const status = (window.CDD_COACH?.getStatus?.(player.id) || 'active');
+  const STATUS_OPTS = window.CDD_COACH?.STATUS_OPTIONS || [];
+  const statusObj = STATUS_OPTS.find(s => s.id === status) || { l: 'Disponible', cls: 'on' };
+
+  return (
+    <div className="fi-sp-overlay cv-fiche-overlay" onClick={onClose}>
+      <div className="fi-sp-sheet cv-fiche-sheet" onClick={e => e.stopPropagation()}>
+        <div className="fi-sp-h">
+          <span className="fi-sp-t">FICHE JOUEUR</span>
+          <button className="fi-sp-x" onClick={onClose} aria-label="Fermer">✕</button>
+        </div>
+        <div className="cv-fiche-body">
+          <div className="cv-fiche-card">
+            {FC && <FC player={player} variant="fut" size="md" />}
+          </div>
+          <div className="cv-fiche-info">
+            <div className="cv-fiche-name">
+              <span className="cv-fiche-first">{player.first || ''}</span>
+              {player.last && <span className="cv-fiche-last">{player.last.toUpperCase()}</span>}
+            </div>
+            <div className="cv-fiche-meta">
+              <span className="cv-fiche-tag cv-fiche-num">#{player.num}</span>
+              <span className="cv-fiche-tag cv-fiche-pos">{POS_LABEL[player.pos] || player.pos}</span>
+              <span className={`cv-fiche-tag cv-fiche-status cv-fiche-status-${statusObj.cls}`}>{statusObj.l}</span>
+            </div>
+          </div>
+        </div>
+        <div className="cv-fiche-actions">
+          <button className="cv-fiche-btn cv-fiche-btn-secondary" onClick={onClose}>← Retour</button>
+          <button className="cv-fiche-btn cv-fiche-btn-primary" onClick={onOpenFull}>Voir fiche complète</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+window.PlayerFicheModal = PlayerFicheModal;
+
+
+/* ============================================================
    SCREEN — Convocations
    ============================================================ */
 
@@ -241,6 +289,8 @@ function ScreenConvocations({ go, tweaks }) {
   const [statusPickerPlayer, setStatusPickerPlayer] = useState(null);
   // Modale détail (questions contextuelles par statut) — { player, statusId } ou null
   const [statusDetailFor, setStatusDetailFor] = useState(null);
+  // #49 — Modale fiche joueur en popup (pas navigation pleine page)
+  const [ficheModalPlayer, setFicheModalPlayer] = useState(null);
   const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
 
   // Force re-render quand un statut/profil joueur change ailleurs (fiche, autre onglet)
@@ -422,10 +472,14 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-list">
           {starterPlayers.map(p => (
             <div className="cv-row cv-row-clickable" key={p.id}
-                 onClick={() => go("fiche", p)}
-                 title="Toucher pour modifier le profil / statut">
+                 onClick={() => setFicheModalPlayer(p)}
+                 title="Toucher pour voir la fiche du joueur">
               <span className="cv-num num">#{p.num}</span>
-              <span className="cv-name"><b>{p.first}</b> {(p.last || '').toUpperCase()}{respBadge(p.id)}</span>
+              <span className="cv-name">
+                <span className="cv-first">{p.first}</span>
+                {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
+                {respBadge(p.id)}
+              </span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               <button className="cv-action"
                       onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
@@ -442,10 +496,14 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-list">
           {benchPlayers.map(p => (
             <div className="cv-row cv-row-clickable" key={p.id}
-                 onClick={() => go("fiche", p)}
-                 title="Toucher pour modifier le profil / statut">
+                 onClick={() => setFicheModalPlayer(p)}
+                 title="Toucher pour voir la fiche du joueur">
               <span className="cv-num num">#{p.num}</span>
-              <span className="cv-name"><b>{p.first}</b> {(p.last || '').toUpperCase()}{respBadge(p.id)}</span>
+              <span className="cv-name">
+                <span className="cv-first">{p.first}</span>
+                {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
+                {respBadge(p.id)}
+              </span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               <button className="cv-action"
                       onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
@@ -467,12 +525,13 @@ function ScreenConvocations({ go, tweaks }) {
           ) : absentEntries.map((a,i) => a.p && (
             <div className="cv-row abs cv-row-clickable" key={i}>
               <span className="cv-num num"
-                    onClick={() => go("fiche", a.p)}
+                    onClick={() => setFicheModalPlayer(a.p)}
                     style={{cursor:'pointer'}}>#{a.p.num}</span>
               <span className="cv-name"
-                    onClick={() => go("fiche", a.p)}
+                    onClick={() => setFicheModalPlayer(a.p)}
                     style={{cursor:'pointer'}}>
-                <b>{a.p.first}</b> {(a.p.last || '').toUpperCase()}
+                <span className="cv-first">{a.p.first}</span>
+                {a.p.last && <span className="cv-last">{a.p.last.toUpperCase()}</span>}
                 {a.note && <em> — {a.note}</em>}
               </span>
               {/* #44 — Badge statut CLIQUABLE pour changer rapidement */}
@@ -518,10 +577,13 @@ function ScreenConvocations({ go, tweaks }) {
           <div className="cv-list">
             {reservePlayers.map(p => (
               <div className="cv-row cv-row-add cv-row-clickable" key={p.id}
-                   onClick={() => go("fiche", p)}
-                   title="Toucher pour voir le profil">
+                   onClick={() => setFicheModalPlayer(p)}
+                   title="Toucher pour voir la fiche du joueur">
                 <span className="cv-num num">#{p.num}</span>
-                <span className="cv-name"><b>{p.first}</b> {(p.last || '').toUpperCase()}</span>
+                <span className="cv-name">
+                  <span className="cv-first">{p.first}</span>
+                  {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
+                </span>
                 <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
                 <button className="cv-action cv-action-add"
                         onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
@@ -571,6 +633,19 @@ function ScreenConvocations({ go, tweaks }) {
           statusId={statusDetailFor.statusId}
           player={statusDetailFor.player}
           onClose={() => setStatusDetailFor(null)}
+        />
+      )}
+
+      {/* #49 — Modale fiche joueur en popup (reste sur la page Convocations en arrière-plan) */}
+      {ficheModalPlayer && (
+        <PlayerFicheModal
+          player={ficheModalPlayer}
+          onClose={() => setFicheModalPlayer(null)}
+          onOpenFull={() => {
+            const p = ficheModalPlayer;
+            setFicheModalPlayer(null);
+            go("fiche", p);
+          }}
         />
       )}
 
