@@ -428,7 +428,7 @@ async function rebuildCDDGlobals() {
 
   window.CDD_LIVE_MATCH = {
     minute: 67, half: 2,
-    home: activeClub?.name || "AS MAGNY", homeScore: 2,
+    home: activeClub?.name || "FCMH", homeScore: 2,
     away: "FC PONTOISE", awayScore: 1,
     events: [
       { min: 12, type:"goal",   side:"home", player: players[4]?.first+' '+players[4]?.last || "Daouda", desc:"Tête sur centre", assist: players[14]?.first+' '+players[14]?.last },

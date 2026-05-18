@@ -11,8 +11,8 @@ function ScreenTransfert({ go, tweaks }) {
 
   const toggle = (id) => setSelectedTeams(s => ({...s, [id]: !s[id]}));
   const teams = [
-    { id:"u15-d1",   club:"AS MAGNY",  name:"U15 D1",     n:18 },
-    { id:"u13-d2",   club:"AS MAGNY",  name:"U13 D2",     n:14 },
+    { id:"u15-d1",   club:"FCMH",  name:"U15 D1",     n:18 },
+    { id:"u13-d2",   club:"FCMH",  name:"U13 D2",     n:14 },
     { id:"vet-usdf", club:"USDF",      name:"Vétérans",   n:22 },
   ];
 
@@ -154,7 +154,7 @@ window.ScreenTransfert = ScreenTransfert;
 function ScreenSyncCloud({ go, tweaks }) {
   const [active, setActive] = useState("u15-d1");
   const clubs = [
-    { id:"asm",   name:"AS MAGNY",        team:"U15 D1",      players:18, color:"#c8f169", on: true },
+    { id:"asm",   name:"FCMH",        team:"U15 D1",      players:18, color:"#c8f169", on: true },
     { id:"usdf",  name:"USDF",            team:"Vétérans",    players:22, color:"#3b82f6", on: false },
     { id:"fcmh",  name:"FCMH",            team:"U11 D3",      players:12, color:"#f5c451", on: false },
   ];
@@ -283,7 +283,7 @@ function ScreenConvoParent({ go, tweaks }) {
           <div className="cvp-success-card">
             <div className="cvp-success-card-k">RÉCAP MATCH</div>
             <div className="cvp-success-card-vs">
-              <b>AS MAGNY</b><i>VS</i><b>FC PONTOISE</b>
+              <b>FCMH</b><i>VS</i><b>FC PONTOISE</b>
             </div>
             <div className="cvp-success-card-meta">
               <span>📅 {next.date}</span>
@@ -304,7 +304,7 @@ function ScreenConvoParent({ go, tweaks }) {
         <div className="cvp-hero-bg"/>
         <div className="cvp-hero-grad"/>
         <div className="cvp-hero-in">
-          <div className="cvp-hero-k">CONVOCATION · AS MAGNY U15 D1</div>
+          <div className="cvp-hero-k">CONVOCATION · FCMH U15 D1</div>
           <div className="cvp-hero-title">
             <span className="cvp-hero-name">{me.first}</span><br/>
             est convoqué
@@ -318,7 +318,7 @@ function ScreenConvoParent({ go, tweaks }) {
         <div className="cvp-match-vs">
           <div className="cvp-match-team">
             <div className="cvp-match-badge me">M</div>
-            <span>AS MAGNY</span>
+            <span>FCMH</span>
           </div>
           <div className="cvp-match-vs-l">VS</div>
           <div className="cvp-match-team">

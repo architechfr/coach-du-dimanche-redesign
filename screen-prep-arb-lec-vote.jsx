@@ -27,8 +27,8 @@ function ScreenPrep({ go, tweaks }) {
           <div className="prep-hero-title">{next.competition}</div>
           <div className="prep-hero-vs">
             <span className="prep-team me">
-              <i className="prep-badge me">M</i>
-              <em>AS MAGNY</em>
+              <i className="prep-badge me">F</i>
+              <em>FCMH</em>
             </span>
             <span className="prep-vs-l">VS</span>
             <span className="prep-team them">
@@ -96,7 +96,7 @@ function ScreenPrep({ go, tweaks }) {
         <div className="prep-aller">
           <div className="prep-aller-k">MATCH ALLER · {allerMatch.date}</div>
           <div className="prep-aller-line">
-            <span className="prep-aller-team">AS MAGNY</span>
+            <span className="prep-aller-team">FCMH</span>
             <span className="prep-aller-sc num">{allerMatch.score[0]}–{allerMatch.score[1]}</span>
             <span className="prep-aller-team">FC PONTOISE</span>
           </div>
@@ -148,9 +148,9 @@ function ScreenPrep({ go, tweaks }) {
       <div className="prep-prev">
         <div className={`prep-prev-tag rs-${lastMatch.result.toLowerCase()}`}>{lastMatch.result === "W" ? "VICTOIRE" : lastMatch.result === "D" ? "NUL" : "DÉFAITE"}</div>
         <div className="prep-prev-line">
-          <span>{lastMatch.venue === "H" ? "AS MAGNY" : lastMatch.opp}</span>
+          <span>{lastMatch.venue === "H" ? "FCMH" : lastMatch.opp}</span>
           <span className="num">{lastMatch.score[0]}–{lastMatch.score[1]}</span>
-          <span>{lastMatch.venue === "H" ? lastMatch.opp : "AS MAGNY"}</span>
+          <span>{lastMatch.venue === "H" ? lastMatch.opp : "FCMH"}</span>
         </div>
         <div className="prep-prev-meta">{lastMatch.date} · {lastMatch.scorers.join(" · ")}</div>
       </div>
@@ -220,7 +220,7 @@ function ScreenArbitre({ go, tweaks }) {
       <div className="arb-list">
         {[
           { date:"10/05", h:"AS POISSY",   a:"FC HOUILLES", sc:[2,1], n:"M. Martin" },
-          { date:"03/05", h:"PSG U15 RÉG",  a:"AS MAGNY",   sc:[3,1], n:"M. Martin" },
+          { date:"03/05", h:"PSG U15 RÉG",  a:"FCMH",   sc:[3,1], n:"M. Martin" },
           { date:"26/04", h:"VAUREAL FC",   a:"CERGY-PONT.",sc:[0,2], n:"M. Martin" },
         ].map((m,i) => (
           <div className="arb-item" key={i}>
@@ -300,7 +300,7 @@ function ScreenLecteur({ go, tweaks }) {
         <div className="lec-banner-grad"/>
         <div className="lec-banner-in">
           <div className="lec-banner-k">ÉQUIPE PARTAGÉE · LECTURE SEULE</div>
-          <div className="lec-banner-title">AS MAGNY-EN-VEXIN</div>
+          <div className="lec-banner-title">FC MAGNY LE HONGRE</div>
           <div className="lec-banner-sub">U15 D1 · Saison 2025–2026</div>
         </div>
       </div>
@@ -322,8 +322,8 @@ function ScreenLecteur({ go, tweaks }) {
             <div className="lec-card-k">PROCHAIN MATCH · J-{next.daysLeft}</div>
             <div className="lec-card-vs">
               <div className="lec-team">
-                <div className="lec-badge me">M</div>
-                <span>AS MAGNY</span>
+                <div className="lec-badge me">F</div>
+                <span>FCMH</span>
               </div>
               <div className="lec-vs">VS</div>
               <div className="lec-team">
@@ -517,7 +517,7 @@ function ScreenVote({ go, tweaks }) {
           <div className="vote-hero-k">VOTE · 48H</div>
           <div className="vote-hero-title">Note les joueurs<br/>du match</div>
           <div className="vote-hero-score">
-            <span>AS MAGNY</span>
+            <span>FCMH</span>
             <b className="num">2–1</b>
             <span>FC PONTOISE</span>
           </div>

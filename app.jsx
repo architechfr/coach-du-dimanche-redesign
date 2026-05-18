@@ -178,7 +178,7 @@ function App() {
       "fiche-match": "FEUILLE DE MATCH",
       prep: "PRÉPA MATCH",
       arb: "MODE ARBITRE",
-      lecteur: "AS MAGNY · LECTEUR",
+      lecteur: "FCMH · LECTEUR",
       vote: "VOTE POST-MATCH",
       transfert: "TRANSFERT",
       sync: "SYNC CLOUD",
@@ -209,7 +209,7 @@ function App() {
           {screen === "home" && (
             <div className="app-hdr" style={{paddingTop: 0}}>
               <button className="app-hdr-btn" onClick={() => go("set")} aria-label="Réglages">⚙</button>
-              <div className="app-hdr-title" style={{fontSize:14}}>AS MAGNY · U15 D1</div>
+              <div className="app-hdr-title" style={{fontSize:14}}>FCMH · U15 D1</div>
               <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
             </div>
           )}
@@ -369,9 +369,9 @@ function ScreenFicheMatch({ go, tweaks }) {
           {m.date} · {m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}
         </div>
         <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16, fontSize:18, fontWeight:700}}>
-          <span>{m.venue === "H" ? "AS MAGNY" : m.opp}</span>
+          <span>{m.venue === "H" ? "FCMH" : m.opp}</span>
           <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{m.score[0]}–{m.score[1]}</span>
-          <span>{m.venue === "H" ? m.opp : "AS MAGNY"}</span>
+          <span>{m.venue === "H" ? m.opp : "FCMH"}</span>
         </div>
       </div>
       {m.scorers && m.scorers.length > 0 && (

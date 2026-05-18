@@ -48,7 +48,7 @@ function ScreenHome({ go, tweaks }) {
 
         <div className="home-hero-vs">
           <div className="hero-club hero-club-home">
-            <div className="hero-badge me" aria-hidden="true">M</div>
+            <div className="hero-badge me" aria-hidden="true">F</div>
             <div className="hero-club-name">{next.home}</div>
           </div>
           <div className="hero-vs">

@@ -20,8 +20,8 @@ const POS_COLOR = {
 };
 
 const CLUB = {
-  name: "AS MAGNY-EN-VEXIN",
-  short: "AS MAGNY",
+  name: "FC MAGNY LE HONGRE",
+  short: "FCMH",
   team: "U15 D1",
   season: "2025–2026",
   colors: ["#c8f169", "#0a0e14"],
@@ -93,7 +93,7 @@ const FORMATIONS = {
 
 const NEXT_MATCH = {
   date: "Dim. 24 Mai · 10h30",
-  home: "AS MAGNY",
+  home: "FCMH",
   away: "FC PONTOISE",
   homeBadge: "92",
   awayBadge: "200",
@@ -106,7 +106,7 @@ const NEXT_MATCH = {
 const LIVE_MATCH = {
   minute: 67,
   half: 2,
-  home: "AS MAGNY", homeScore: 2,
+  home: "FCMH", homeScore: 2,
   away: "FC PONTOISE", awayScore: 1,
   events: [
     { min: 12, type:"goal",   side:"home", player:"Nayel DAOUDA", desc:"Tête sur centre",   assist:"E. Gauthier" },
@@ -134,7 +134,7 @@ const LAST_MATCHES = [
 
 const STANDINGS = [
   { rank:1, club:"PSG U15 RÉG.",    pl:8, w:7, d:1, l:0, gf:28, ga:6,  pts:22, form:["W","W","W","D","W","W","W","W"], hi: true },
-  { rank:2, club:"AS MAGNY",        pl:8, w:6, d:1, l:1, gf:24, ga:9,  pts:19, form:["W","W","D","W","W","L","W","W"], me: true },
+  { rank:2, club:"FCMH",        pl:8, w:6, d:1, l:1, gf:24, ga:9,  pts:19, form:["W","W","D","W","W","L","W","W"], me: true },
   { rank:3, club:"FC PONTOISE",     pl:8, w:5, d:2, l:1, gf:21, ga:11, pts:17, form:["W","D","W","W","D","W","L","W"] },
   { rank:4, club:"AS POISSY",       pl:8, w:4, d:2, l:2, gf:16, ga:13, pts:14, form:["L","D","W","W","D","L","W","W"] },
   { rank:5, club:"CERGY-PONT.",     pl:8, w:3, d:2, l:3, gf:14, ga:15, pts:11, form:["D","L","W","W","D","L","W","L"] },
@@ -144,12 +144,12 @@ const STANDINGS = [
 ];
 
 const TOP_SCORERS = [
-  { name:"Nayel DAOUDA",   club:"AS MAGNY",    goals:11, rank:1, me:true },
+  { name:"Nayel DAOUDA",   club:"FCMH",    goals:11, rank:1, me:true },
   { name:"M. Cherif",       club:"PSG U15 RÉG.",goals:9,  rank:2 },
   { name:"A. Lopez",        club:"AS POISSY",   goals:7,  rank:3 },
-  { name:"Sékou DOUMBIA",   club:"AS MAGNY",    goals:6,  rank:4, me:true },
+  { name:"Sékou DOUMBIA",   club:"FCMH",    goals:6,  rank:4, me:true },
   { name:"L. Petit",        club:"FC PONTOISE", goals:5,  rank:5 },
-  { name:"Elias GAUTHIER",  club:"AS MAGNY",    goals:5,  rank:6, me:true },
+  { name:"Elias GAUTHIER",  club:"FCMH",    goals:5,  rank:6, me:true },
 ];
 
 // Convocation pre-set
