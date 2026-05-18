@@ -171,6 +171,14 @@ function resolvePhoto(player) {
 
 // Build a "view player" from raw player
 function buildViewPlayer(player, idx) {
+  // ⚠️ Capturer les noms FFF ORIGINAUX *avant* tout merge.
+  // La photo est résolue par le nom de fichier FFF (NOM_Prénom.jpg) :
+  // si le coach renomme un joueur ('Grace Appolinaire' → 'Appolinaire'),
+  // l'image existe toujours sous l'ancien nom — on doit utiliser le raw.
+  const rawFirstName = player.firstName;
+  const rawLastName  = player.lastName;
+  const rawPhotoDataUrl = player.photoDataUrl;
+
   const STAR_RARITIES = {
     'pl_moydtri8_82ncg': 'hero',    // Laighor — capitaine
     'pl_moydtri8_v1skp': 'hero',    // Mamadou — leader
@@ -258,7 +266,12 @@ function buildViewPlayer(player, idx) {
     red: 0,
     mvp: 0,
     matchesPlayed: 0,
-    photo: resolvePhoto({ ...player, firstName: first, lastName: last }),
+    // ⚠️ Photo = nom FFF original (jamais le rename coach), mais photoDataUrl override gagne
+    photo: resolvePhoto({
+      firstName:    rawFirstName,
+      lastName:     rawLastName,
+      photoDataUrl: player.photoDataUrl || rawPhotoDataUrl,
+    }),
     license: player.licenceFFF || player.license || null,
     status: player.status || 'active',
     statusReason: player.statusReason || null,
