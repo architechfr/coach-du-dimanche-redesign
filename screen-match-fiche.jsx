@@ -33,6 +33,8 @@ function ScreenFiche({ go, tweaks, player }) {
     : (p.status || 'active');
   const statusObj = STATUS_OPTIONS.find(s => s.id === currentStatus) || STATUS_OPTIONS[0];
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  // Modale détail (questions par statut) — null = fermée, sinon = statusId à éditer
+  const [statusDetailFor, setStatusDetailFor] = useState(null);
 
   // Patch refresh : re-render à chaque changement statut/rebuild data.
   // Indispensable car `p` est un objet capturé au render — sans cet effet,
@@ -146,8 +148,16 @@ function ScreenFiche({ go, tweaks, player }) {
                 <button key={s.id}
                   className={`fi-sp-opt fi-sp-opt-${s.cls} ${currentStatus===s.id?'on':''}`}
                   onClick={() => {
+                    // 1) Persister le statut nu (le coach voit la modale derrière)
                     window.CDD_COACH.setStatusOverride(p.id, s.id);
                     setShowStatusPicker(false);
+                    // 2) Selon le statut, ouvrir la modale détail OU clôturer le meta
+                    if (window.CDD_STATUS_DETAIL?.needsDetail(s.id)) {
+                      setStatusDetailFor(s.id);
+                    } else {
+                      // 'active' → on archive simplement l'ancien meta
+                      window.CDD_STATUS_DETAIL?.clearMeta(p.id);
+                    }
                     triggerRefresh();
                   }}>
                   <span className="fi-sp-l">{s.l}</span>
@@ -157,6 +167,15 @@ function ScreenFiche({ go, tweaks, player }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Status detail modal (questions par statut) */}
+      {statusDetailFor && window.CDD_STATUS_DETAIL?.Component && (
+        <window.CDD_STATUS_DETAIL.Component
+          statusId={statusDetailFor}
+          player={p}
+          onClose={() => { setStatusDetailFor(null); triggerRefresh(); }}
+        />
       )}
 
       {/* Name editor overlay */}

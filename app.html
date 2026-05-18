@@ -24,6 +24,9 @@
 <link rel="stylesheet" href="animations-plus.css">
 <link rel="stylesheet" href="fiche-v2.css">
 <link rel="stylesheet" href="fiche-v3.css">
+<link rel="stylesheet" href="screen-tv.css">
+<link rel="stylesheet" href="screen-tactique.css">
+<link rel="stylesheet" href="screen-compo-libre.css">
 <link rel="stylesheet" href="quick-theme.css">
 <link rel="stylesheet" href="effectif-v2.css">
 <link rel="stylesheet" href="lineup-v2.css">
@@ -66,7 +69,9 @@
 
 <!-- Step 5: UI components -->
 <script type="text/babel" src="player-card.jsx"></script>
+<script type="text/babel" src="qr-helper.jsx"></script>
 <script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="status-detail-modal.jsx"></script>
 <script type="text/babel" src="screen-home.jsx"></script>
 <script type="text/babel" src="screen-effectif-lineup.jsx"></script>
 <script type="text/babel" src="screen-match-fiche.jsx"></script>
@@ -76,6 +81,9 @@
 <script type="text/babel" src="screen-prep-arb-lec-vote.jsx"></script>
 <script type="text/babel" src="screen-transfert-sync-convp.jsx"></script>
 <script type="text/babel" src="screen-share.jsx"></script>
+<script type="text/babel" src="screen-tv.jsx"></script>
+<script type="text/babel" src="screen-tactique.jsx"></script>
+<script type="text/babel" src="screen-compo-libre.jsx"></script>
 <script type="text/babel" src="debug-hud.jsx"></script>
 <script type="text/babel" src="quick-theme.jsx"></script>
 
@@ -105,11 +113,4 @@ window.addEventListener('beforeinstallprompt', (e) => {
   window.deferredInstallPrompt = e;
   console.info('[PWA] install prompt captured, bouton "Installer l\'app" actif');
 });
-window.addEventListener('appinstalled', () => {
-  window.deferredInstallPrompt = null;
-  console.info('[PWA] app installée');
-});
-</script>
-
-</body>
-</html>
+window.addEventListener('appinstalled',
