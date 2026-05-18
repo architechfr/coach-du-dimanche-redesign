@@ -182,12 +182,22 @@ window.ScreenPrep = ScreenPrep;
    SCREEN — Mode arbitre (épuré)
    ============================================================ */
 
+function _arbCoachVisual() {
+  const h = new Date().getHours();
+  return (h >= 7 && h < 19) ? 'assets/coach-day.png' : 'assets/coach-night.png';
+}
+
 function ScreenArbitre({ go, tweaks }) {
   return (
     <div className="scr scr-arb fade-in" data-screen-label="11 Mode Arbitre">
 
       <div className="arb-hero">
-        <div className="arb-hero-bg"/>
+        <div className="arb-hero-bg" style={{
+          backgroundImage: `url(${_arbCoachVisual()})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.65
+        }}/>
         <div className="arb-hero-grad"/>
         <div className="arb-hero-stamp">ARBITRE</div>
         <div className="arb-hero-in">

@@ -21,6 +21,13 @@ function FormDot({ r, big }) {
   return <span className={`fd ${cls} ${big?"fd-big":""}`}>{r}</span>;
 }
 
+// ---------- Visuel jour/nuit auto selon heure ----------
+function pickCoachVisual() {
+  const h = new Date().getHours();
+  const isDay = h >= 7 && h < 19;
+  return isDay ? 'assets/coach-day.png' : 'assets/coach-night.png';
+}
+
 // ---------- HOME ----------
 function ScreenHome({ go, tweaks }) {
   const next = CDD_NEXT_MATCH;
@@ -35,9 +42,14 @@ function ScreenHome({ go, tweaks }) {
   return (
     <div className="scr scr-home fade-in" data-screen-label="01 Home">
 
-      {/* HERO — next match */}
+      {/* HERO — next match avec visuel coach jour/nuit auto */}
       <div className={`home-hero hero-${tweaks.hero}`}>
-        <div className="home-hero-bg" />
+        <div className="home-hero-bg" style={{
+          backgroundImage: `url(${pickCoachVisual()})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.7
+        }} />
         <div className="home-hero-grad" />
         <div className="home-hero-noise" />
 
