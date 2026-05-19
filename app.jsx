@@ -198,7 +198,7 @@ function App() {
       });
       return;
     }
-    if (id === "fiche" && payload) setCurrentPlayer(payload);
+    if ((id === "fiche" || id === "carnet") && payload) setCurrentPlayer(payload);
     setScreen(id);
     setStack(s => [...s.slice(-3), id]);
     setScreenMenuOpen(false);
