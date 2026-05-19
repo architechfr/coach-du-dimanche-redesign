@@ -187,6 +187,75 @@ function ScreenSyncCloud({ go, tweaks }) {
   })();
   const [active, setActive] = useState(activeCtx.teamId || clubs[0]?.id || "");
 
+  // Activité récente : on combine plusieurs sources locales pour afficher
+  // un journal HONNÊTE de ce qui s'est vraiment passé (au lieu d'un mock).
+  // 1. cdd_audit_log : créations / suppressions tracées explicitement
+  // 2. cdd_match_* : matchs joués et terminés
+  // Tout est trié par date desc, max 10 affiché.
+  const activityEntries = (() => {
+    const out = [];
+    const fmtTime = (ts) => {
+      if (!ts) return '';
+      const diff = Date.now() - ts;
+      if (diff < 60000) return 'à l\'instant';
+      if (diff < 3600000) return `il y a ${Math.floor(diff/60000)} min`;
+      if (diff < 86400000) return `il y a ${Math.floor(diff/3600000)} h`;
+      const d = new Date(ts);
+      return d.toLocaleDateString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    };
+    // Source 1 : audit log explicite
+    try {
+      const log = JSON.parse(localStorage.getItem('cdd_audit_log') || '[]');
+      log.forEach(a => {
+        if (!a || !a.ts) return;
+        out.push({
+          ts: a.ts, t: fmtTime(a.ts),
+          k: 'LOCAL', ic: '✚',
+          l: a.kind === 'team-created' ? `Équipe créée : ${a.target}` :
+             a.kind === 'team-deleted' ? `Équipe supprimée : ${a.target}` :
+             `${a.kind} · ${a.target || ''}`,
+          by: a.by || null,
+        });
+      });
+    } catch (e) {}
+    // Source 2 : matchs arbitrés (cdd_match_*)
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith('cdd_match_') || k === 'cdd_match_current' || k === 'cdd_match_last_finished') continue;
+        const m = JSON.parse(localStorage.getItem(k) || 'null');
+        if (!m) continue;
+        if (m.endedAt) {
+          out.push({
+            ts: m.endedAt, t: fmtTime(m.endedAt),
+            k: 'MATCH', ic: '⚽',
+            l: `Match terminé · ${m.tA?.n || '?'} ${m.sA||0}–${m.sB||0} ${m.tB?.n || '?'}`,
+          });
+        } else if (m.startedAt) {
+          out.push({
+            ts: m.startedAt, t: fmtTime(m.startedAt),
+            k: 'MATCH', ic: '🟢',
+            l: `Match lancé · ${m.tA?.n || '?'} vs ${m.tB?.n || '?'}`,
+          });
+        }
+      }
+    } catch (e) {}
+    // Source 3 : derniers carnets envoyés au parent (commit #64)
+    try {
+      const shared = JSON.parse(localStorage.getItem('cdd_carnet_shared') || '{}');
+      Object.entries(shared).forEach(([pid, info]) => {
+        if (!info?.sharedAt) return;
+        out.push({
+          ts: info.sharedAt, t: fmtTime(info.sharedAt),
+          k: 'CARNET', ic: '🎴',
+          l: `Carnet envoyé au parent (joueur ${pid.slice(-6)})`,
+        });
+      });
+    } catch (e) {}
+    // Tri desc + dedup grossier
+    return out.sort((a, b) => b.ts - a.ts);
+  })();
+
   return (
     <div className="scr scr-sync fade-in" data-screen-label="15 Sync Cloud">
 
@@ -196,22 +265,54 @@ function ScreenSyncCloud({ go, tweaks }) {
         <div className="sync-hero-in">
           <div className="sync-hero-k">SYNC CLOUD · MULTI-CLUB</div>
           <div className="sync-hero-title">Tes données suivent<br/>tous tes appareils</div>
-          <div className="sync-status">
-            <div className="sync-pulse"/>
-            <span>Connecté · dernière sync il y a 2 min</span>
-          </div>
+          {/* Statut HONNÊTE de la sync (basé sur window.cddSync.ready, pas un mock). */}
+          {(() => {
+            const ready = !!(window.cddSync && window.cddSync.ready);
+            const lastActivity = activityEntries[0];
+            const lastTxt = lastActivity ? `dernière action ${lastActivity.t}` : 'aucune action encore';
+            return (
+              <div className="sync-status" style={ready ? {} : { opacity: 0.7 }}>
+                <div className="sync-pulse" style={!ready ? {
+                  background:'#fbbf24', boxShadow:'0 0 8px rgba(251,191,36,0.6)'
+                } : {}}/>
+                <span>
+                  {ready ? 'Connecté Firebase' : 'Mode local (Firebase non connecté)'} · {lastTxt}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
-      <div className="sync-account">
-        <div className="sync-acc-avatar">FC</div>
-        <div className="sync-acc-info">
-          <b>Florian C.</b>
-          <em>flo***@gmail.com</em>
-          <span className="sync-acc-chip">Google</span>
-        </div>
-        <button className="sync-acc-sync" onClick={() => alert("Sync compte cloud — disponible avec l'auth Google (V2.x)")}>↻</button>
-      </div>
+      {/* Bloc compte : lit les vraies infos coach depuis localStorage,
+          pas de mock Florian C. fixe. Si rien renseigné, état explicite. */}
+      {(() => {
+        const coachName = localStorage.getItem('cdd_coach_name') || '';
+        const userEmail = localStorage.getItem('cdd_user_email') || '';
+        const initials = coachName
+          ? coachName.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
+          : (userEmail[0] || '?').toUpperCase();
+        const maskedEmail = userEmail ? userEmail.replace(/^(.{3}).*(@.+)$/, '$1***$2') : null;
+        const isConfigured = !!(coachName || userEmail);
+        return (
+          <div className="sync-account">
+            <div className="sync-acc-avatar">{initials}</div>
+            <div className="sync-acc-info">
+              <b>{coachName || 'Compte non renseigné'}</b>
+              <em>{maskedEmail || 'Aucun email configuré'}</em>
+              <span className="sync-acc-chip" style={!isConfigured ? {
+                background:'rgba(251,191,36,0.15)', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.4)'
+              } : {}}>
+                {isConfigured ? 'Local' : '⚠ À configurer'}
+              </span>
+            </div>
+            <button className="sync-acc-sync"
+                    onClick={() => alert("Sync cloud avec Auth Google : prévu Phase 3 (Stripe + Firebase Auth).\nAujourd'hui : sync anonyme via Firestore (cf. statut ci-dessus).")}>
+              ↻
+            </button>
+          </div>
+        );
+      })()}
 
       <div className="sec-h">
         <span className="t">Mes équipes</span>
@@ -295,20 +396,26 @@ function ScreenSyncCloud({ go, tweaks }) {
         </button>
       </div>
 
-      <div className="sec-h"><span className="t">Activité sync</span></div>
+      <div className="sec-h">
+        <span className="t">Activité récente</span>
+        <span className="a">{activityEntries.length} action{activityEntries.length > 1 ? 's' : ''}</span>
+      </div>
       <div className="sync-activity">
-        {[
-          { t:"il y a 2 min", k:"PUSH", l:"Effectif U15 modifié (Hannachi blessé)", ic:"↑" },
-          { t:"il y a 12 min", k:"PUSH", l:"Match préparé · vs FC Pontoise", ic:"↑" },
-          { t:"il y a 1 h", k:"PULL", l:"Synchronisation depuis iPhone", ic:"↓" },
-          { t:"il y a 3 h", k:"PUSH", l:"Vote post-match · 8 réponses", ic:"↑" },
-          { t:"hier 22:14", k:"PULL", l:"Auto-sync au démarrage", ic:"↓" },
-        ].map((a,i) => (
+        {activityEntries.length === 0 ? (
+          <div style={{
+            padding:'18px 14px', borderRadius:10,
+            background:'rgba(255,255,255,0.03)', border:'1px dashed rgba(255,255,255,0.10)',
+            textAlign:'center', fontSize:12, color:'rgba(255,255,255,0.55)',
+          }}>
+            Aucune action enregistrée encore.<br/>
+            <span style={{fontSize:10, opacity:0.7}}>Les créations d'équipe, modifs de statut et matchs joués apparaîtront ici.</span>
+          </div>
+        ) : activityEntries.slice(0, 10).map((a, i) => (
           <div className="sync-evt" key={i}>
             <span className={`sync-evt-ic sync-evt-${a.k.toLowerCase()}`}>{a.ic}</span>
             <div className="sync-evt-body">
               <b>{a.l}</b>
-              <em>{a.k} · {a.t}</em>
+              <em>{a.k} · {a.t}{a.by ? ' · ' + a.by : ''}</em>
             </div>
           </div>
         ))}
