@@ -171,11 +171,22 @@ class ScreenErrorBoundary extends React.Component {
 
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  // Auto-route vers le Carnet du joueur si URL ?carnet=PLAYER_ID (lien magique enfant)
+  // ── Routage d'arrivée
+  //   1. Token magique dans URL → écran scopé au token (carnet, parent, lecteur, invite)
+  //   2. Email coach saisi → app normale (home)
+  //   3. Rien → landing publique (modèle E : pas d'exposition data sans token/email)
   const initialScreen = (() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
+      // Token magique d'abord — prioritaire sur l'email pour ne pas casser un
+      // lien envoyé à un parent qui a déjà un compte coach saisi sur le même device.
       if (params.get('carnet') || params.get('joueur')) return 'carnet';
+      if (params.get('p'))      return 'convoP';
+      if (params.get('t'))      return 'lecteur';
+      if (params.get('invite')) return 'home'; // Sprint 3 : route vers screen-invite
+      // Pas de token : check si l'user est connecté
+      const email = (localStorage.getItem('cdd_user_email') || '').trim();
+      if (!email) return 'landing';
     } catch (e) {}
     return 'home';
   })();
@@ -186,6 +197,29 @@ function App() {
 
   // Apply tweaks
   useEffect(() => { applyAccent(t.accent); }, [t.accent]);
+
+  // ── Écoute cdd-auth-changed pour rebasculer automatiquement entre landing
+  // et home (si l'user se déconnecte depuis Réglages, on revient landing).
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const params = new URLSearchParams(window.location.search || '');
+        const hasToken = params.get('carnet') || params.get('joueur')
+                      || params.get('p') || params.get('t') || params.get('invite');
+        if (hasToken) return; // un lien magique en cours, on ne touche pas
+        const email = (localStorage.getItem('cdd_user_email') || '').trim();
+        if (!email && screen !== 'landing' && screen !== 'onb') {
+          setScreen('landing');
+          setStack(['landing']);
+        } else if (email && screen === 'landing') {
+          setScreen('home');
+          setStack(['home']);
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('cdd-auth-changed', sync);
+    return () => window.removeEventListener('cdd-auth-changed', sync);
+  }, [screen]);
 
   // Go to a screen, optionally with payload
   const go = (id, payload) => {
@@ -233,6 +267,24 @@ function App() {
     };
     return map[screen] ?? "";
   }, [screen]);
+
+  // ── LANDING PUBLIQUE : prend tout l'écran si pas d'email + pas de token.
+  // Aucune donnée club n'est exposée tant que l'user n'est pas authentifié
+  // ou n'a pas utilisé un lien magique.
+  if (screen === 'landing' && window.ScreenLanding) {
+    return (
+      <div className="app-stage" data-screen-label="Phone — landing">
+        <div className="phone">
+          <div className="phone-screen" style={{padding:0}}>
+            <window.ScreenLanding
+              onLoggedIn={() => { setScreen('home'); setStack(['home']); }}
+              onOpenLink={(targetScreen) => { setScreen(targetScreen); setStack([targetScreen]); }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-stage" data-screen-label={`Phone — ${screen}`}>
