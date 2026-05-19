@@ -390,6 +390,101 @@ function ActionGrid({ side, M, disabled, onGoal, onCard, onSub, onInjury }) {
 // ──────────────────────────────────────────────────────────
 // Events timeline
 // ──────────────────────────────────────────────────────────
+
+// Retire le préfixe "#N " des labels stockés pour afficher juste le prénom.
+// '#9 Léonis' -> 'Léonis', '#10 Djibril' -> 'Djibril'.
+function cleanPlayerName(lbl) {
+  if (!lbl) return '';
+  return String(lbl).replace(/^#\d+\s*/, '').trim();
+}
+
+// Tag d'évènement en français (libellé court de l'action)
+function eventTagFr(e) {
+  switch (e.tp) {
+    case 'goal':   return 'BUT';
+    case 'yellow': return 'JAUNE';
+    case 'red':    return e.auto ? 'ROUGE (2e jaune)' : 'ROUGE';
+    case 'sub':    return 'CHANGEMENT';
+    case 'half':   return 'MI-TEMPS';
+    case 'end':    return 'COUP DE SIFFLET FINAL';
+    case 'injury': return 'BLESSURE';
+    case 'at':     return 'TEMPS ADDITIONNEL';
+    default:       return String(e.tp).toUpperCase();
+  }
+}
+
+// Phrase descriptive de l'évènement, en français propre, sans duplication.
+// Le label stocké e.pl reste pour compatibilité ; on s'appuie sur les champs
+// structurés (scorer, passer, type, source) quand ils sont disponibles.
+function eventDescriptionFr(e) {
+  const sName = cleanPlayerName(e.scorer || e.pl);
+  if (e.tp === 'goal') {
+    let main = `But ${sName}`;
+    const parts = [];
+    if (e.penalty) {
+      parts.push(e.penaltyType === 'hand' ? 'penalty (main)' : 'penalty (faute)');
+      if (e.obtainedBy) parts.push(`obtenu par ${cleanPlayerName(e.obtainedBy)}`);
+      if (e.causedBy)   parts.push(`causé par ${cleanPlayerName(e.causedBy)}`);
+    }
+    if (e.passer)               parts.push(`passe décisive ${cleanPlayerName(e.passer)}`);
+    else if (e.source === 'recovery') parts.push('sur récupération adverse');
+    else if (e.source === 'unknown')  parts.push('sans passeur');
+    return parts.length ? `${main} · ${parts.join(' · ')}` : main;
+  }
+  if (e.tp === 'yellow') return `Carton jaune ${cleanPlayerName(e.pl)}`;
+  if (e.tp === 'red')    return `Carton rouge ${cleanPlayerName(e.pl)}`;
+  if (e.tp === 'injury') return `Blessure ${cleanPlayerName(e.pl) || '(adversaire)'}`;
+  if (e.tp === 'sub') {
+    const out = cleanPlayerName(e.out || e.pl);
+    const inn = cleanPlayerName(e.in);
+    if (inn) return `${out} sort, ${inn} entre`;
+    return `Changement : ${out}`;
+  }
+  if (e.tp === 'at')   return `Temps additionnel +${e.add || e.at || ''}'`;
+  if (e.tp === 'half') return e.note || 'Pause de mi-temps';
+  if (e.tp === 'end')  return e.note || 'Fin de la rencontre';
+  return cleanPlayerName(e.pl);
+}
+
+// Logo / badge équipe pour la timeline (remplace le point vert anonyme)
+function TeamEventBadge({ side, M }) {
+  const team = side === 'A' ? M.tA : side === 'B' ? M.tB : null;
+  if (!team) {
+    return <span style={{
+      width:18, height:18, borderRadius:9, flexShrink:0,
+      background:'rgba(255,255,255,0.15)',
+    }}/>;
+  }
+  const isA = side === 'A';
+  const clubLogo = isA ? (window.CDD_CLUB && window.CDD_CLUB.logoDataUrl) : null;
+  if (clubLogo) {
+    return (
+      <span style={{
+        width:22, height:22, borderRadius:11, flexShrink:0,
+        background:'#fff', overflow:'hidden',
+        display:'inline-flex', alignItems:'center', justifyContent:'center',
+        border:`1.5px solid ${team.c || 'rgba(255,255,255,0.2)'}`,
+      }}>
+        <img src={clubLogo} alt={team.n} style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+      </span>
+    );
+  }
+  // Fallback : pastille avec couleurs et initiale du club
+  return (
+    <span title={team.n} style={{
+      width:22, height:22, borderRadius:11, flexShrink:0,
+      background: team.c2
+        ? `linear-gradient(135deg, ${team.c} 50%, ${team.c2} 50%)`
+        : team.c || '#3b82f6',
+      color: team.c2 && team.c2 !== '#000000' ? '#fff' : (team.c2 || '#fff'),
+      display:'inline-flex', alignItems:'center', justifyContent:'center',
+      fontSize:10, fontWeight:900, letterSpacing:'-.02em',
+      border:'1px solid rgba(255,255,255,0.2)',
+      textShadow:'0 1px 2px rgba(0,0,0,0.4)',
+    }}>{(team.n || '?')[0]}</span>
+  );
+}
+
 function EventsTimeline({ M, onUndo, onEdit }) {
   const ev = [...M.ev].reverse();
   return (
@@ -407,21 +502,11 @@ function EventsTimeline({ M, onUndo, onEdit }) {
         return (
           <div key={realIdx} className={`mv-ev mv-ev-${e.tp} mv-ev-${e.t || 'none'}`}>
             <span className="mv-ev-min num">{e.mn}<i>'</i></span>
-            <span className="mv-ev-dot"/>
+            <TeamEventBadge side={e.t} M={M}/>
             <div className="mv-ev-body">
-              <span className={`mv-ev-tag mv-ev-tag-${e.tp}`}>
-                {e.tp === 'goal'   ? 'BUT' :
-                 e.tp === 'yellow' ? 'JAUNE' :
-                 e.tp === 'red'    ? (e.auto ? 'ROUGE (2e jaune)' : 'ROUGE') :
-                 e.tp === 'sub'    ? 'CHANGEMENT' :
-                 e.tp === 'half'   ? 'MI-TEMPS' :
-                 e.tp === 'end'    ? 'COUP DE SIFFLET FINAL' :
-                 e.tp === 'injury' ? 'BLESSURE' :
-                 e.tp === 'at'     ? 'TEMPS ADDITIONNEL' :
-                 e.tp.toUpperCase()}
-              </span>
-              <span className="mv-ev-pl">{e.pl || ''}{e.passer ? ' (P. ' + e.passer + ')' : ''}</span>
-              {e._edited && <span style={{fontSize:10, color:'rgba(200,241,105,.7)', marginLeft:6}}>✎ edite</span>}
+              <span className={`mv-ev-tag mv-ev-tag-${e.tp}`}>{eventTagFr(e)}</span>
+              <span className="mv-ev-pl">{eventDescriptionFr(e)}</span>
+              {e._edited && <span style={{fontSize:10, color:'rgba(200,241,105,.7)', marginLeft:6}}>✎ édité</span>}
               {e.tp === 'goal' && e.source === 'pending' &&
                 <span className="mv-ev-pending">⏰ Passeur à renseigner</span>}
             </div>
