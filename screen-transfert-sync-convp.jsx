@@ -161,14 +161,59 @@ function ScreenSyncCloud({ go, tweaks }) {
       const allClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
       const allTeams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
       const logos    = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
-      return allClubs.map(c => ({
+
+      // ── Réconciliation robuste : si une équipe pointe sur un clubId qui n'existe
+      // pas dans arb_clubs (héritage des anciennes versions où le modèle n'était
+      // pas strict), on infère un club à la volée. Permet à l'écran de toujours
+      // afficher ce qui existe vraiment, sans dépendre de la qualité des données.
+      const clubById = {};
+      allClubs.forEach(c => { if (c && c.id) clubById[c.id] = c; });
+
+      const inferredClubs = [];
+      const teamsWithResolvedClubId = allTeams.map(t => {
+        if (!t) return null;
+        // Cas 1 : team sans clubId du tout → club orphelin, on en crée un par
+        // équipe (cas extrême) en utilisant clubName/name comme indice.
+        // Cas 2 : team avec clubId orphelin (le club n'a jamais été cree dans
+        // arb_clubs). On crée le club virtuel UNE FOIS par clubId distinct.
+        let resolvedClubId = t.clubId;
+        if (!resolvedClubId) {
+          const inferredName = t.clubName || t.club || (t.name || 'Club').split(/[ ·]/)[0] || 'Club';
+          resolvedClubId = 'club_legacy_' + inferredName.replace(/\s+/g, '_');
+        }
+        if (!clubById[resolvedClubId]) {
+          const inferredName = t.clubName || t.club || (t.name || 'Club').split(/[ ·]/)[0] || 'Club';
+          const inferred = {
+            id: resolvedClubId,
+            name: inferredName,
+            primaryColor: t.color || '#c8f169',
+            _inferred: true,
+          };
+          clubById[resolvedClubId] = inferred;
+          inferredClubs.push(inferred);
+        }
+        return { ...t, clubId: resolvedClubId };
+      }).filter(Boolean);
+
+      if (inferredClubs.length > 0) {
+        console.warn(
+          `[SyncCloud] ${inferredClubs.length} club(s) reconstitue(s) depuis arb_teams (heritage). ` +
+          `Pour migrer proprement, utilise '+ Club' puis ajoute les equipes dedans.`,
+          inferredClubs.map(c => c.name)
+        );
+      }
+
+      const finalClubs = [...allClubs, ...inferredClubs];
+
+      return finalClubs.map(c => ({
         id: c.id,
         name: c.name || 'Club',
         primaryColor: c.primaryColor || c.color || '#c8f169',
         logoDataUrl: logos[c.id] || null,
         createdAt: c.createdAt || null,
         createdBy: c.createdBy || null,
-        teams: allTeams
+        isInferred: !!c._inferred,
+        teams: teamsWithResolvedClubId
           .filter(t => t.clubId === c.id)
           .map(t => ({
             id: t.id,
@@ -177,7 +222,10 @@ function ScreenSyncCloud({ go, tweaks }) {
             createdAt: t.createdAt || null,
           })),
       }));
-    } catch (e) { return []; }
+    } catch (e) {
+      console.warn('[SyncCloud] buildClubsWithTeams failed:', e);
+      return [];
+    }
   };
   const clubs = buildClubsWithTeams();
 
