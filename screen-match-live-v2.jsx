@@ -10,12 +10,20 @@ const { useState: useStateMV, useEffect: useEffectMV, useRef: useRefMV, useMemo:
 // Player picker — used by all action flows
 // ──────────────────────────────────────────────────────────
 function PlayerPicker({ title, subtitle, team, mode = 'field', M, onPick, onCancel, extraActions, hint }) {
-  const all = mode === 'bench' ? (team.bench || []) :
-              mode === 'all'   ? [...(team.p||[]), ...(team.bench||[])] :
-                                 (team.p || []);
+  // Sélection du pool selon le mode demandé. On respecte le flag onField pour rester
+  // cohérent avec les substitutions : un titulaire sorti (onField=false) ne doit pas
+  // apparaître dans 'field', un remplaçant entré (onField=true) ne doit pas apparaître
+  // dans 'bench'. Pour les cas anciens où onField n'est pas défini, fallback sur l'array.
+  const pool = (mode === 'bench')
+    ? [...(team.p || []), ...(team.bench || [])].filter(p => p.onField === false)
+    : (mode === 'all')
+      ? [...(team.p || []), ...(team.bench || [])]
+      : /* 'field' (défaut) */
+        [...(team.p || []), ...(team.bench || [])].filter(p => p.onField !== false);
 
-  // Filter out players already excluded (red card)
-  const visible = all.filter(p => !MATCH_HELPERS.playerLabel ? true : !window.MATCH_HELPERS.isPlayerOut?.(M, team === M.tA ? 'A' : 'B', MATCH_HELPERS.playerLabel(p)));
+  // Filter out players already excluded (red card) — un joueur expulsé ne peut plus
+  // jouer du match (règle absolue, valable même pour les sub-in).
+  const visible = pool.filter(p => !MATCH_HELPERS.playerLabel ? true : !window.MATCH_HELPERS.isPlayerOut?.(M, team === M.tA ? 'A' : 'B', MATCH_HELPERS.playerLabel(p)));
 
   return (
     <div className="mv-modal-overlay" onClick={onCancel}>
@@ -885,6 +893,10 @@ function ScreenMatchV2({ go, tweaks }) {
   };
 
   // ─── Sub flow ──────────────────────────────────────
+  // Règle amateur : pas de limite de changements, un joueur peut rentrer/sortir
+  // plusieurs fois. Le sortant devient remplaçant (onField=false), l'entrant
+  // passe sur le terrain (onField=true). Les pickers suivants reflètent
+  // immédiatement la nouvelle réalité.
   const [subOut, setSubOut] = useStateMV(null);
   const handleSubOut = (side) => (player) => {
     setSubOut(player);
@@ -896,6 +908,41 @@ function ScreenMatchV2({ go, tweaks }) {
     const outLbl = MATCH_HELPERS.playerLabel(subOut);
     const inLbl = MATCH_HELPERS.playerLabel(player);
     M.ev.push({ tp:'sub', t: side, mn, out: outLbl, inn: inLbl, pl: outLbl+' → '+inLbl, ts: Date.now() });
+
+    // ⚠️ SWAP RÉEL des positions : sans ça, le sortant reste considéré 'sur le terrain'
+    // et l'entrant peut être resélectionné comme entrant -> match à 10 joueurs.
+    const team = side === 'A' ? M.tA : M.tB;
+    const findIn = (list, id) => (list || []).findIndex(x => x.id === id);
+    // 1. Sortant : bascule onField=false. S'il est dans team.p, on le déplace en bench.
+    const outId = subOut && subOut.id;
+    if (outId) {
+      const idxInP = findIn(team.p, outId);
+      if (idxInP >= 0) {
+        const [removed] = team.p.splice(idxInP, 1);
+        removed.onField = false;
+        team.bench = team.bench || [];
+        // Évite les doublons si déjà présent
+        if (!team.bench.some(x => x.id === outId)) team.bench.push(removed);
+      } else {
+        const idxInBench = findIn(team.bench, outId);
+        if (idxInBench >= 0) team.bench[idxInBench].onField = false;
+      }
+    }
+    // 2. Entrant : bascule onField=true. S'il est dans team.bench, on le déplace dans team.p.
+    const inId = player && player.id;
+    if (inId) {
+      const idxInBench = findIn(team.bench, inId);
+      if (idxInBench >= 0) {
+        const [added] = team.bench.splice(idxInBench, 1);
+        added.onField = true;
+        team.p = team.p || [];
+        if (!team.p.some(x => x.id === inId)) team.p.push(added);
+      } else {
+        const idxInP = findIn(team.p, inId);
+        if (idxInP >= 0) team.p[idxInP].onField = true;
+      }
+    }
+
     MATCH_SFX.vibrate(100);
     setSubOut(null);
     setActiveFlow(null);
@@ -909,7 +956,29 @@ function ScreenMatchV2({ go, tweaks }) {
     if (last.tp === 'goal') { if (last.t === 'A') M.sA--; else M.sB--; }
     if (last.tp === 'yellow') { if (last.t === 'A') M.yA--; else M.yB--; }
     if (last.tp === 'red') { if (last.t === 'A') M.rA--; else M.rB--; }
-    if (last.tp === 'sub') { if (last.t === 'A') M.uA--; else M.uB--; }
+    if (last.tp === 'sub') {
+      if (last.t === 'A') M.uA--; else M.uB--;
+      // Reverse swap : on remet le sortant sur le terrain et le rentrant sur le banc.
+      // Sans ça, annuler un changement ne corrige pas la composition.
+      const team = last.t === 'A' ? M.tA : M.tB;
+      const findIn = (list, lbl) => (list || []).findIndex(x => MATCH_HELPERS.playerLabel(x) === lbl);
+      // outLbl était le SORTANT (à remettre sur le terrain)
+      const outIdxBench = findIn(team.bench, last.out);
+      if (outIdxBench >= 0) {
+        const [restored] = team.bench.splice(outIdxBench, 1);
+        restored.onField = true;
+        team.p = team.p || [];
+        if (!team.p.some(x => x.id === restored.id)) team.p.push(restored);
+      }
+      // innLbl était l'ENTRANT (à renvoyer sur le banc)
+      const inIdxP = findIn(team.p, last.inn);
+      if (inIdxP >= 0) {
+        const [reverted] = team.p.splice(inIdxP, 1);
+        reverted.onField = false;
+        team.bench = team.bench || [];
+        if (!team.bench.some(x => x.id === reverted.id)) team.bench.push(reverted);
+      }
+    }
     if ((last.tp === 'half' || last.tp === 'end') && last._prev) {
       Object.assign(M, last._prev);
     }
@@ -1101,18 +1170,19 @@ function ScreenMatchV2({ go, tweaks }) {
           onCancel={() => setActiveFlow(null)}/>
       )}
 
-      {/* Sub flow mode 'all' : amateur, pas de limite (#32) */}
+      {/* Sub flow — amateur, pas de limite. Sortant : uniquement les joueurs sur le terrain.
+          Entrant : uniquement les joueurs hors terrain (banc + sortis précédemment). */}
       {activeFlow?.kind === 'sub-out' && (
         <PlayerPicker title="🔻 Joueur sortant"
           subtitle="Tape sur celui qui sort du terrain"
-          team={team} mode="all" M={M}
+          team={team} mode="field" M={M}
           onPick={handleSubOut(activeFlow.side)}
           onCancel={() => setActiveFlow(null)}/>
       )}
       {activeFlow?.kind === 'sub-in' && (
         <PlayerPicker title="🔺 Joueur entrant"
           subtitle={`Pour ${MATCH_HELPERS.playerLabel(subOut)}`}
-          team={team} mode="all" M={M}
+          team={team} mode="bench" M={M}
           onPick={handleSubIn(activeFlow.side)}
           onCancel={() => { setSubOut(null); setActiveFlow(null); }}/>
       )}
