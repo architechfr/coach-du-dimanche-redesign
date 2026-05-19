@@ -387,46 +387,125 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
 }
 
 // ──────────────────────────────────────────────────────────
-// Action grid — BUT / JAUNE / ROUGE / CHANGE per team
+// Action matrix — V1-like layout : 1 ligne par type d'action
+// avec A (domicile) à gauche et B (extérieur) à droite.
+// Ergonomie testée terrain par le coach (V1).
 // ──────────────────────────────────────────────────────────
-function ActionGrid({ side, M, disabled, onGoal, onCard, onSub, onInjury }) {
-  const tName = side === 'A' ? M.tA.n : M.tB.n;
+function ActionsMatrix({ M, disabled, onGoal, onCard, onSub, onInjury }) {
+  const aName = M.tA?.n || 'Mon équipe';
+  const bName = M.tB?.n || 'Adversaire';
+
+  // Bouton réutilisable. taille du label adapte au nombre de boutons par ligne.
+  const Btn = ({ kind, side, onClick, children, fontSize }) => (
+    <button
+      className={`mv-action mv-action-${kind}`}
+      disabled={disabled}
+      onClick={() => onClick(side)}
+      style={{ fontSize: fontSize || undefined, flex: 1, minWidth: 0 }}>
+      {children}
+    </button>
+  );
+
+  const goalIc   = <span className="mv-action-ic">⚽</span>;
+  const yellowIc = <span className="mv-action-ic">
+    <span style={{
+      display:'inline-block', width:20, height:28, borderRadius:3,
+      background:'#FFD600', boxShadow:'0 2px 4px rgba(0,0,0,.4), inset 0 -3px 0 rgba(0,0,0,.18)',
+    }}/>
+  </span>;
+  const redIc = <span className="mv-action-ic">
+    <span style={{
+      display:'inline-block', width:20, height:28, borderRadius:3,
+      background:'#E60026', boxShadow:'0 2px 4px rgba(0,0,0,.5), inset 0 -3px 0 rgba(0,0,0,.22)',
+    }}/>
+  </span>;
+  const subIc    = <span className="mv-action-ic">⇅</span>;
+  const injuryIc = <span className="mv-action-ic">🩹</span>;
+
+  // Style commun pour une ligne (paire A | B avec separateur visuel central)
+  const rowStyle = {
+    display:'flex', gap:8, marginBottom:10,
+  };
+  const sideStyle = {
+    flex:1, minWidth:0, display:'flex', gap:6,
+  };
+  const sepStyle = {
+    width:1, alignSelf:'stretch',
+    background:'linear-gradient(180deg, transparent, rgba(255,255,255,0.12), transparent)',
+  };
+
   return (
-    <div className={`mv-actions mv-actions-${side}`}>
-      <div className="mv-actions-k">{tName}</div>
-      <div className="mv-actions-row">
-        <button className="mv-action mv-action-goal" disabled={disabled} onClick={() => onGoal(side)}>
-          <span className="mv-action-ic">⚽</span>
-          <span className="mv-action-l">BUT</span>
-        </button>
-        <button className="mv-action mv-action-yel" disabled={disabled} onClick={() => onCard(side, 'yellow')}>
-          <span className="mv-action-ic">
-            <span style={{
-              display:'inline-block', width:20, height:28, borderRadius:3,
-              background:'#FFD600', boxShadow:'0 2px 4px rgba(0,0,0,.4), inset 0 -3px 0 rgba(0,0,0,.18)',
-            }}/>
-          </span>
-          <span className="mv-action-l">JAUNE</span>
-        </button>
-        <button className="mv-action mv-action-red" disabled={disabled} onClick={() => onCard(side, 'red')}>
-          <span className="mv-action-ic">
-            <span style={{
-              display:'inline-block', width:20, height:28, borderRadius:3,
-              background:'#E60026', boxShadow:'0 2px 4px rgba(0,0,0,.5), inset 0 -3px 0 rgba(0,0,0,.22)',
-            }}/>
-          </span>
-          <span className="mv-action-l">ROUGE</span>
-        </button>
-        <button className="mv-action mv-action-sub" disabled={disabled} onClick={() => onSub(side)}>
-          <span className="mv-action-ic">⇅</span>
-          <span className="mv-action-l">CHANGE</span>
-        </button>
-        {onInjury && (
-          <button className="mv-action mv-action-injury" disabled={disabled} onClick={() => onInjury(side)}>
-            <span className="mv-action-ic">🩹</span>
-            <span className="mv-action-l">BLESSÉ</span>
-          </button>
-        )}
+    <div className="mv-actions-matrix">
+
+      {/* Entêtes des 2 côtés (rappel visuel) */}
+      <div style={{
+        display:'flex', gap:8, marginBottom:6,
+        fontSize:10.5, fontWeight:800, opacity:0.55, letterSpacing:'.06em',
+      }}>
+        <div style={{flex:1, textAlign:'center'}}>{aName.toUpperCase()}</div>
+        <div style={{width:1}}/>
+        <div style={{flex:1, textAlign:'center'}}>{bName.toUpperCase()}</div>
+      </div>
+
+      {/* Ligne 1 — BUT A | BUT B  (action principale, le plus accessible) */}
+      <div style={rowStyle}>
+        <div style={sideStyle}>
+          <Btn kind="goal" side="A" onClick={onGoal}>
+            {goalIc}<span className="mv-action-l">BUT</span>
+          </Btn>
+        </div>
+        <div style={sepStyle}/>
+        <div style={sideStyle}>
+          <Btn kind="goal" side="B" onClick={onGoal}>
+            {goalIc}<span className="mv-action-l">BUT</span>
+          </Btn>
+        </div>
+      </div>
+
+      {/* Ligne 2 — JAUNE A · ROUGE A | JAUNE B · ROUGE B */}
+      <div style={rowStyle}>
+        <div style={sideStyle}>
+          <Btn kind="yel" side="A" onClick={(s) => onCard(s, 'yellow')}>
+            {yellowIc}<span className="mv-action-l">JAUNE</span>
+          </Btn>
+          <Btn kind="red" side="A" onClick={(s) => onCard(s, 'red')}>
+            {redIc}<span className="mv-action-l">ROUGE</span>
+          </Btn>
+        </div>
+        <div style={sepStyle}/>
+        <div style={sideStyle}>
+          <Btn kind="yel" side="B" onClick={(s) => onCard(s, 'yellow')}>
+            {yellowIc}<span className="mv-action-l">JAUNE</span>
+          </Btn>
+          <Btn kind="red" side="B" onClick={(s) => onCard(s, 'red')}>
+            {redIc}<span className="mv-action-l">ROUGE</span>
+          </Btn>
+        </div>
+      </div>
+
+      {/* Ligne 3 — CHANGE A | CHANGE B (+ BLESSÉ côté A car pas de feuille adv) */}
+      <div style={rowStyle}>
+        <div style={sideStyle}>
+          <Btn kind="sub" side="A" onClick={onSub}>
+            {subIc}<span className="mv-action-l">CHANGE</span>
+          </Btn>
+          {onInjury && (
+            <Btn kind="injury" side="A" onClick={onInjury}>
+              {injuryIc}<span className="mv-action-l">BLESSÉ</span>
+            </Btn>
+          )}
+        </div>
+        <div style={sepStyle}/>
+        <div style={sideStyle}>
+          <Btn kind="sub" side="B" onClick={onSub}>
+            {subIc}<span className="mv-action-l">CHANGE</span>
+          </Btn>
+          {onInjury && (
+            <Btn kind="injury" side="B" onClick={onInjury}>
+              {injuryIc}<span className="mv-action-l">BLESSÉ</span>
+            </Btn>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1095,14 +1174,8 @@ function ScreenMatchV2({ go, tweaks }) {
 
       {!M.notStarted && (
         <>
-          <ActionGrid side="A" M={M} disabled={disabled}
-            onGoal={() => setActiveFlow({ kind:'goal', side:'A' })}
-            onCard={handleCard}
-            onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
-            onInjury={handleInjury}/>
-
-          <ActionGrid side="B" M={M} disabled={disabled}
-            onGoal={() => setActiveFlow({ kind:'goal', side:'B' })}
+          <ActionsMatrix M={M} disabled={disabled}
+            onGoal={(side) => setActiveFlow({ kind:'goal', side })}
             onCard={handleCard}
             onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
             onInjury={handleInjury}/>
