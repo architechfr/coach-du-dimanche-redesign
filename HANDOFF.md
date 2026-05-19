@@ -40,7 +40,7 @@ Le coach m'a corrigé plusieurs fois là-dessus. Ne pas y déroger.
 ```
 // ── IDENTITÉ & RÔLES
 cdd_user_role           string  ('coach' | 'owner' | 'parent' | 'joueur' | 'admin' | 'dirigeant' | 'adjoint' | 'ecole' | 'lecteur')
-cdd_user_email          string  (utilisé par roles.js pour détecter owner = archi.tech.fr@gmail.com)
+cdd_user_email          string  (identité de l'user — utilisé par roles.js pour les memberships ; pas de super-admin par email tant qu'Auth pas branchée)
 cdd_user_scope          JSON    ({clubIds[], teamIds[], playerIds[]})
 cdd_coach_name          string
 cdd_voter_id            string  (identifiant anonyme par device)
@@ -230,10 +230,13 @@ Si tu reprends sans mémoire, relis `MEMORY.md` en priorité.
 - **Tests** : zéro test automatisé. Régressions possibles à chaque commit.
 - **CI/CD** : Vercel auto-deploy uniquement. Pas de preview deploy par branche.
 
-## 10. Owner de fait
+## 10. Super-admin / Owner
 
-Email owner : `archi.tech.fr@gmail.com` (configuré dans `roles.js` constant `OWNER_EMAIL`).
-Tant que le coach n'a pas configuré son email dans le ProfileEditModal, il est `coach` par défaut (avec scope owner local de son appareil).
+**⚠️ Pas de super-admin par email dans le code.** Toute version antérieure qui codait en dur un email owner dans le repo public était une faille (clone du repo = qui peut voir l'email = qui peut s'auto-promouvoir owner en le saisissant dans Réglages).
+
+Tant que Firebase Auth n'est pas branchée (Sprint 3), **tout le monde est juste `coach`**. Le super-admin reviendra via Firebase custom claims côté serveur (impossible à forger côté client) ou via une rule Firestore qui check l'UID.
+
+L'email coach stocké dans `cdd_user_email` sert uniquement d'identifiant pour les memberships locales (`cdd_memberships`).
 
 ---
 

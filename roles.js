@@ -31,19 +31,19 @@
     LECTEUR:  { id: 'lecteur',  label: 'Lecteur',         weight: 10  },
   };
 
-  // Email owner de fait — quand on aura Auth, ce sera détecté par claims.
-  const OWNER_EMAIL = 'archi.tech.fr@gmail.com';
+  // ⚠️ La notion d'« owner par email » a été retirée pour cause de
+  // vulnerabilite : ce code est dans un repo public, donc n'importe quel
+  // utilisateur qui aurait vu l'email pouvait le saisir dans son Reglages
+  // et devenir owner. Le super-admin reviendra avec Firebase Auth (Sprint
+  // 3) via un UID Firebase valide cote serveur (custom claim ou rule
+  // Firestore). Tant que Auth n'est pas la, tout le monde est juste 'coach'.
+  const OWNER_EMAIL = null;
 
   function currentRole() {
     try {
-      const email = (localStorage.getItem('cdd_user_email') || '').toLowerCase();
-      if (email === OWNER_EMAIL) return 'owner';
       const stored = localStorage.getItem('cdd_user_role');
       if (stored && ROLES[stored.toUpperCase()]) return stored;
-      // Fallback : si l'utilisateur a au moins un club, on le considère owner local
-      // de son appareil (Phase < 3, pas d'auth réelle).
-      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
-      if (teams.length > 0) return 'coach';
+      // Fallback : tout le monde est coach (proto pre-Auth).
       return 'coach';
     } catch (e) { return 'coach'; }
   }
@@ -306,9 +306,22 @@
   // ═══════════════════════════════════════════════════════════════════
   //  MIGRATION AUTOMATIQUE
   // ═══════════════════════════════════════════════════════════════════
-  // Au boot : si l'user a un email saisi ET qu'il y a deja des clubs en
-  // local SANS memberships, on cree automatiquement les memberships 'coach'
-  // pour cet user sur tous les clubs locaux. Legalise l'historique existant.
+  // Au boot : si l'user a un email saisi ET qu'il y a deja des clubs SANS
+  // memberships, on cree automatiquement les memberships 'coach'. Legalise
+  // l'historique existant.
+  //
+  // IMPORTANT : les donnees clubs/equipes peuvent venir de 3 sources :
+  //   1. localStorage direct (arb_clubs, arb_teams) — coachs ayant cree
+  //      explicitement via l'UI
+  //   2. seed-inline.js (chargees dans window.__CDD_OVERRIDE par
+  //      data-adapter.js si localStorage vide) — coachs qui n'ont jamais
+  //      ecrit en local, demarrent sur les vraies donnees pre-baked
+  //   3. window.CDD.getAllClubs() / getTeams() — interface unifiee qui
+  //      voit les 2 sources via le data-adapter
+  //
+  // La migration doit voir TOUTES les sources. On passe par window.CDD
+  // (data-adapter) et on persiste les donnees du seed en localStorage si
+  // necessaire pour que les memberships referencent des clubIds stables.
   function runMigrationIfNeeded() {
     try {
       const email = getCurrentEmail();
@@ -321,19 +334,75 @@
         return { ran: false, reason: 'already-migrated', count: existingMemberships.length };
       }
 
-      // Collecte les clubIds presents en local : arb_clubs + clubIds heritage
-      // referenece par arb_teams (sans entry dans arb_clubs).
-      const allClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
-      const allTeams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+      // ── Collecte robuste : on prend l'union de toutes les sources.
+      // 1. localStorage direct (cas legacy)
+      let lsClubs = [];
+      let lsTeams = [];
+      try { lsClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]'); } catch (e) {}
+      try { lsTeams = JSON.parse(localStorage.getItem('arb_teams') || '[]'); } catch (e) {}
+
+      // 2. data-adapter (qui voit aussi le seed via window.__CDD_OVERRIDE)
+      let adClubs = [];
+      let adTeams = [];
+      if (window.CDD) {
+        try { adClubs = window.CDD.getAllClubs?.() || []; } catch (e) {}
+        try {
+          // Pour avoir TOUTES les teams (pas filtrees par club actif), lire
+          // directement le raw qui inclut l'override seed.
+          const allRaw = (window.__CDD_OVERRIDE && window.__CDD_OVERRIDE['arb_teams'])
+                      || JSON.parse(localStorage.getItem('arb_teams') || '[]');
+          adTeams = Array.isArray(allRaw) ? allRaw : [];
+        } catch (e) {}
+      }
+
+      // Union dedupliquee par id
+      const clubsById = {};
+      [...lsClubs, ...adClubs].forEach(c => { if (c && c.id) clubsById[c.id] = c; });
+      const teamsById = {};
+      [...lsTeams, ...adTeams].forEach(t => { if (t && t.id) teamsById[t.id] = t; });
+
+      const unionClubs = Object.values(clubsById);
+      const unionTeams = Object.values(teamsById);
+
+      // Collecte les clubIds : ceux deja dans arb_clubs + ceux referencees par
+      // arb_teams (cas heritage ou aucun arb_clubs explicite).
       const clubIds = new Set();
-      allClubs.forEach(c => { if (c && c.id) clubIds.add(c.id); });
-      allTeams.forEach(t => { if (t && t.clubId) clubIds.add(t.clubId); });
+      unionClubs.forEach(c => { if (c && c.id) clubIds.add(c.id); });
+      unionTeams.forEach(t => { if (t && t.clubId) clubIds.add(t.clubId); });
 
       if (clubIds.size === 0) {
+        console.info('[roles] migration : aucun club detecte (ni en localStorage, ni en seed). Mode coach sans rattachement.');
         return { ran: false, reason: 'no-clubs' };
       }
 
-      // Cree les memberships 'coach' pour cet email
+      // ── Persistance du seed : si certains clubs/teams ne sont qu'en seed,
+      // on les ecrit en localStorage pour que les memberships pointent sur
+      // des donnees stables (qui ne disparaitront pas a la prochaine session).
+      let persisted = 0;
+      try {
+        const lsClubIds = new Set(lsClubs.map(c => c.id));
+        const missingClubs = unionClubs.filter(c => !lsClubIds.has(c.id));
+        if (missingClubs.length > 0) {
+          const merged = [...lsClubs, ...missingClubs];
+          localStorage.setItem('arb_clubs', JSON.stringify(merged));
+          persisted += missingClubs.length;
+        }
+      } catch (e) { console.warn('[roles] persist arb_clubs failed', e); }
+      try {
+        const lsTeamIds = new Set(lsTeams.map(t => t.id));
+        const missingTeams = unionTeams.filter(t => !lsTeamIds.has(t.id));
+        if (missingTeams.length > 0) {
+          const merged = [...lsTeams, ...missingTeams];
+          localStorage.setItem('arb_teams', JSON.stringify(merged));
+          persisted += missingTeams.length;
+        }
+      } catch (e) { console.warn('[roles] persist arb_teams failed', e); }
+
+      if (persisted > 0) {
+        console.info(`[roles] migration : ${persisted} entite(s) seed persistee(s) en localStorage`);
+      }
+
+      // ── Crée les memberships 'coach' pour cet email
       const all = listAllMemberships();
       const now = Date.now();
       let added = 0;
@@ -351,9 +420,9 @@
         }
       });
       localStorage.setItem('cdd_memberships', JSON.stringify(all));
-      console.info(`[roles] migration done : ${added} membership(s) coach creee(s) pour ${email}`);
+      console.info(`[roles] migration done : ${added} membership(s) coach creee(s) pour ${email} (sur ${clubIds.size} club(s))`);
       window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
-      return { ran: true, added };
+      return { ran: true, added, persisted };
     } catch (e) {
       console.warn('[roles] migration failed', e);
       return { ran: false, reason: 'error', error: e.message };

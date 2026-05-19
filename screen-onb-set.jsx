@@ -117,11 +117,12 @@ function ScreenSettings({ go, tweaks, setTweak }) {
 
   // ─── Gating par rôle (#12) ───────────────────────────────
   // Roles possibles : parent | joueur | coach | adjoint | dirigeant | ecole | admin
-  const ADMIN_EMAIL = 'archi.tech.fr@gmail.com';
+  // ⚠️ La notion d'owner-par-email a ete retiree (repo public + faille).
+  // Le super-admin reviendra Sprint 3 via Firebase Auth custom claims.
   const role = localStorage.getItem('cdd_user_role') || 'coach';
   const userEmail = localStorage.getItem('cdd_user_email') || '';
-  const isOwner   = userEmail.toLowerCase() === ADMIN_EMAIL;
-  const isAdmin   = role === 'admin' || isOwner;
+  const isOwner   = false;
+  const isAdmin   = role === 'admin';
   const isCoach   = isAdmin || ['coach', 'adjoint', 'dirigeant', 'ecole'].includes(role);
   const isParent  = role === 'parent' || role === 'joueur';
 
@@ -472,8 +473,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                       } catch (e) { alert('Stats indisponibles'); }
                     }}/>
             <SetRow ic="🛠️" t="Mode dev"
-                    d={isOwner ? 'Owner (archi.tech.fr)' : 'Admin role'}
-                    go={() => alert('Tu es ' + (isOwner ? 'OWNER' : 'ADMIN'))}/>
+                    d={'Admin role'}
+                    go={() => alert('Tu es ADMIN')}/>
           </div>
         </div>
       )}
@@ -866,7 +867,7 @@ function ProfileEditModal({ initialName, initialEmail, onClose, onSave }) {
               </span>
             )}
             <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)'}}>
-              💡 Renseigne <code style={{color:'#c8f169'}}>archi.tech.fr@gmail.com</code> pour avoir le rôle Owner.
+              💡 Ton email te rattache à tes clubs. Il sera vérifié par Google Auth quand l'auth réelle sera en place.
             </span>
           </label>
         </div>
