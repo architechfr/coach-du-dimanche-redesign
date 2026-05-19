@@ -531,8 +531,12 @@ function ScreenVote({ go, tweaks }) {
     setSendError(null);
     try {
       if (window.cddSync?.sendVote) {
+        // Le vote doit pointer sur le match TERMINÉ (pas sur le prochain à préparer
+        // ni sur le match live en cours). On préfère lastFinishedMatchId, et on retombe
+        // sur matchId courant si aucun match terminé n'est connu (cas démo / proto).
+        const targetMatchId = window.cddSync.lastFinishedMatchId || window.cddSync.matchId;
         await window.cddSync.sendVote(
-          window.cddSync.matchId,
+          targetMatchId,
           window.cddSync.voterId,
           votes
         );

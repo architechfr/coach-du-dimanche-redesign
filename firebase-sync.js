@@ -61,16 +61,30 @@ function getQueryParam(name) {
 }
 
 function getMatchId() {
+  // Résolution "contexte courant", utilisée par les écrans Convocations, Home, Lecteur.
+  // 1. URL ?m=XXX (vue ciblée — lecteur parent partagé)
+  // 2. cdd_match_current (match LIVE en cours d'arbitrage — priorité max)
+  // 3. CDD_NEXT_MATCH.id (prochain match à préparer — convocations)
+  // 4. cdd_match_last_finished (fallback : un match vient de se terminer, contexte = post-match)
+  // 5. fallback démo
   const fromUrl = getQueryParam('m');
   if (fromUrl) return fromUrl;
   const cur = localStorage.getItem('cdd_match_current');
   if (cur) return cur;
   const next = window.CDD_NEXT_MATCH;
-  if (next?.date) {
-    // ex "17/05" → demo_17_05
-    return 'demo_' + next.date.replace(/[^0-9]/g, '_').replace(/^_|_$/g, '');
+  if (next?.id) return next.id;
+  if (next?.date && !next?.noUpcoming) {
+    return 'next_' + next.date.replace(/[^0-9]/g, '_').replace(/^_|_$/g, '');
   }
+  const lastFinished = localStorage.getItem('cdd_match_last_finished');
+  if (lastFinished) return lastFinished;
   return 'demo_default';
+}
+
+// Helper dédié pour la page Vote : doit pointer sur le dernier match TERMINÉ,
+// pas sur le prochain à préparer.
+function getLastFinishedMatchId() {
+  return localStorage.getItem('cdd_match_last_finished') || null;
 }
 
 function getVoterId() {
@@ -265,9 +279,13 @@ function watchPlayerStatuses(teamId, callback) {
 
 /* ---------- Expose globally ---------- */
 
+// matchId est un GETTER dynamique : ré-évalué à chaque lecture.
+// Sinon le matchId reste figé à l'init et les votes/convocs partent sur le mauvais match
+// quand l'utilisateur passe d'un match à l'autre dans la même session.
 window.cddSync = {
   ready: !!db,
-  matchId: getMatchId(),
+  get matchId() { return getMatchId(); },
+  get lastFinishedMatchId() { return getLastFinishedMatchId(); },
   voterId: getVoterId(),
   sendConvocResponse,
   watchConvocResponses,
@@ -278,6 +296,7 @@ window.cddSync = {
   setPlayerStatus,
   watchPlayerStatuses,
   getMatchId,
+  getLastFinishedMatchId,
   getVoterId,
 };
 

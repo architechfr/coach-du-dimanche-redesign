@@ -230,20 +230,22 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
                 margin:'8px auto 0', display:'flex', flexDirection:'column',
                 alignItems:'center', gap:4,
               }}>
-                {/* GROS chrono jeu */}
+                {/* GROS chrono jeu — taille XL pour lecture arbitre en plein soleil */}
                 <div style={{
                   fontFamily: 'var(--f-display, sans-serif)',
-                  fontSize: 36, fontWeight: 900, letterSpacing: '.04em',
+                  fontSize: 'clamp(72px, 18vw, 160px)',
+                  fontWeight: 900, letterSpacing: '.04em',
                   color: M.st === 'live' ? '#c8f169' : '#fbbf24',
-                  fontVariantNumeric: 'tabular-nums', lineHeight: 1,
-                  textShadow: M.st === 'live' ? '0 0 18px rgba(200,241,105,.4)' : 'none',
+                  fontVariantNumeric: 'tabular-nums', lineHeight: 0.95,
+                  textShadow: M.st === 'live' ? '0 0 32px rgba(200,241,105,.5)' : 'none',
+                  padding: '4px 0',
                 }}>
                   {MATCH_HELPERS.fmtMMSS ? MATCH_HELPERS.fmtMMSS(matchMs) : minute + ":00"}
                 </div>
-                {/* Sous-titre LIVE/PAUSE + mi-temps */}
+                {/* Sous-titre LIVE/PAUSE + mi-temps — agrandi en proportion */}
                 <div style={{
-                  display:'flex', alignItems:'center', gap:8, fontSize:11, fontWeight:700,
-                  letterSpacing:'.1em', textTransform:'uppercase',
+                  display:'flex', alignItems:'center', gap:10, fontSize:14, fontWeight:800,
+                  letterSpacing:'.12em', textTransform:'uppercase',
                   color: M.st === 'live' ? '#c8f169' : inHt ? '#fbbf24' : '#ff8a3d',
                 }}>
                   {M.st === 'live' && <span className="mv-live-dot" style={{animation:'pulse 1.2s infinite'}}/>}
@@ -481,7 +483,14 @@ function ScreenMatchV2({ go, tweaks }) {
       const existing = localStorage.getItem('cdd_match_current');
       if (existing) {
         const loaded = MATCH_HELPERS.loadMatch(existing);
-        if (loaded) Mref.current = loaded;
+        // Ne ré-ouvre PAS un match déjà terminé (sinon on retombe sur le dernier
+        // match joué en pensant qu'il est en cours). Le matchId reste dans
+        // cdd_match_last_finished pour que la page Vote sache de quoi parler.
+        if (loaded && loaded.st !== 'finished') {
+          Mref.current = loaded;
+        } else if (loaded && loaded.st === 'finished') {
+          try { localStorage.setItem('cdd_match_last_finished', existing); } catch (e) {}
+        }
       }
       if (!Mref.current) {
         const teams = MATCH_HELPERS.buildDefaultTeams();
@@ -644,6 +653,12 @@ function ScreenMatchV2({ go, tweaks }) {
     if (MATCH_HELPERS.releaseWakeLock)  MATCH_HELPERS.releaseWakeLock();
     if (MATCH_HELPERS.stopSilenceLoop)  MATCH_HELPERS.stopSilenceLoop();
     if (MATCH_HELPERS.exitFullscreen)   MATCH_HELPERS.exitFullscreen();
+    // Match terminé : cdd_match_current libéré pour qu'un nouveau match puisse être créé.
+    // L'ID reste dans cdd_match_last_finished pour la page Vote post-match.
+    try {
+      localStorage.setItem('cdd_match_last_finished', M.id);
+      localStorage.removeItem('cdd_match_current');
+    } catch (e) {}
     rerender();
   };
 
