@@ -114,7 +114,7 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
         </span>
         <span className="pc-row-num">#{player.num}</span>
         <span className="pc-row-name">
-          <span className="pc-row-first">{player.first || ''}</span>
+          <span className="pc-row-first">{player.firstDisplay || player.first || ''}</span>
           <span className="pc-row-last">{(player.last || '').toUpperCase()}</span>
         </span>
         <span className={`pc-row-form pc-row-form-${player.form>=8?"hot":player.form>=6?"ok":"cold"}`}>
@@ -152,25 +152,32 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
 
       {/* TOP : OVR + POS + flag + petit logo club discret */}
       {(() => {
-        // Logo discret du club dans le carre pc-club (placeholder gris auparavant).
-        // Prend le club actif au render — la carte s'affiche toujours dans le
-        // contexte d'un club, donc c'est le bon logo. Si pas de logo configure,
-        // on garde le placeholder gris original.
+        // Logo discret du club dans le carre pc-club. Prend le club actif
+        // au render — la carte s'affiche toujours dans le contexte d'un club.
         const activeClubId = window.CDD?.getActiveClub?.()?.id;
         const clubLogo = activeClubId ? window.CDD_LOGO?.getForClub?.(activeClubId) : null;
+        // CSS pc-club par defaut : cercle 16x16 (FUT-style). Quand on a un VRAI
+        // logo, on override pour un carre arrondi 22x22 + object-fit:contain
+        // afin que le logo ENTIER soit visible (pas rogne par le cercle).
+        const clubStyle = clubLogo ? {
+          width: 22, height: 22, borderRadius: 5,
+          background: '#fff',
+          opacity: 1, overflow: 'hidden',
+          border: '1px solid rgba(0,0,0,0.15)',
+          marginTop: 3, padding: 1,
+          boxSizing: 'border-box',
+        } : {
+          background: r.ink, opacity: .5,
+        };
         return (
           <div className="pc-tl">
             <div className="pc-ovr" style={{ color: r.ink }}>{ovr}</div>
             <div className="pc-pos" style={{ color: r.ink }}>{POSITION_LABEL[player.pos] || player.pos}</div>
             <div className="pc-flag" style={{ background: r.ink, opacity:.5 }} />
-            <div className="pc-club" style={{
-              background: clubLogo ? '#fff' : r.ink,
-              opacity: clubLogo ? 1 : .5,
-              overflow:'hidden', borderRadius:3,
-            }}>
+            <div className="pc-club" style={clubStyle}>
               {clubLogo && (
                 <img src={clubLogo} alt=""
-                     style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+                     style={{width:'100%', height:'100%', objectFit:'contain'}}/>
               )}
             </div>
           </div>
@@ -188,9 +195,9 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
         <div className="pc-shirt" style={{ color: r.ink }}>#{player.num}</div>
       </div>
 
-      {/* NAME — prénom en gros + nom de famille en plus petit */}
+      {/* NAME — prénom (avec initiale nom si doublons dans l'équipe) + nom famille */}
       <div className="pc-name" style={{ color: r.ink }}>
-        <span className="pc-name-first">{player.first || ''}</span>
+        <span className="pc-name-first">{player.firstDisplay || player.first || ''}</span>
         {player.last && (
           <span className="pc-name-last">{(player.last || '').toUpperCase()}</span>
         )}

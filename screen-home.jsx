@@ -102,8 +102,29 @@ function ScreenHome({ go, tweaks }) {
                   boxShadow:'0 6px 20px rgba(239,68,68,.4)',
                   textAlign:'left', fontFamily:'inherit',
                 }}>
-          <span style={{fontSize:28}}>🔴</span>
-          <span style={{flex:1}}>
+          {/* Logo du club du match en cours (peut différer du club actif).
+              Utile pour les coachs multi-club : on voit immédiatement de
+              quel club est le match qui tourne. Fallback pulse rouge si pas
+              de logo / pas de clubId. */}
+          {window.ClubBadge ? (
+            <span style={{position:'relative', display:'inline-block', flexShrink:0}}>
+              <window.ClubBadge clubId={liveMatch.clubId || null}
+                                clubName={(liveMatch.tA && liveMatch.tA.n) || '?'}
+                                colors={[liveMatch.tA?.c || '#fff', liveMatch.tA?.c2 || '#0a0e14']}
+                                forceLogo={liveMatch.tA?.logoDataUrl || null}
+                                size={42} shape="square"/>
+              {/* Petit point rouge "live" en pulsation sur le coin */}
+              <span style={{
+                position:'absolute', top:-3, right:-3,
+                width:12, height:12, borderRadius:6,
+                background:'#fff', border:'2px solid #dc2626',
+                boxShadow:'0 0 0 2px rgba(255,255,255,0.4)',
+              }}/>
+            </span>
+          ) : (
+            <span style={{fontSize:28, flexShrink:0}}>🔴</span>
+          )}
+          <span style={{flex:1, minWidth:0}}>
             <div style={{fontSize:11, fontWeight:800, letterSpacing:'.12em', opacity:.8}}>
               MATCH EN COURS
             </div>

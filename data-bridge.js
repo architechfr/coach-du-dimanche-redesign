@@ -435,6 +435,32 @@ async function rebuildCDDGlobals() {
   // Agrège les vraies stats depuis arb_m (matches arbitrés du coach actif)
   applyRealStats(players);
 
+  // ── Disambiguation des prenoms dans l'equipe.
+  // Si plusieurs joueurs ont le meme prenom (ex: 2 'Guillaume' dans
+  // l'effectif), on ajoute l'initiale du nom de famille pour les
+  // distinguer sur la carte FUT et partout ou on affiche player.firstDisplay.
+  // Sinon firstDisplay = first (prenom seul, propre).
+  (function disambiguateFirstNames() {
+    const counts = {};
+    players.forEach(p => {
+      const f = (p.first || '').trim().toLowerCase();
+      if (!f) return;
+      counts[f] = (counts[f] || 0) + 1;
+    });
+    players.forEach(p => {
+      const f = (p.first || '').trim();
+      if (!f) { p.firstDisplay = p.first || ''; return; }
+      const fLow = f.toLowerCase();
+      if ((counts[fLow] || 0) > 1) {
+        // Doublon detecte : ajouter l'initiale du nom (ex: 'Guillaume M.')
+        const lastInitial = (p.last || '').trim().charAt(0).toUpperCase();
+        p.firstDisplay = lastInitial ? `${f} ${lastInitial}.` : f;
+      } else {
+        p.firstDisplay = f;
+      }
+    });
+  })();
+
   // Club view — pull FFF config from active team
   const fffCfg = activeTeam?.fff || null;
   const clubName = activeClub?.name || '';
