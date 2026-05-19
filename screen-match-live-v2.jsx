@@ -476,6 +476,7 @@ function ScreenMatchV2({ go, tweaks }) {
   const [showLineup, setShowLineup] = useStateMV(false);
   const [showFiche, setShowFiche] = useStateMV(false);
   const [editingEvent, setEditingEvent] = useStateMV(null);
+  const [showSummaryShare, setShowSummaryShare] = useStateMV(false);
 
   const Mref = useRefMV(null);
   if (!Mref.current) {
@@ -826,6 +827,11 @@ function ScreenMatchV2({ go, tweaks }) {
         <LineupOverlay M={M} onClose={() => setShowLineup(false)}/>
       )}
 
+      {/* Résumé partageable post-match (#60) */}
+      {showSummaryShare && (
+        <MatchSummaryShareModal M={M} onClose={() => setShowSummaryShare(false)}/>
+      )}
+
       {/* Feuille de match post-fin (#19) */}
       {showFiche && (
         <FicheMatchOverlay M={M}
@@ -924,6 +930,17 @@ function ScreenMatchV2({ go, tweaks }) {
                           letterSpacing: '.05em',
                         }}>
                   📋 VOIR LA FEUILLE DE MATCH
+                </button>
+                <button onClick={() => setShowSummaryShare(true)}
+                        style={{
+                          width:'100%', padding:'14px', fontSize:14, fontWeight:800, marginTop:8,
+                          background:'linear-gradient(135deg, #25D366, #128C7E)',
+                          color:'#fff', borderRadius:12, border:'none',
+                          boxShadow:'0 4px 14px rgba(37,211,102,.35)', cursor:'pointer',
+                          letterSpacing: '.05em',
+                          display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                        }}>
+                  📲 PARTAGER LE RÉSUMÉ DU MATCH
                 </button>
                 {!M.matchType && (
                   <button onClick={() => setShowMatchType(true)}
@@ -1517,6 +1534,288 @@ function EditEventOverlay({ M, idx, ev, onSave, onClose }) {
 }
 
 window.ScreenMatch = ScreenMatchV2;
+
+// ──────────────────────────────────────────────────────────
+// Match summary share modal — résumé visuel post-match, exportable
+// au format story Insta/WhatsApp (1080×1920). Cible viralité parents.
+// ──────────────────────────────────────────────────────────
+function MatchSummaryShareModal({ M, onClose }) {
+  const cardRef = useRefMV(null);
+  const [busy, setBusy] = useStateMV(false);
+  const [msg, setMsg] = useStateMV('');
+
+  const club = window.CDD_CLUB || {};
+  const primary = (club.colors && club.colors[0]) || '#c8f169';
+  const secondary = (club.colors && club.colors[1]) || '#0B1320';
+  const lineup = [...(M.tA?.p || []), ...(M.tA?.bench || [])];
+
+  // Buteurs équipe A : agrège par scorer label, garde l'ordre chronologique
+  const scorers = [];
+  (M.ev || []).forEach(e => {
+    if (e.t === 'A' && e.tp === 'goal') {
+      const label = e.scorer || e.pl || '?';
+      const existing = scorers.find(s => s.label === label);
+      if (existing) {
+        existing.count++;
+        existing.minutes.push(e.mn);
+      } else {
+        const pid = window.CDD_COACH?._resolvePlayerIdFromLabel?.(label, lineup);
+        const player = pid ? (window.CDD_PLAYERS || []).find(p => p.id === pid) : null;
+        scorers.push({ label, count: 1, minutes: [e.mn], player, isPenalty: !!e.penalty });
+      }
+    }
+  });
+
+  // MVP : joueur avec le plus de buts (tie-break : passes décisives via computeExploits si dispo)
+  const exploits = window.MATCH_HELPERS?.computeExploits?.(M) || { goals: {}, assists: {}, mvp: null };
+  let mvpPlayer = null;
+  if (exploits.mvp) {
+    const pid = window.CDD_COACH?._resolvePlayerIdFromLabel?.(exploits.mvp, lineup);
+    mvpPlayer = pid ? (window.CDD_PLAYERS || []).find(p => p.id === pid) : null;
+  }
+  if (!mvpPlayer && scorers.length > 0) {
+    mvpPlayer = scorers[0].player;
+  }
+
+  // Cartons équipe A
+  const yellowsA = (M.ev || []).filter(e => e.t === 'A' && e.tp === 'yellow').length;
+  const redsA = (M.ev || []).filter(e => e.t === 'A' && e.tp === 'red').length;
+
+  // Résultat
+  const sA = M.sA || 0, sB = M.sB || 0;
+  const result = sA > sB ? 'V' : sA < sB ? 'D' : 'N';
+  const resultLabel = result === 'V' ? 'VICTOIRE' : result === 'D' ? 'DÉFAITE' : 'NUL';
+  const resultColor = result === 'V' ? '#c8f169' : result === 'D' ? '#ff6b6b' : '#fbbf24';
+
+  const dateStr = M.endedAt ? new Date(M.endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'long' }) : '';
+
+  const loadH2C = () => {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload = () => resolve(window.html2canvas);
+      s.onerror = () => reject(new Error('html2canvas KO'));
+      document.head.appendChild(s);
+    });
+  };
+
+  const exportImage = async (share = false) => {
+    if (!cardRef.current) return;
+    setBusy(true);
+    setMsg(share ? 'Préparation du partage…' : 'Génération PNG…');
+    try {
+      const h2c = await loadH2C();
+      const canvas = await h2c(cardRef.current, { backgroundColor: null, scale: 2, useCORS: true, allowTaint: true });
+      const fileName = `match-${(club.short || 'team')}-${(M.tB?.n || 'adv').replace(/\W+/g,'_')}.png`;
+      if (share && navigator.share && navigator.canShare) {
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+        const file = new File([blob], fileName, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `${M.tA?.n} ${sA}-${sB} ${M.tB?.n}`,
+            text: `${resultLabel} · ${M.tA?.n} ${sA}-${sB} ${M.tB?.n}`,
+          });
+          setMsg('✓ Partagé');
+          setTimeout(() => setMsg(''), 1500);
+          return;
+        }
+      }
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = fileName;
+      a.click();
+      setMsg('✓ Image téléchargée');
+      setTimeout(() => setMsg(''), 2000);
+    } catch (e) {
+      setMsg('❌ ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:500,
+      display:'flex', flexDirection:'column', alignItems:'center', overflow:'auto',
+      padding:'20px 16px',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', maxWidth:380, display:'flex', flexDirection:'column', gap:14, alignItems:'center',
+      }}>
+        {/* Header avec close */}
+        <div style={{width:'100%', display:'flex', justifyContent:'space-between', alignItems:'center', color:'#fff'}}>
+          <span style={{fontSize:13, fontWeight:800, letterSpacing:'.08em', textTransform:'uppercase', opacity:0.85}}>
+            Résumé du match
+          </span>
+          <button onClick={onClose} style={{
+            background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,255,255,0.2)',
+            color:'#fff', width:32, height:32, borderRadius:16, fontSize:16, cursor:'pointer',
+          }}>✕</button>
+        </div>
+
+        {/* La carte exportable (format story 9:16) */}
+        <div ref={cardRef} style={{
+          width:'100%', aspectRatio:'9/16',
+          background:`linear-gradient(160deg, ${secondary} 0%, ${primary}30 100%), #0B1320`,
+          borderRadius:20, overflow:'hidden', position:'relative',
+          boxShadow:'0 20px 60px rgba(0,0,0,0.5)', color:'#fff',
+          fontFamily:'system-ui, -apple-system, sans-serif',
+          display:'flex', flexDirection:'column',
+        }}>
+          {/* Bande supérieure : club + date */}
+          <div style={{
+            padding:'18px 20px', display:'flex', justifyContent:'space-between', alignItems:'center',
+            borderBottom:'1px solid rgba(255,255,255,0.08)',
+          }}>
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
+              <div style={{
+                width:32, height:32, borderRadius:8, background:primary, color:secondary,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontWeight:900, fontSize:14,
+              }}>{(club.short || club.name || 'M')[0]}</div>
+              <div>
+                <div style={{fontSize:11, fontWeight:800, letterSpacing:'.06em'}}>{(club.name || 'MON CLUB').toUpperCase()}</div>
+                <div style={{fontSize:9, opacity:0.6}}>{club.team || ''}</div>
+              </div>
+            </div>
+            <div style={{fontSize:9, opacity:0.7, fontWeight:600}}>{dateStr}</div>
+          </div>
+
+          {/* Résultat — gros badge */}
+          <div style={{padding:'20px 16px 10px', textAlign:'center'}}>
+            <div style={{
+              display:'inline-block', padding:'4px 14px', borderRadius:6,
+              background:resultColor+'25', border:`1px solid ${resultColor}60`,
+              color:resultColor, fontSize:11, fontWeight:900, letterSpacing:'.15em',
+            }}>{resultLabel}</div>
+          </div>
+
+          {/* Score géant */}
+          <div style={{padding:'10px 16px 14px', textAlign:'center'}}>
+            <div style={{fontSize:14, fontWeight:700, opacity:0.85, marginBottom:8}}>
+              {M.tA?.n || 'Mon équipe'} <span style={{opacity:0.5}}>vs</span> {M.tB?.n || 'Adversaire'}
+            </div>
+            <div style={{
+              fontSize:96, fontWeight:900, lineHeight:1, letterSpacing:'-.04em',
+              fontVariantNumeric:'tabular-nums', color:'#fff',
+            }}>
+              {sA}<span style={{opacity:0.4, margin:'0 12px', fontSize:64}}>–</span>{sB}
+            </div>
+          </div>
+
+          {/* Buteurs */}
+          {scorers.length > 0 && (
+            <div style={{padding:'14px 20px', borderTop:'1px solid rgba(255,255,255,0.08)'}}>
+              <div style={{
+                fontSize:9, fontWeight:800, letterSpacing:'.12em', opacity:0.55, marginBottom:8,
+                textTransform:'uppercase',
+              }}>⚽ Buteurs</div>
+              <div style={{display:'flex', flexDirection:'column', gap:5}}>
+                {scorers.map((s, i) => (
+                  <div key={i} style={{display:'flex', alignItems:'center', gap:8, fontSize:13}}>
+                    <span style={{fontSize:14}}>⚽</span>
+                    <span style={{fontWeight:700, flex:1}}>
+                      {s.player ? `${s.player.first} ${s.player.last || ''}`.trim() : s.label}
+                      {s.count > 1 && <span style={{color:primary, marginLeft:6}}>×{s.count}</span>}
+                    </span>
+                    <span style={{opacity:0.55, fontSize:11}}>{s.minutes.join("' ")}'</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* MVP / Homme du match */}
+          {mvpPlayer && (
+            <div style={{
+              margin:'8px 20px', padding:'14px',
+              background:`linear-gradient(135deg, ${primary}20, transparent)`,
+              border:`1px solid ${primary}40`, borderRadius:14,
+              display:'flex', alignItems:'center', gap:12,
+            }}>
+              {mvpPlayer.photo ? (
+                <img src={mvpPlayer.photo} alt="" style={{
+                  width:54, height:54, borderRadius:27, objectFit:'cover',
+                  border:`2px solid ${primary}`, flexShrink:0,
+                }}/>
+              ) : (
+                <div style={{
+                  width:54, height:54, borderRadius:27, background:primary, color:secondary,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontWeight:900, fontSize:22, flexShrink:0,
+                }}>{mvpPlayer.num}</div>
+              )}
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontSize:9, fontWeight:800, color:primary, letterSpacing:'.12em', textTransform:'uppercase'}}>
+                  🌟 Homme du match
+                </div>
+                <div style={{fontSize:15, fontWeight:900, marginTop:2, color:'#fff'}}>
+                  {mvpPlayer.first} {mvpPlayer.last || ''}
+                </div>
+                {mvpPlayer.stats?.ovr && (
+                  <div style={{fontSize:10, opacity:0.6, marginTop:1}}>
+                    OVR {mvpPlayer.stats.ovr} · {mvpPlayer.pos || ''}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Spacer */}
+          <div style={{flex:1}}/>
+
+          {/* Stats sec — cartons / minutes */}
+          <div style={{
+            padding:'12px 20px', borderTop:'1px solid rgba(255,255,255,0.08)',
+            display:'flex', justifyContent:'space-around', fontSize:11,
+          }}>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontWeight:900, fontSize:16, color:'#fbbf24'}}>🟨 {yellowsA}</div>
+              <div style={{opacity:0.6, fontSize:9, marginTop:2}}>JAUNES</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontWeight:900, fontSize:16, color:'#ff6b6b'}}>🟥 {redsA}</div>
+              <div style={{opacity:0.6, fontSize:9, marginTop:2}}>ROUGES</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontWeight:900, fontSize:16}}>⏱ {(M.cfg?.hs || 2) * (M.cfg?.hd || 45)}'</div>
+              <div style={{opacity:0.6, fontSize:9, marginTop:2}}>DURÉE</div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            padding:'10px 20px', background:'rgba(0,0,0,0.35)',
+            display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:9, opacity:0.6,
+          }}>
+            <span>⚽ Coach du Dimanche</span>
+            <span style={{fontWeight:700, color:primary}}>{club.season || 'Saison 2025-26'}</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{width:'100%', display:'flex', gap:8}}>
+          <button onClick={() => exportImage(false)} disabled={busy} style={{
+            flex:1, padding:'14px', borderRadius:12, background:'rgba(255,255,255,0.08)',
+            border:'1px solid rgba(255,255,255,0.18)', color:'#fff', cursor:'pointer',
+            fontWeight:700, fontSize:13,
+          }}>💾 Télécharger</button>
+          <button onClick={() => exportImage(true)} disabled={busy} style={{
+            flex:1, padding:'14px', borderRadius:12, color:'#fff', border:'none', cursor:'pointer',
+            background:'linear-gradient(135deg, #25D366, #128C7E)',
+            fontWeight:800, fontSize:13,
+            boxShadow:'0 4px 14px rgba(37,211,102,.35)',
+          }}>📲 Partager</button>
+        </div>
+        {msg && <div style={{color:'#c8f169', fontSize:12, fontWeight:700}}>{msg}</div>}
+      </div>
+    </div>
+  );
+}
+window.MatchSummaryShareModal = MatchSummaryShareModal;
 
 // Attach helpers en MUTANT l'objet (évite la race condition avec match-engine.js).
 // Si window.MATCH_HELPERS n'existe pas encore (chargement parallèle), on crée la base
