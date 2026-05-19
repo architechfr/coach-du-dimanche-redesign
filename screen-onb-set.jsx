@@ -273,6 +273,126 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         </div>
       </div>
 
+      {/* MES RATTACHEMENTS — liste des clubs où l'user a une membership.
+          C'est la source de vérité du « à quels clubs j'appartiens ».
+          Le bouton 'Quitter' supprime la membership ET les données du club. */}
+      {(() => {
+        const myEmail = window.CDD_ROLES?.getCurrentEmail?.();
+        if (!myEmail) {
+          return (
+            <div className="set-sec">
+              <div className="set-sec-k">MES RATTACHEMENTS</div>
+              <div style={{
+                padding:'14px 16px', margin:'0 14px', borderRadius:10,
+                background:'rgba(251,191,36,0.08)', border:'1px solid rgba(251,191,36,0.35)',
+                fontSize:12, color:'#fbbf24', lineHeight:1.5,
+              }}>
+                Tu n'es rattaché à aucun club tant que ton email n'est pas saisi.<br/>
+                Touche ✎ en haut pour configurer ton email coach.
+              </div>
+            </div>
+          );
+        }
+        const myMemberships = window.CDD_ROLES?.listMemberships?.() || [];
+        const allClubs = (() => {
+          try { return JSON.parse(localStorage.getItem('arb_clubs') || '[]'); }
+          catch (e) { return []; }
+        })();
+        const allTeams = (() => {
+          try { return JSON.parse(localStorage.getItem('arb_teams') || '[]'); }
+          catch (e) { return []; }
+        })();
+        const clubById = {};
+        allClubs.forEach(c => { if (c && c.id) clubById[c.id] = c; });
+        return (
+          <div className="set-sec">
+            <div className="set-sec-k">MES RATTACHEMENTS</div>
+            <div style={{margin:'0 14px 14px', fontSize:11, opacity:0.55, lineHeight:1.4}}>
+              Clubs et équipes où tu es enregistré comme membre actif.
+              <br/>
+              Email : <b>{myEmail}</b>
+            </div>
+            {myMemberships.length === 0 ? (
+              <div style={{
+                padding:'14px 16px', margin:'0 14px', borderRadius:10,
+                background:'rgba(255,255,255,0.03)', border:'1px dashed rgba(255,255,255,0.10)',
+                fontSize:12, opacity:0.7, textAlign:'center',
+              }}>
+                Aucun rattachement. Crée un club dans Sync Cloud, ou rejoins-en un via une invitation.
+              </div>
+            ) : (
+              <div style={{display:'flex', flexDirection:'column', gap:8, padding:'0 14px'}}>
+                {myMemberships.map(m => {
+                  const club = clubById[m.clubId];
+                  const clubName = club?.name || `Club inconnu (${m.clubId.slice(0, 10)}…)`;
+                  const clubColor = club?.primaryColor || club?.color || '#666';
+                  const teams = allTeams.filter(t => t.clubId === m.clubId);
+                  const isInferred = !club;
+                  return (
+                    <div key={m.clubId} style={{
+                      padding:'12px 14px', borderRadius:10,
+                      background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+                    }}>
+                      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>
+                        <div style={{
+                          width:38, height:38, borderRadius:8,
+                          background: clubColor, color:'#0a0e14',
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          fontWeight:900, fontSize:16,
+                        }}>{(clubName[0] || '?').toUpperCase()}</div>
+                        <div style={{flex:1, minWidth:0}}>
+                          <div style={{fontWeight:800, fontSize:14}}>
+                            🏆 {window.CDD_ROLES?.roleLabel?.(m.role) || m.role} de {clubName}
+                          </div>
+                          <div style={{fontSize:11, opacity:0.6, marginTop:2}}>
+                            {teams.length} équipe{teams.length > 1 ? 's' : ''}
+                            {m.createdAt ? ` · rattaché depuis le ${new Date(m.createdAt).toLocaleDateString('fr-FR')}` : ''}
+                            {m.createdBy === 'migration' ? ' · migration auto' : ''}
+                            {isInferred ? ' · données héritage' : ''}
+                          </div>
+                        </div>
+                      </div>
+                      {teams.length > 0 && (
+                        <div style={{fontSize:11, opacity:0.65, marginBottom:8, paddingLeft:48}}>
+                          {teams.map(t => `${t.name || t.category || '?'} (${(t.players || []).length} j.)`).join(' · ')}
+                        </div>
+                      )}
+                      <div style={{display:'flex', gap:8, paddingLeft:48}}>
+                        <button onClick={() => {
+                          const confirmMsg =
+                            `⚠️ Quitter "${clubName}" supprime DÉFINITIVEMENT :\n` +
+                            `  • le club\n` +
+                            `  • ses ${teams.length} équipe(s) et leurs joueurs\n` +
+                            `  • le logo et les préférences du club\n\n` +
+                            `Cette action est IRRÉVERSIBLE. Continuer ?`;
+                          if (!confirm(confirmMsg)) return;
+                          const second = prompt(`Pour confirmer, tape le nom du club : ${clubName}`);
+                          if (second !== clubName) {
+                            alert('Nom incorrect. Suppression annulée.');
+                            return;
+                          }
+                          const ok = window.CDD_ROLES?.deleteClubAndData?.(m.clubId, { email: myEmail });
+                          if (ok) {
+                            alert(`Club "${clubName}" supprimé. L'app va se rafraîchir.`);
+                            setRefresh(x => x + 1);
+                          } else {
+                            alert('Erreur lors de la suppression. Voir la console pour détails.');
+                          }
+                        }} style={{
+                          padding:'7px 12px', borderRadius:6, fontSize:11, fontWeight:700,
+                          background:'rgba(239,68,68,0.10)', border:'1px solid rgba(239,68,68,0.40)',
+                          color:'#ef4444', cursor:'pointer', fontFamily:'inherit',
+                        }}>🗑 Quitter ce club</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="set-sec">
         <div className="set-sec-k">APPARENCE</div>
         <div className="set-rows">

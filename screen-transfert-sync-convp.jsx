@@ -205,7 +205,17 @@ function ScreenSyncCloud({ go, tweaks }) {
 
       const finalClubs = [...allClubs, ...inferredClubs];
 
-      return finalClubs.map(c => ({
+      // ── Filtre par memberships : un utilisateur ne voit QUE les clubs où
+      // il a une membership explicite. Mode visiteur (email vide) = aucun club.
+      // La migration auto au boot a créé les memberships sur les clubs existants.
+      const myEmail = window.CDD_ROLES?.getCurrentEmail?.();
+      const myClubIds = window.CDD_ROLES?.myClubIds?.() || [];
+      const isVisitor = !myEmail;
+      const visibleClubs = isVisitor
+        ? []
+        : finalClubs.filter(c => myClubIds.includes(c.id));
+
+      return visibleClubs.map(c => ({
         id: c.id,
         name: c.name || 'Club',
         primaryColor: c.primaryColor || c.color || '#c8f169',
@@ -286,9 +296,15 @@ function ScreenSyncCloud({ go, tweaks }) {
     } catch (e) {}
   };
 
-  // Création d'un VRAI nouveau club (push dans arb_clubs). On switch dessus
-  // immédiatement pour que le tab actif devienne le nouveau club.
+  // Création d'un VRAI nouveau club (push dans arb_clubs) + membership coach
+  // automatique pour l'user courant. Le club est immédiatement le sien.
   const addNewClub = () => {
+    const myEmail = window.CDD_ROLES?.getCurrentEmail?.();
+    if (!myEmail) {
+      alert("Tu dois d'abord saisir ton email coach dans Réglages avant de créer un club.\nC'est ton email qui rattache le club à toi.");
+      go('set');
+      return;
+    }
     const name = prompt('Nom du club (ex: FCMH, USDF, AS POISSY) :');
     if (!name) return;
     const trimmed = name.trim();
@@ -301,13 +317,15 @@ function ScreenSyncCloud({ go, tweaks }) {
         primaryColor: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
         secondaryColor: '#0a0e14',
         createdAt: Date.now(),
-        createdBy: localStorage.getItem('cdd_user_email') || localStorage.getItem('cdd_coach_name') || 'anonyme',
+        createdBy: myEmail,
       };
       existing.push(newClub);
       localStorage.setItem('arb_clubs', JSON.stringify(existing));
+      // Crée la membership coach pour le user courant — c'est ce qui rend le club visible.
+      window.CDD_ROLES?.addMembership?.(myEmail, newClub.id, 'coach', { createdBy: 'self' });
       audit('club-created', trimmed);
       switchClub(newClub.id);
-      alert(`Club "${trimmed}" créé. Ajoute maintenant une équipe à ce club.`);
+      alert(`Club "${trimmed}" créé. Tu en es maintenant coach principal. Ajoute une équipe à ce club.`);
     } catch (e) { alert('Erreur sauvegarde club : ' + e.message); }
   };
 
@@ -486,21 +504,42 @@ function ScreenSyncCloud({ go, tweaks }) {
         <span className="a">{clubs.length} actif{clubs.length > 1 ? 's' : ''}</span>
       </div>
 
-      {clubs.length === 0 ? (
-        <div style={{
-          margin:'0 14px 12px', padding:'24px 18px', borderRadius:12,
-          background:'rgba(200,241,105,0.06)', border:'1px dashed rgba(200,241,105,0.30)',
-          textAlign:'center',
-        }}>
-          <div style={{fontSize:32, marginBottom:8}}>⚽</div>
-          <div style={{fontWeight:800, marginBottom:6}}>Aucun club pour l'instant</div>
-          <div style={{fontSize:12, opacity:0.7, marginBottom:14}}>
-            Crée ton premier club pour démarrer.<br/>
-            Une équipe vit toujours à l'intérieur d'un club.
+      {clubs.length === 0 ? (() => {
+        const myEmail = window.CDD_ROLES?.getCurrentEmail?.();
+        const isVisitor = !myEmail;
+        if (isVisitor) {
+          return (
+            <div style={{
+              margin:'0 14px 12px', padding:'24px 18px', borderRadius:12,
+              background:'rgba(251,191,36,0.06)', border:'1px dashed rgba(251,191,36,0.35)',
+              textAlign:'center',
+            }}>
+              <div style={{fontSize:32, marginBottom:8}}>👁️</div>
+              <div style={{fontWeight:800, marginBottom:6, color:'#fbbf24'}}>Mode visiteur</div>
+              <div style={{fontSize:12, opacity:0.8, marginBottom:14, lineHeight:1.5}}>
+                Tu n'as pas saisi d'email coach.<br/>
+                Pour créer ou rejoindre un club, configure ton email dans Réglages.
+              </div>
+              <button className="btn-cta" onClick={() => go('set')}>→ Configurer mon email</button>
+            </div>
+          );
+        }
+        return (
+          <div style={{
+            margin:'0 14px 12px', padding:'24px 18px', borderRadius:12,
+            background:'rgba(200,241,105,0.06)', border:'1px dashed rgba(200,241,105,0.30)',
+            textAlign:'center',
+          }}>
+            <div style={{fontSize:32, marginBottom:8}}>⚽</div>
+            <div style={{fontWeight:800, marginBottom:6}}>Aucun club rattaché</div>
+            <div style={{fontSize:12, opacity:0.7, marginBottom:14, lineHeight:1.5}}>
+              Aucun club n'est rattaché à <b>{myEmail}</b>.<br/>
+              Crée ton propre club, ou rejoins-en un via une invitation.
+            </div>
+            <button className="btn-cta" onClick={() => addNewClub()}>+ Créer un club</button>
           </div>
-          <button className="btn-cta" onClick={() => addNewClub()}>+ Créer un club</button>
-        </div>
-      ) : (
+        );
+      })() : (
         <>
           {/* Tabs : un par club. Tab actif = club actif (synchro arb_current_club). */}
           <div style={{

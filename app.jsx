@@ -240,6 +240,22 @@ function App() {
       <div className="phone">
         <div className="phone-screen">
 
+          {/* Mode visiteur : bandeau global persistant si email coach pas saisi.
+              Sert d'invite explicite à se rattacher avant de pouvoir gérer des données.
+              Caché sur onboarding pour ne pas polluer le 1er pas. */}
+          {screen !== "onb" && window.CDD_ROLES?.isVisitorMode?.() && (
+            <div onClick={() => go('set')} style={{
+              padding:'8px 14px', cursor:'pointer',
+              background:'rgba(251,191,36,0.12)', borderBottom:'1px solid rgba(251,191,36,0.30)',
+              color:'#fbbf24', fontSize:11, fontWeight:700,
+              display:'flex', alignItems:'center', gap:8, letterSpacing:'.04em',
+            }}>
+              <span>👁️</span>
+              <span style={{flex:1, minWidth:0}}>MODE VISITEUR · lecture seule</span>
+              <span style={{opacity:0.8, fontWeight:600}}>Configurer mon email →</span>
+            </div>
+          )}
+
           {/* Header (hidden on onboarding & home) */}
           {screen !== "onb" && screen !== "home" && (
             <div className="app-hdr">
