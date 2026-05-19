@@ -447,18 +447,34 @@ function CarnetActions({ player, go }) {
       + `Coach`;
   };
 
+  const markShared = () => {
+    // Note : on trace l'INTENTION de partage du coach, pas la réception réelle.
+    // Sert au compteur 'X/Y carnets envoyés' sur la page Effectif.
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_carnet_shared') || '{}');
+      all[player.id] = { sharedAt: Date.now(), channel: 'whatsapp' };
+      localStorage.setItem('cdd_carnet_shared', JSON.stringify(all));
+      window.dispatchEvent(new CustomEvent('cdd-carnet-shared', { detail: { playerId: player.id } }));
+    } catch (e) {}
+  };
+
   const sendWhatsApp = () => {
     const phone = normalizePhone(player.parentPhone);
     const txt = encodeURIComponent(buildShareMsg());
     const url = phone ? `https://wa.me/${phone}?text=${txt}` : `https://wa.me/?text=${txt}`;
+    markShared();
     window.open(url, '_blank');
   };
 
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(carnetUrl);
-      // Petit feedback discret (réutilise alert pour rester simple ici)
-      // À itérer : toast custom
+      try {
+        const all = JSON.parse(localStorage.getItem('cdd_carnet_shared') || '{}');
+        all[player.id] = { sharedAt: Date.now(), channel: 'clipboard' };
+        localStorage.setItem('cdd_carnet_shared', JSON.stringify(all));
+        window.dispatchEvent(new CustomEvent('cdd-carnet-shared', { detail: { playerId: player.id } }));
+      } catch (e) {}
       const el = document.getElementById('carnet-copy-feedback');
       if (el) {
         el.style.opacity = '1';

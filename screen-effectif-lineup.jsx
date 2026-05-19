@@ -27,6 +27,21 @@ function ScreenEffectif({ go, tweaks }) {
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | rest | reserve
 
+  // Suivi diffusion Carnet du joueur — coach voit où il en est dans l'envoi
+  // des liens magiques aux parents. Source : cdd_carnet_shared écrit par CarnetActions.
+  const [carnetShared, setCarnetShared] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('cdd_carnet_shared') || '{}'); }
+    catch (e) { return {}; }
+  });
+  useEffect(() => {
+    const onShare = () => {
+      try { setCarnetShared(JSON.parse(localStorage.getItem('cdd_carnet_shared') || '{}')); }
+      catch (e) {}
+    };
+    window.addEventListener('cdd-carnet-shared', onShare);
+    return () => window.removeEventListener('cdd-carnet-shared', onShare);
+  }, []);
+
   // Apply filters
   let list = CDD_PLAYERS.filter(POS_GROUPS.find(g=>g.id===filter).match);
 
@@ -163,6 +178,48 @@ function ScreenEffectif({ go, tweaks }) {
         )}
       </div>
 
+      {/* Suivi diffusion Carnet du joueur — visible quand au moins 1 joueur dans la liste */}
+      {list.length > 0 && (() => {
+        const sharedCount = list.filter(p => carnetShared[p.id]).length;
+        const pending = list.length - sharedCount;
+        const allDone = pending === 0;
+        const rate = list.length > 0 ? Math.round((sharedCount / list.length) * 100) : 0;
+        return (
+          <div style={{
+            margin:'0 14px 12px', padding:'10px 12px', borderRadius:10,
+            background: allDone ? 'rgba(200,241,105,0.08)' : 'rgba(200,241,105,0.05)',
+            border: `1px solid ${allDone ? 'rgba(200,241,105,0.30)' : 'rgba(200,241,105,0.15)'}`,
+            display:'flex', alignItems:'center', gap:10, fontSize:12,
+          }}>
+            <span style={{fontSize:18}}>🎴</span>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontWeight:800, fontSize:11.5, letterSpacing:'.04em'}}>
+                {allDone
+                  ? <>✓ Carnets diffusés à <b style={{color:'#c8f169'}}>tous les parents</b></>
+                  : <><b style={{color:'#c8f169'}}>{sharedCount}/{list.length}</b> carnets envoyés aux parents{pending > 0 ? <span style={{opacity:0.7}}> · {pending} restant{pending>1?'s':''}</span> : null}</>}
+              </div>
+              {/* Mini barre progression */}
+              <div style={{
+                marginTop:5, height:4, borderRadius:2,
+                background:'rgba(255,255,255,0.08)', overflow:'hidden',
+              }}>
+                <div style={{
+                  width:`${rate}%`, height:'100%',
+                  background:'#c8f169', transition:'width .3s',
+                }}/>
+              </div>
+            </div>
+            {!allDone && (
+              <span style={{
+                fontSize:10, opacity:0.7, fontStyle:'italic', flexShrink:0,
+              }}>
+                Touche un joueur →
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
       {list.length === 0 ? (
         <div className="ef-empty">
           <div className="ef-empty-ic">🔍</div>
@@ -172,13 +229,38 @@ function ScreenEffectif({ go, tweaks }) {
       ) : view === "grid" ? (
         <div className="ef-grid">
           {list.map(p => (
-            <FutCard key={p.id} player={p} size="md" onClick={() => go("fiche", p)} />
+            <div key={p.id} style={{position:'relative'}}>
+              <FutCard player={p} size="md" onClick={() => go("fiche", p)} />
+              {carnetShared[p.id] && (
+                <span title={`Carnet envoyé au parent (${new Date(carnetShared[p.id].sharedAt).toLocaleDateString('fr-FR')})`}
+                      style={{
+                        position:'absolute', top:4, right:4, zIndex:2,
+                        width:22, height:22, borderRadius:11,
+                        background:'#c8f169', color:'#0B1320',
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        fontSize:12, fontWeight:900,
+                        boxShadow:'0 2px 6px rgba(0,0,0,0.4)', pointerEvents:'none',
+                      }}>🎴</span>
+              )}
+            </div>
           ))}
         </div>
       ) : (
         <div className="ef-list">
           {list.map(p => (
-            <FutCard key={p.id} player={p} variant="row" onClick={() => go("fiche", p)} />
+            <div key={p.id} style={{position:'relative'}}>
+              <FutCard player={p} variant="row" onClick={() => go("fiche", p)} />
+              {carnetShared[p.id] && (
+                <span title={`Carnet envoyé au parent (${new Date(carnetShared[p.id].sharedAt).toLocaleDateString('fr-FR')})`}
+                      style={{
+                        position:'absolute', top:'50%', right:10, transform:'translateY(-50%)', zIndex:2,
+                        padding:'2px 8px', borderRadius:10,
+                        background:'rgba(200,241,105,0.15)', color:'#c8f169',
+                        fontSize:10, fontWeight:800, letterSpacing:'.05em',
+                        border:'1px solid rgba(200,241,105,0.35)', pointerEvents:'none',
+                      }}>🎴 ENVOYÉ</span>
+              )}
+            </div>
           ))}
         </div>
       )}
