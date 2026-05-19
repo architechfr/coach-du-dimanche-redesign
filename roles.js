@@ -355,11 +355,36 @@
         } catch (e) {}
       }
 
+      // 3. Seed brut (si pas de localStorage et pas d'override)
+      let seedClubs = [];
+      let seedTeams = [];
+      if (window.__CDD_SEED) {
+        if (Array.isArray(window.__CDD_SEED.clubs)) seedClubs = window.__CDD_SEED.clubs;
+        if (Array.isArray(window.__CDD_SEED.teams)) seedTeams = window.__CDD_SEED.teams;
+      }
+
+      // 4. window.CDD_CLUB (fallback ultime : si data-bridge a deja construit
+      // le global mais que les sources brutes sont introuvables). Construit
+      // un club synthetique avec son id depuis cdd_active_context.
+      const synthClubs = [];
+      try {
+        if (window.CDD_CLUB && window.CDD_CLUB.name) {
+          const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+          const synthId = ctx.clubId || 'club_synth_' + window.CDD_CLUB.name.replace(/\s+/g, '_');
+          synthClubs.push({
+            id: synthId,
+            name: window.CDD_CLUB.name,
+            primaryColor: window.CDD_CLUB.colors?.[0] || '#c8f169',
+            _synth: true,
+          });
+        }
+      } catch (e) {}
+
       // Union dedupliquee par id
       const clubsById = {};
-      [...lsClubs, ...adClubs].forEach(c => { if (c && c.id) clubsById[c.id] = c; });
+      [...lsClubs, ...adClubs, ...seedClubs, ...synthClubs].forEach(c => { if (c && c.id) clubsById[c.id] = c; });
       const teamsById = {};
-      [...lsTeams, ...adTeams].forEach(t => { if (t && t.id) teamsById[t.id] = t; });
+      [...lsTeams, ...adTeams, ...seedTeams].forEach(t => { if (t && t.id) teamsById[t.id] = t; });
 
       const unionClubs = Object.values(clubsById);
       const unionTeams = Object.values(teamsById);
@@ -439,8 +464,76 @@
     return Array.from(new Set(listMemberships(email).map(m => m.clubId)));
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  DIAGNOSTIC — dump complet de l'état des données
+  // ═══════════════════════════════════════════════════════════════════
+  // Outil pour comprendre pourquoi la migration ne voit pas un club.
+  // Renvoie un objet avec tout ce qui est lisible. Le UI peut JSON.stringify
+  // pour afficher au coach.
+  function diagnose() {
+    const dump = {
+      time: new Date().toISOString(),
+      identity: {
+        email: getCurrentEmail(),
+        cdd_user_email: (() => { try { return localStorage.getItem('cdd_user_email'); } catch(e) { return null; } })(),
+        cdd_coach_name: (() => { try { return localStorage.getItem('cdd_coach_name'); } catch(e) { return null; } })(),
+        cdd_user_role: (() => { try { return localStorage.getItem('cdd_user_role'); } catch(e) { return null; } })(),
+      },
+      localStorage: {
+        arb_clubs: (() => { try { return JSON.parse(localStorage.getItem('arb_clubs') || 'null'); } catch(e) { return 'PARSE_ERROR'; } })(),
+        arb_teams_count: (() => { try { const t = JSON.parse(localStorage.getItem('arb_teams') || '[]'); return Array.isArray(t) ? t.length : 'NOT_ARRAY'; } catch(e) { return 'PARSE_ERROR'; } })(),
+        arb_current_club: (() => { try { return localStorage.getItem('arb_current_club'); } catch(e) { return null; } })(),
+        cdd_active_context: (() => { try { return JSON.parse(localStorage.getItem('cdd_active_context') || 'null'); } catch(e) { return 'PARSE_ERROR'; } })(),
+        cdd_memberships: (() => { try { return JSON.parse(localStorage.getItem('cdd_memberships') || 'null'); } catch(e) { return 'PARSE_ERROR'; } })(),
+      },
+      seed: {
+        present: !!window.__CDD_SEED,
+        clubs_count: window.__CDD_SEED?.clubs?.length || 0,
+        teams_count: window.__CDD_SEED?.teams?.length || 0,
+        current: window.__CDD_SEED?.current || null,
+      },
+      override: {
+        present: !!window.__CDD_OVERRIDE,
+        arb_clubs_count: window.__CDD_OVERRIDE?.['arb_clubs']?.length || 0,
+        arb_teams_count: window.__CDD_OVERRIDE?.['arb_teams']?.length || 0,
+      },
+      adapter: {
+        present: !!window.CDD,
+        getAllClubs_count: (() => { try { return (window.CDD?.getAllClubs?.() || []).length; } catch(e) { return 'ERROR'; } })(),
+        getTeams_count: (() => { try { return (window.CDD?.getTeams?.() || []).length; } catch(e) { return 'ERROR'; } })(),
+        getActiveClub: (() => { try { const c = window.CDD?.getActiveClub?.(); return c ? { id: c.id, name: c.name } : null; } catch(e) { return 'ERROR'; } })(),
+        getActiveTeam: (() => { try { const t = window.CDD?.getActiveTeam?.(); return t ? { id: t.id, name: t.name, clubId: t.clubId } : null; } catch(e) { return 'ERROR'; } })(),
+      },
+      globals: {
+        CDD_CLUB: (() => {
+          try {
+            if (!window.CDD_CLUB) return null;
+            return { name: window.CDD_CLUB.name, short: window.CDD_CLUB.short, team: window.CDD_CLUB.team };
+          } catch(e) { return 'ERROR'; }
+        })(),
+        CDD_PLAYERS_count: (() => { try { return (window.CDD_PLAYERS || []).length; } catch(e) { return 'ERROR'; } })(),
+      },
+    };
+    console.info('[roles] DIAGNOSTIC', dump);
+    return dump;
+  }
+
   // Execute la migration au boot — avant que data-bridge build CDD_PLAYERS etc.
   runMigrationIfNeeded();
+
+  // Re-tente la migration au prochain build de CDD_CLUB (data-bridge prend
+  // un peu de temps a cause de Babel). Cela couvre les cas ou roles.js a
+  // tourne trop tot pour voir les vraies sources.
+  let _retried = false;
+  window.addEventListener('cdd-data-rebuilt', () => {
+    if (_retried) return;
+    const email = getCurrentEmail();
+    if (!email) return;
+    if (listMemberships(email).length > 0) return;
+    _retried = true;
+    console.info('[roles] retry migration after cdd-data-rebuilt');
+    runMigrationIfNeeded();
+  });
 
   // Expose
   window.CDD_ROLES = {
@@ -453,6 +546,8 @@
     getCurrentEmail, listMemberships, listAllMemberships, hasMembership,
     membershipRole, addMembership, removeMembership, deleteClubAndData,
     myClubIds, isVisitorMode, runMigrationIfNeeded,
+    // Diagnostic
+    diagnose,
   };
 
   // Évènement pour les écrans qui veulent réagir à un changement de rôle

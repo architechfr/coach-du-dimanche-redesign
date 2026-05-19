@@ -314,12 +314,52 @@ function ScreenSettings({ go, tweaks, setTweak }) {
               Email : <b>{myEmail}</b>
             </div>
             {myMemberships.length === 0 ? (
-              <div style={{
-                padding:'14px 16px', margin:'0 14px', borderRadius:10,
-                background:'rgba(255,255,255,0.03)', border:'1px dashed rgba(255,255,255,0.10)',
-                fontSize:12, opacity:0.7, textAlign:'center',
-              }}>
-                Aucun rattachement. Crée un club dans Sync Cloud, ou rejoins-en un via une invitation.
+              <div style={{padding:'0 14px'}}>
+                <div style={{
+                  padding:'14px 16px', borderRadius:10,
+                  background:'rgba(255,255,255,0.03)', border:'1px dashed rgba(255,255,255,0.10)',
+                  fontSize:12, opacity:0.7, textAlign:'center', marginBottom:10,
+                }}>
+                  Aucun rattachement détecté pour <b>{myEmail}</b>.
+                </div>
+                <button onClick={() => {
+                  // Diagnostic + tentative de migration forcée
+                  const dump = window.CDD_ROLES?.diagnose?.();
+                  const result = window.CDD_ROLES?.runMigrationIfNeeded?.();
+                  const afterMemberships = window.CDD_ROLES?.listMemberships?.() || [];
+
+                  const summary =
+                    `═══ DIAGNOSTIC ═══\n` +
+                    `Email : ${dump?.identity?.email || '(vide)'}\n` +
+                    `\nSOURCES DE DONNÉES :\n` +
+                    `  • localStorage arb_clubs : ${Array.isArray(dump?.localStorage?.arb_clubs) ? dump.localStorage.arb_clubs.length : '(rien)'}\n` +
+                    `  • localStorage arb_teams : ${dump?.localStorage?.arb_teams_count}\n` +
+                    `  • Seed clubs : ${dump?.seed?.clubs_count}\n` +
+                    `  • Seed teams : ${dump?.seed?.teams_count}\n` +
+                    `  • Override clubs : ${dump?.override?.arb_clubs_count}\n` +
+                    `  • Override teams : ${dump?.override?.arb_teams_count}\n` +
+                    `  • Adapter getAllClubs : ${dump?.adapter?.getAllClubs_count}\n` +
+                    `  • Adapter getActiveClub : ${dump?.adapter?.getActiveClub ? dump.adapter.getActiveClub.name : '(rien)'}\n` +
+                    `  • CDD_CLUB.name : ${dump?.globals?.CDD_CLUB?.name || '(rien)'}\n` +
+                    `\nRÉSULTAT MIGRATION :\n` +
+                    `  • ran : ${result?.ran}\n` +
+                    `  • reason : ${result?.reason || '(none)'}\n` +
+                    `  • added : ${result?.added || 0}\n` +
+                    `  • persisted : ${result?.persisted || 0}\n` +
+                    `\nMemberships après : ${afterMemberships.length}\n` +
+                    `\nDétails complets dans la console (F12).`;
+
+                  alert(summary);
+                  if (afterMemberships.length > 0) setRefresh(x => x + 1);
+                }} style={{
+                  width:'100%', padding:'12px', borderRadius:10,
+                  background:'rgba(200,241,105,0.10)', border:'1px solid rgba(200,241,105,0.40)',
+                  color:'#c8f169', fontWeight:800, fontSize:13, fontFamily:'inherit',
+                  cursor:'pointer',
+                }}>🩺 Diagnostiquer + Migrer mes clubs</button>
+                <div style={{fontSize:10, opacity:0.5, marginTop:8, textAlign:'center', lineHeight:1.5}}>
+                  Inspecte toutes les sources de données (localStorage, seed, adapter, globals) et tente une migration forcée si des clubs sont détectés.
+                </div>
               </div>
             ) : (
               <div style={{display:'flex', flexDirection:'column', gap:8, padding:'0 14px'}}>
