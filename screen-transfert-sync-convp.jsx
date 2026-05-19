@@ -152,12 +152,40 @@ window.ScreenTransfert = ScreenTransfert;
    ============================================================ */
 
 function ScreenSyncCloud({ go, tweaks }) {
-  const [active, setActive] = useState("u15-d2");
-  const clubs = [
-    { id:"asm",   name:"FCMH",        team:"U15 D2",      players:18, color:"#c8f169", on: true },
-    { id:"usdf",  name:"USDF",            team:"Vétérans",    players:22, color:"#3b82f6", on: false },
-    { id:"fcmh",  name:"FCMH",            team:"U11 D3",      players:12, color:"#f5c451", on: false },
+  // Lit les vraies équipes depuis localStorage (arb_teams) au lieu du mock historique.
+  // Une "carte" ici = une équipe (club + catégorie). Les équipes du même club
+  // partagent le logo et les couleurs (voir CDD_CLUB côté data-bridge).
+  const buildClubsList = () => {
+    try {
+      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+      const allClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
+      const clubById = {};
+      allClubs.forEach(c => { clubById[c.id] = c; });
+      return teams.map(t => {
+        const club = clubById[t.clubId] || {};
+        return {
+          id: t.id,
+          name: club.name || t.clubName || 'Club',
+          team: t.name || t.category || 'Équipe',
+          players: (t.players || []).length || t.playersCount || 0,
+          color: club.primaryColor || t.color || '#c8f169',
+          createdAt: t.createdAt || null,
+          createdBy: t.createdBy || null,
+        };
+      });
+    } catch (e) { return []; }
+  };
+  const realClubs = buildClubsList();
+  // Fallback démo seulement si vraiment aucune équipe en local
+  const clubs = realClubs.length > 0 ? realClubs : [
+    { id:"demo-1", name:"FCMH", team:"U15 D2", players:18, color:"#c8f169" },
+    { id:"demo-2", name:"USDF", team:"Vétérans", players:22, color:"#3b82f6" },
   ];
+  const activeCtx = (() => {
+    try { return JSON.parse(localStorage.getItem('cdd_active_context') || '{}'); }
+    catch (e) { return {}; }
+  })();
+  const [active, setActive] = useState(activeCtx.teamId || clubs[0]?.id || "");
 
   return (
     <div className="scr scr-sync fade-in" data-screen-label="15 Sync Cloud">
@@ -241,9 +269,24 @@ function ScreenSyncCloud({ go, tweaks }) {
           const team = prompt("Catégorie / équipe (ex: U15 D2) :", "U15 D2");
           if (!team) return;
           try {
+            // Audit : on trace QUI crée QUOI ET QUAND. Permet la vue admin.
+            const createdBy = localStorage.getItem('cdd_user_email')
+                            || localStorage.getItem('cdd_coach_name')
+                            || 'anonyme';
+            const createdAt = Date.now();
             const arr = JSON.parse(localStorage.getItem("arb_clubs") || "[]");
-            arr.push({ id:"club_"+Date.now(), name, team, players:0, color:"#"+Math.floor(Math.random()*16777215).toString(16) });
+            arr.push({
+              id:"club_"+Date.now(), name, team, players:0,
+              color:"#"+Math.floor(Math.random()*16777215).toString(16),
+              createdAt, createdBy,
+            });
             localStorage.setItem("arb_clubs", JSON.stringify(arr));
+            // Journal audit dédié (pour la vue admin)
+            try {
+              const log = JSON.parse(localStorage.getItem('cdd_audit_log') || '[]');
+              log.unshift({ ts: createdAt, kind: 'team-created', by: createdBy, target: `${name} · ${team}` });
+              localStorage.setItem('cdd_audit_log', JSON.stringify(log.slice(0, 200)));
+            } catch(e) {}
             alert(`Équipe "${name} · ${team}" ajoutée. Recharge l'app pour la voir apparaître.`);
           } catch(e) { alert("Erreur sauvegarde : " + e.message); }
         }}>

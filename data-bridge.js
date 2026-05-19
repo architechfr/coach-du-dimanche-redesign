@@ -439,10 +439,17 @@ async function rebuildCDDGlobals() {
   const fffCfg = activeTeam?.fff || null;
   const clubName = activeClub?.name || '';
 
-  // Logo club : priorité à l'override coach (uploadé dans Réglages), sinon
-  // celui de la donnée club brute s'il existe.
+  // Logo club : keyé par clubId pour qu'un coach gérant plusieurs clubs (FCMH, USDF...)
+  // ait le bon logo pour chaque club. cdd_club_logos = { [clubId]: dataURL }.
+  // Fallback : ancienne clé cdd_club_logo_override (mono-club), puis donnée brute.
   let logoDataUrl = null;
-  try { logoDataUrl = localStorage.getItem('cdd_club_logo_override') || null; } catch (e) {}
+  try {
+    const logos = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
+    if (activeClub?.id && logos[activeClub.id]) logoDataUrl = logos[activeClub.id];
+  } catch (e) {}
+  if (!logoDataUrl) {
+    try { logoDataUrl = localStorage.getItem('cdd_club_logo_override') || null; } catch (e) {}
+  }
   if (!logoDataUrl) logoDataUrl = activeClub?.logoDataUrl || null;
 
   window.CDD_CLUB = {

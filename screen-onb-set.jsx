@@ -135,6 +135,7 @@ function ScreenSettings({ go, tweaks, setTweak }) {
     setRefresh(x => x + 1);
   };
   const [, setRefresh] = useState(0);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const dark      = getToggle("dark", true);
   const sons      = getToggle("sons", true);
   const vibrate   = getToggle("vibrate", false);
@@ -307,6 +308,9 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         <div className="set-sec">
           <div className="set-sec-k">AVANCÉ · ADMIN</div>
           <div className="set-rows">
+            <SetRow ic="🗂" t="Inventaire & audit"
+                    d="Tous mes clubs/équipes · qui a créé quoi · quand"
+                    go={() => setShowAdminPanel(true)}/>
             <SetRow ic="🔧" t="Outil doublons inter-équipes"
                     d="Détecter et nettoyer les joueurs dupliqués"
                     go={() => window.open('../../_admin/doublons.html', '_blank')}/>
@@ -324,6 +328,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           </div>
         </div>
       )}
+
+      {showAdminPanel && <AdminInventoryPanel onClose={() => setShowAdminPanel(false)}/>}
 
       <div className="set-sec">
         <div className="set-sec-k">À PROPOS</div>
@@ -367,10 +373,14 @@ function SetRow({ ic, t, d, status, rightToggle, on, onToggle, warn, go }) {
   );
 }
 
-// ─── Upload du logo club (affiché partout : match live, mode vestiaire, timeline) ───
+// ─── Upload du logo club (par club_id, partagé entre toutes les équipes du club) ───
+// Un même club (FCMH) peut avoir plusieurs équipes (U15, U11) qui partagent le logo.
+// Storage : cdd_club_logos = { [clubId]: dataURL } — keyé par club, pas par équipe.
 function ClubLogoRow({ refresh }) {
-  const club = window.CDD_CLUB || {};
-  const currentLogo = club.logoDataUrl || null;
+  const activeClub = window.CDD?.getActiveClub?.() || null;
+  const activeClubId = activeClub?.id || null;
+  const activeClubName = activeClub?.name || (window.CDD_CLUB && window.CDD_CLUB.name) || 'Mon club';
+  const currentLogo = (window.CDD_CLUB && window.CDD_CLUB.logoDataUrl) || null;
   const fileInputRef = React.useRef(null);
 
   const handleFile = (file) => {
@@ -379,13 +389,17 @@ function ClubLogoRow({ refresh }) {
       alert('Logo trop lourd (max 800 Ko). Redimensionne ton image et réessaie.');
       return;
     }
+    if (!activeClubId) {
+      alert('Aucun club actif détecté. Sélectionne un club avant d\'uploader son logo.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        // On stocke le logo dans cdd_club_logo_override (lu par data-bridge au rebuild)
         const dataUrl = reader.result;
-        localStorage.setItem('cdd_club_logo_override', dataUrl);
-        // Patch live de CDD_CLUB pour effet immédiat sans recharger l'app
+        const all = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
+        all[activeClubId] = dataUrl;
+        localStorage.setItem('cdd_club_logos', JSON.stringify(all));
         if (window.CDD_CLUB) window.CDD_CLUB.logoDataUrl = dataUrl;
         window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
         if (window.CDD_REBUILD) window.CDD_REBUILD();
@@ -396,9 +410,12 @@ function ClubLogoRow({ refresh }) {
   };
 
   const removeLogo = () => {
-    if (!confirm('Supprimer le logo du club ?')) return;
+    if (!confirm(`Supprimer le logo de ${activeClubName} ?`)) return;
+    if (!activeClubId) return;
     try {
-      localStorage.removeItem('cdd_club_logo_override');
+      const all = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
+      delete all[activeClubId];
+      localStorage.setItem('cdd_club_logos', JSON.stringify(all));
       if (window.CDD_CLUB) window.CDD_CLUB.logoDataUrl = null;
       window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
       if (window.CDD_REBUILD) window.CDD_REBUILD();
@@ -425,9 +442,11 @@ function ClubLogoRow({ refresh }) {
         )}
       </div>
       <div style={{flex:1, minWidth:0}}>
-        <div style={{fontSize:14, fontWeight:700, color:'#fff'}}>Logo du club</div>
+        <div style={{fontSize:14, fontWeight:700, color:'#fff'}}>
+          Logo de <span style={{color:'#c8f169'}}>{activeClubName}</span>
+        </div>
         <div style={{fontSize:11, color:'rgba(255,255,255,0.55)', marginTop:2}}>
-          Affiché partout : match live, mode vestiaire, partage parents
+          Partagé par toutes les équipes du club · match live, mode vestiaire, partage parents
         </div>
         {/* Contraintes techniques visibles AVANT le clic — évite les rejets surprise */}
         <div style={{
@@ -457,6 +476,179 @@ function ClubLogoRow({ refresh }) {
         <input ref={fileInputRef} type="file" accept="image/*"
                style={{display:'none'}}
                onChange={(e) => handleFile(e.target.files && e.target.files[0])}/>
+      </div>
+    </div>
+  );
+}
+
+// ─── Panneau admin : inventaire de tous les clubs/équipes + audit log ───
+// Visible uniquement aux roles admin/owner. Sert à diagnostiquer "qui a créé quoi"
+// et à anticiper la migration cloud (volumétrie data, mapping créateur → équipes).
+function AdminInventoryPanel({ onClose }) {
+  const data = React.useMemo(() => {
+    const out = { clubs: [], teams: [], players: [], auditLog: [], storage: {} };
+    try { out.clubs    = JSON.parse(localStorage.getItem('arb_clubs')    || '[]'); } catch (e) {}
+    try { out.teams    = JSON.parse(localStorage.getItem('arb_teams')    || '[]'); } catch (e) {}
+    try { out.players  = JSON.parse(localStorage.getItem('arb_players')  || '[]'); } catch (e) {}
+    try { out.auditLog = JSON.parse(localStorage.getItem('cdd_audit_log')|| '[]'); } catch (e) {}
+    // Pesée du localStorage : poids brut + estimation par préfixe.
+    try {
+      let totalBytes = 0;
+      const byPrefix = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k) || '';
+        const bytes = (k.length + v.length) * 2; // UTF-16
+        totalBytes += bytes;
+        const prefix = k.split('_').slice(0, 2).join('_');
+        byPrefix[prefix] = (byPrefix[prefix] || 0) + bytes;
+      }
+      out.storage = { totalBytes, totalKB: Math.round(totalBytes / 1024), byPrefix };
+    } catch (e) {}
+    return out;
+  }, []);
+
+  const fmtDate = (ts) => ts ? new Date(ts).toLocaleString('fr-FR') : '—';
+  const fmtBytes = (b) => b > 1024 ? `${(b/1024).toFixed(1)} Ko` : `${b} o`;
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:500,
+      display:'flex', justifyContent:'center', alignItems:'flex-start', overflow:'auto', padding:20,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', maxWidth:600, background:'#0B1320', borderRadius:16,
+        border:'1px solid rgba(255,255,255,0.12)', padding:20, color:'#fff',
+        fontSize:13, lineHeight:1.5,
+      }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
+          <div>
+            <div style={{fontSize:11, fontWeight:800, letterSpacing:'.12em', color:'#c8f169', textTransform:'uppercase'}}>
+              Inventaire & audit
+            </div>
+            <div style={{fontSize:18, fontWeight:900, marginTop:2}}>Toutes mes données</div>
+          </div>
+          <button onClick={onClose} style={{
+            background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.18)',
+            color:'#fff', width:32, height:32, borderRadius:16, cursor:'pointer', fontSize:16,
+          }}>✕</button>
+        </div>
+
+        {/* Compteurs */}
+        <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:18}}>
+          {[
+            { l:'Clubs', v: data.clubs.length, c:'#c8f169' },
+            { l:'Équipes', v: data.teams.length, c:'#fbbf24' },
+            { l:'Joueurs', v: data.players.length, c:'#3b82f6' },
+            { l:'Storage', v: data.storage.totalKB + ' Ko', c:'#a78bfa' },
+          ].map((x,i) => (
+            <div key={i} style={{
+              padding:'10px 6px', textAlign:'center', borderRadius:8,
+              background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
+            }}>
+              <div style={{fontSize:18, fontWeight:900, color:x.c, fontVariantNumeric:'tabular-nums'}}>{x.v}</div>
+              <div style={{fontSize:9, opacity:0.6, marginTop:2, letterSpacing:'.05em', textTransform:'uppercase'}}>{x.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Clubs avec audit */}
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:10, fontWeight:800, letterSpacing:'.12em', color:'rgba(255,255,255,0.55)', marginBottom:6, textTransform:'uppercase'}}>
+            🏛 Clubs ({data.clubs.length})
+          </div>
+          {data.clubs.length === 0 ? (
+            <div style={{fontSize:11, opacity:0.5, fontStyle:'italic'}}>Aucun club enregistré.</div>
+          ) : data.clubs.map(c => (
+            <div key={c.id} style={{
+              padding:'8px 10px', borderRadius:8, marginBottom:5,
+              background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)',
+              display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
+            }}>
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontWeight:700}}>{c.name || c.id}</div>
+                <div style={{fontSize:10, opacity:0.6}}>
+                  ID: <code style={{fontSize:9}}>{c.id}</code>
+                </div>
+              </div>
+              <div style={{fontSize:10, opacity:0.65, textAlign:'right', flexShrink:0}}>
+                <div>Créé : {fmtDate(c.createdAt)}</div>
+                <div>par : {c.createdBy || '— (legacy)'}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Équipes */}
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:10, fontWeight:800, letterSpacing:'.12em', color:'rgba(255,255,255,0.55)', marginBottom:6, textTransform:'uppercase'}}>
+            👥 Équipes ({data.teams.length})
+          </div>
+          {data.teams.length === 0 ? (
+            <div style={{fontSize:11, opacity:0.5, fontStyle:'italic'}}>Aucune équipe enregistrée.</div>
+          ) : data.teams.map(t => (
+            <div key={t.id} style={{
+              padding:'8px 10px', borderRadius:8, marginBottom:5,
+              background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)',
+            }}>
+              <div style={{display:'flex', justifyContent:'space-between', gap:8}}>
+                <div style={{minWidth:0, flex:1}}>
+                  <div style={{fontWeight:700}}>{t.name || t.category || '(sans nom)'}</div>
+                  <div style={{fontSize:10, opacity:0.6}}>
+                    Club : <code style={{fontSize:9}}>{t.clubId || '?'}</code>
+                    {' · '}
+                    {(t.players || []).length || t.playersCount || 0} joueurs
+                  </div>
+                </div>
+                <div style={{fontSize:10, opacity:0.65, textAlign:'right', flexShrink:0}}>
+                  <div>Créée : {fmtDate(t.createdAt)}</div>
+                  <div>par : {t.createdBy || '— (legacy)'}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Audit log */}
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:10, fontWeight:800, letterSpacing:'.12em', color:'rgba(255,255,255,0.55)', marginBottom:6, textTransform:'uppercase'}}>
+            📝 Audit log ({data.auditLog.length})
+          </div>
+          {data.auditLog.length === 0 ? (
+            <div style={{fontSize:11, opacity:0.5, fontStyle:'italic'}}>
+              Aucune action tracée. Le journal commence aujourd'hui — actions passées non rétroactives.
+            </div>
+          ) : data.auditLog.slice(0, 20).map((a, i) => (
+            <div key={i} style={{
+              padding:'6px 10px', borderRadius:6, marginBottom:3,
+              background:'rgba(255,255,255,0.02)', fontSize:11,
+              display:'flex', justifyContent:'space-between', gap:8,
+            }}>
+              <span><b style={{color:'#c8f169'}}>{a.kind}</b> · {a.target}</span>
+              <span style={{opacity:0.55, flexShrink:0}}>{fmtDate(a.ts)} · {a.by}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Storage par préfixe */}
+        <div>
+          <div style={{fontSize:10, fontWeight:800, letterSpacing:'.12em', color:'rgba(255,255,255,0.55)', marginBottom:6, textTransform:'uppercase'}}>
+            💾 Stockage local ({data.storage.totalKB} Ko)
+          </div>
+          {Object.entries(data.storage.byPrefix || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([prefix, bytes]) => (
+              <div key={prefix} style={{
+                display:'flex', justifyContent:'space-between', fontSize:11,
+                padding:'4px 8px', borderRadius:4,
+                background:'rgba(255,255,255,0.02)',
+              }}>
+                <code style={{fontSize:10, opacity:0.75}}>{prefix}*</code>
+                <span style={{opacity:0.7, fontVariantNumeric:'tabular-nums'}}>{fmtBytes(bytes)}</span>
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   );
