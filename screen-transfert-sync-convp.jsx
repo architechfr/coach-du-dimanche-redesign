@@ -284,31 +284,45 @@ function ScreenSyncCloud({ go, tweaks }) {
         </div>
       </div>
 
-      {/* Bloc compte : lit les vraies infos coach depuis localStorage,
-          pas de mock Florian C. fixe. Si rien renseigné, état explicite. */}
+      {/* Bloc compte : honnête sur l'état d'identité actuel.
+          Pas d'auth réelle encore → on est "coach owner local" par défaut
+          (forcément, puisque c'est ton appareil qui a créé les données).
+          Quand Phase 3 (Auth) sera là, ce bloc affichera le vrai compte. */}
       {(() => {
-        const coachName = localStorage.getItem('cdd_coach_name') || '';
-        const userEmail = localStorage.getItem('cdd_user_email') || '';
-        const initials = coachName
-          ? coachName.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
-          : (userEmail[0] || '?').toUpperCase();
+        const coachName = (localStorage.getItem('cdd_coach_name') || '').trim();
+        const userEmail = (localStorage.getItem('cdd_user_email') || '').trim();
+        const role = window.CDD_ROLES?.currentRole?.() || (localStorage.getItem('cdd_user_role') || 'coach');
+        const roleLabel = window.CDD_ROLES?.roleLabel?.(role) || role;
+        const displayName = coachName || `Coach owner ${(clubs[0]?.name || '').toUpperCase()}`.trim() || 'Coach owner';
+        const initials = (coachName
+          ? coachName.split(/\s+/).map(w => w[0]).join('').slice(0, 2)
+          : (clubs[0]?.name || 'CO').slice(0, 2)).toUpperCase();
         const maskedEmail = userEmail ? userEmail.replace(/^(.{3}).*(@.+)$/, '$1***$2') : null;
-        const isConfigured = !!(coachName || userEmail);
+        const isFullyConfigured = !!(coachName && userEmail);
         return (
           <div className="sync-account">
             <div className="sync-acc-avatar">{initials}</div>
             <div className="sync-acc-info">
-              <b>{coachName || 'Compte non renseigné'}</b>
-              <em>{maskedEmail || 'Aucun email configuré'}</em>
-              <span className="sync-acc-chip" style={!isConfigured ? {
-                background:'rgba(251,191,36,0.15)', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.4)'
+              <b>{displayName}</b>
+              <em>{maskedEmail || 'Mode local · auth à venir (Phase 3)'}</em>
+              <span className="sync-acc-chip" style={!isFullyConfigured ? {
+                background:'rgba(200,241,105,0.15)', color:'#c8f169', border:'1px solid rgba(200,241,105,0.35)'
               } : {}}>
-                {isConfigured ? 'Local' : '⚠ À configurer'}
+                {roleLabel} · {isFullyConfigured ? 'profil complet' : 'profil à compléter'}
               </span>
             </div>
             <button className="sync-acc-sync"
-                    onClick={() => alert("Sync cloud avec Auth Google : prévu Phase 3 (Stripe + Firebase Auth).\nAujourd'hui : sync anonyme via Firestore (cf. statut ci-dessus).")}>
-              ↻
+                    title={isFullyConfigured ? 'Compte complet' : 'Aller dans Réglages pour compléter ton profil'}
+                    onClick={() => {
+                      if (!isFullyConfigured) {
+                        if (confirm('Ton profil coach est incomplet. Aller dans Réglages pour le compléter ?')) {
+                          go('set');
+                        }
+                      } else {
+                        alert("Auth Google + sync compte : prévu Phase 3 (Stripe + Firebase Auth).\nAujourd'hui : sync anonyme via Firestore.");
+                      }
+                    }}>
+              {isFullyConfigured ? '↻' : '✎'}
             </button>
           </div>
         );
