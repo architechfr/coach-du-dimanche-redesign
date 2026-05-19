@@ -91,7 +91,54 @@ function ScreenHome({ go, tweaks }) {
       )}
 
       {/* Bouton REPRENDRE match en cours (#20) */}
-      {liveMatch && (
+      {liveMatch && (() => {
+        // ── Résolution robuste du logo du match en cours.
+        // 1. liveMatch.tA.logoDataUrl (snapshot dans le match si on l'a)
+        // 2. liveMatch.clubId (vrai chemin propre)
+        // 3. Fallback : chercher dans arb_clubs par nom (cas des matchs
+        //    crees avant le multi-club, qui n'ont pas de clubId stocke)
+        // 4. Fallback ultime : club actif courant
+        const resolveLiveLogo = () => {
+          if (liveMatch.tA && liveMatch.tA.logoDataUrl) return liveMatch.tA.logoDataUrl;
+          if (liveMatch.clubId && window.CDD_LOGO?.getForClub) {
+            const byId = window.CDD_LOGO.getForClub(liveMatch.clubId);
+            if (byId) return byId;
+          }
+          const tName = (liveMatch.tA && liveMatch.tA.n) || '';
+          if (tName) {
+            try {
+              const clubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
+              // Match par nom complet OU par short. Tolérant à la casse.
+              const norm = (s) => (s || '').toLowerCase().trim();
+              const found = clubs.find(c => norm(c.name) === norm(tName) || norm(c.short) === norm(tName));
+              if (found && window.CDD_LOGO?.getForClub) {
+                const byName = window.CDD_LOGO.getForClub(found.id);
+                if (byName) return byName;
+              }
+            } catch (e) {}
+          }
+          // Dernier fallback : logo du club actif (utile en mono-club)
+          if (window.CDD_LOGO?.getForActiveClub) {
+            return window.CDD_LOGO.getForActiveClub();
+          }
+          return null;
+        };
+        const resolveLiveClubId = () => {
+          if (liveMatch.clubId) return liveMatch.clubId;
+          const tName = (liveMatch.tA && liveMatch.tA.n) || '';
+          if (tName) {
+            try {
+              const clubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
+              const norm = (s) => (s || '').toLowerCase().trim();
+              const found = clubs.find(c => norm(c.name) === norm(tName) || norm(c.short) === norm(tName));
+              if (found) return found.id;
+            } catch (e) {}
+          }
+          return null;
+        };
+        const liveLogo = resolveLiveLogo();
+        const liveClubId = resolveLiveClubId();
+        return (
         <button onClick={() => go('match')}
                 style={{
                   width:'calc(100% - 28px)', margin:'14px',
@@ -102,16 +149,12 @@ function ScreenHome({ go, tweaks }) {
                   boxShadow:'0 6px 20px rgba(239,68,68,.4)',
                   textAlign:'left', fontFamily:'inherit',
                 }}>
-          {/* Logo du club du match en cours (peut différer du club actif).
-              Utile pour les coachs multi-club : on voit immédiatement de
-              quel club est le match qui tourne. Fallback pulse rouge si pas
-              de logo / pas de clubId. */}
           {window.ClubBadge ? (
             <span style={{position:'relative', display:'inline-block', flexShrink:0}}>
-              <window.ClubBadge clubId={liveMatch.clubId || null}
+              <window.ClubBadge clubId={liveClubId}
                                 clubName={(liveMatch.tA && liveMatch.tA.n) || '?'}
                                 colors={[liveMatch.tA?.c || '#fff', liveMatch.tA?.c2 || '#0a0e14']}
-                                forceLogo={liveMatch.tA?.logoDataUrl || null}
+                                forceLogo={liveLogo}
                                 size={42} shape="square"/>
               {/* Petit point rouge "live" en pulsation sur le coin */}
               <span style={{
@@ -136,7 +179,8 @@ function ScreenHome({ go, tweaks }) {
             </div>
           </span>
         </button>
-      )}
+        );
+      })()}
 
       {/* HERO — next match avec visuel coach jour/nuit auto */}
       <div className={`home-hero hero-${tweaks.hero}`}>
@@ -156,7 +200,14 @@ function ScreenHome({ go, tweaks }) {
 
         <div className="home-hero-vs">
           <div className="hero-club hero-club-home">
-            <div className="hero-badge me" aria-hidden="true">F</div>
+            {window.ClubBadge ? (
+              <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                clubName={club.short || club.name || next.home}
+                                colors={club.colors}
+                                size={56} shape="square"/>
+            ) : (
+              <div className="hero-badge me" aria-hidden="true">{(club.short || next.home || 'F')[0]}</div>
+            )}
             <div className="hero-club-name">{next.home}</div>
           </div>
           <div className="hero-vs">
@@ -164,7 +215,15 @@ function ScreenHome({ go, tweaks }) {
             <div className="hero-when num">{next.date}</div>
           </div>
           <div className="hero-club hero-club-away">
-            <div className="hero-badge them" aria-hidden="true">P</div>
+            {window.ClubBadge ? (
+              <window.ClubBadge clubId={null}
+                                clubName={next.away || 'À venir'}
+                                colors={['#3b82f6','#fff']}
+                                forceLogo={next.awayLogoDataUrl || null}
+                                size={56} shape="square"/>
+            ) : (
+              <div className="hero-badge them" aria-hidden="true">{(next.away || '?')[0]}</div>
+            )}
             <div className="hero-club-name">{next.away}</div>
           </div>
         </div>
