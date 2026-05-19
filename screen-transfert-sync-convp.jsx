@@ -458,8 +458,32 @@ window.ScreenSyncCloud = ScreenSyncCloud;
 
 function ScreenConvoParent({ go, tweaks }) {
   const [resp, setResp] = useState(null);
-  const next = window.CDD_NEXT_MATCH;
-  const me = window.CDD_PLAYERS.find(p => p.id === "p10"); // Sékou
+  const next = window.CDD_NEXT_MATCH || { date: 'À venir', venue: '?', away: 'À déterminer' };
+
+  // Player ciblé via URL ?p=PLAYER_ID (lien parent), fallback premier joueur de l'effectif.
+  const players = window.CDD_PLAYERS || [];
+  const playerIdFromUrl = (() => {
+    try {
+      const fromSearch = new URLSearchParams(window.location.search).get('p');
+      if (fromSearch) return fromSearch;
+      const hash = window.location.hash || '';
+      const q = hash.split('?')[1];
+      if (q) return new URLSearchParams(q).get('p');
+    } catch (e) {}
+    return null;
+  })();
+  const me = (playerIdFromUrl && players.find(p => p.id === playerIdFromUrl))
+          || players[0]
+          || { first: 'Joueur', last: '', pos: '', num: '' };
+
+  const myShort  = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
+  const teamCat  = (window.CDD?.getActiveTeam?.()?.name)
+                || (window.CDD?.getActiveTeam?.()?.category) || '';
+  const oppShort = (next.away && next.away !== 'À déterminer') ? next.away : 'À venir';
+  const meInit   = (myShort[0]  || '?').toUpperCase();
+  const themInit = (oppShort[0] || '?').toUpperCase();
+  const coachName = localStorage.getItem('cdd_coach_name') || 'Coach';
+  const coachInit = coachName.split(/\s+/).map(w => w[0]).join('').slice(0,2).toUpperCase() || 'C';
 
   if (resp) {
     return (
@@ -477,12 +501,11 @@ function ScreenConvoParent({ go, tweaks }) {
           <div className="cvp-success-card">
             <div className="cvp-success-card-k">RÉCAP MATCH</div>
             <div className="cvp-success-card-vs">
-              <b>FCMH</b><i>VS</i><b>FC PONTOISE</b>
+              <b>{myShort}</b><i>VS</i><b>{oppShort}</b>
             </div>
             <div className="cvp-success-card-meta">
               <span>📅 {next.date}</span>
               <span>🏟️ {next.venue}</span>
-              <span>👕 RDV 09h45 · vestiaire</span>
             </div>
           </div>
           <button className="btn-cta ghost" onClick={() => setResp(null)}>← Modifier ma réponse</button>
@@ -498,12 +521,17 @@ function ScreenConvoParent({ go, tweaks }) {
         <div className="cvp-hero-bg"/>
         <div className="cvp-hero-grad"/>
         <div className="cvp-hero-in">
-          <div className="cvp-hero-k">CONVOCATION · FCMH U15 D2</div>
+          <div className="cvp-hero-k">
+            CONVOCATION · {myShort}{teamCat ? ` ${teamCat}` : ''}
+          </div>
           <div className="cvp-hero-title">
             <span className="cvp-hero-name">{me.first}</span><br/>
             est convoqué
           </div>
-          <div className="cvp-hero-pos">{POSITION_LABEL[me.pos] || me.pos} · #{me.num}</div>
+          <div className="cvp-hero-pos">
+            {(typeof POSITION_LABEL !== 'undefined' && POSITION_LABEL[me.pos]) || me.pos}
+            {me.num ? ` · #${me.num}` : ''}
+          </div>
         </div>
       </div>
 
@@ -511,34 +539,25 @@ function ScreenConvoParent({ go, tweaks }) {
         <div className="cvp-match-k">MATCH</div>
         <div className="cvp-match-vs">
           <div className="cvp-match-team">
-            <div className="cvp-match-badge me">M</div>
-            <span>FCMH</span>
+            <div className="cvp-match-badge me">{meInit}</div>
+            <span>{myShort}</span>
           </div>
           <div className="cvp-match-vs-l">VS</div>
           <div className="cvp-match-team">
-            <div className="cvp-match-badge them">P</div>
-            <span>FC PONTOISE</span>
+            <div className="cvp-match-badge them">{themInit}</div>
+            <span>{oppShort}</span>
           </div>
         </div>
         <div className="cvp-match-info">
           <div><em>QUAND</em><b>{next.date}</b></div>
           <div><em>OÙ</em><b>{next.venue}</b></div>
-          <div><em>RDV</em><b className="acc">09h45</b></div>
-          <div><em>FIN PRÉVUE</em><b>12h30</b></div>
         </div>
       </div>
 
-      <div className="cvp-coach-note">
-        <div className="cvp-coach-note-avatar">FC</div>
-        <div className="cvp-coach-note-body">
-          <div className="cvp-coach-note-k">MOT DU COACH</div>
-          <div className="cvp-coach-note-t">
-            "Match important pour la 2<sup>e</sup> place. Sékou je compte sur toi en MOC — gros pressing devant. Pluie possible, prévoyez crampons longs."
-          </div>
-        </div>
-      </div>
+      {/* MOT DU COACH : à brancher sur cdd_coach_match_note[matchId] quand l'écran de note coach sera fait.
+          Pour l'instant on masque pour ne pas afficher un texte mock. */}
 
-      <div className="cvp-question">Sékou sera-t-il présent ?</div>
+      <div className="cvp-question">{me.first} sera-t-il présent ?</div>
 
       <div className="cvp-answers">
         <button className="cvp-answer cvp-yes" onClick={() => setResp("yes")}>
@@ -553,12 +572,6 @@ function ScreenConvoParent({ go, tweaks }) {
           <span className="cvp-answer-ic">?</span>
           <span className="cvp-answer-l">PEUT-ÊTRE</span>
         </button>
-      </div>
-
-      <div className="cvp-meta">
-        <span>📬 14 réponses sur 18 convoqués</span>
-        <span>·</span>
-        <span>4 en attente</span>
       </div>
 
       <div className="cvp-foot">

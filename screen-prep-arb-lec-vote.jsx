@@ -329,15 +329,26 @@ function ScreenLecteur({ go, tweaks }) {
   return (
     <div className="scr scr-lecteur fade-in" data-screen-label="12 Lecteur public">
 
-      <div className="lec-banner">
-        <div className="lec-banner-bg"/>
-        <div className="lec-banner-grad"/>
-        <div className="lec-banner-in">
-          <div className="lec-banner-k">ÉQUIPE PARTAGÉE · LECTURE SEULE</div>
-          <div className="lec-banner-title">FC MAGNY LE HONGRE</div>
-          <div className="lec-banner-sub">U15 D2 · Saison 2025–2026</div>
-        </div>
-      </div>
+      {(() => {
+        const clubName = (window.CDD_CLUB?.name) || (window.CDD_CLUB?.short) || 'Mon club';
+        const teamLabel = (window.CDD?.getActiveTeam?.()?.name)
+          || (window.CDD?.getActiveTeam?.()?.category)
+          || (window.CDD_CLUB?.team) || '';
+        const seasonLabel = (window.CDD_CLUB?.season) || '';
+        return (
+          <div className="lec-banner">
+            <div className="lec-banner-bg"/>
+            <div className="lec-banner-grad"/>
+            <div className="lec-banner-in">
+              <div className="lec-banner-k">ÉQUIPE PARTAGÉE · LECTURE SEULE</div>
+              <div className="lec-banner-title">{clubName}</div>
+              <div className="lec-banner-sub">
+                {[teamLabel, seasonLabel].filter(Boolean).join(' · ') || 'Saison en cours'}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="lec-tabs">
         {[
@@ -350,19 +361,24 @@ function ScreenLecteur({ go, tweaks }) {
         ))}
       </div>
 
-      {tab === "prochain" && (
+      {tab === "prochain" && (() => {
+        const myShort = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
+        const oppShort = (next && next.away && next.away !== 'À déterminer') ? next.away : 'À venir';
+        const meInitial = (myShort[0] || '?').toUpperCase();
+        const themInitial = (oppShort[0] || '?').toUpperCase();
+        return (
         <div className="lec-prochain">
           <div className="lec-card">
             <div className="lec-card-k">PROCHAIN MATCH · J-{next.daysLeft}</div>
             <div className="lec-card-vs">
               <div className="lec-team">
-                <div className="lec-badge me">F</div>
-                <span>FCMH</span>
+                <div className="lec-badge me">{meInitial}</div>
+                <span>{myShort}</span>
               </div>
               <div className="lec-vs">VS</div>
               <div className="lec-team">
-                <div className="lec-badge them">P</div>
-                <span>FC PONTOISE</span>
+                <div className="lec-badge them">{themInitial}</div>
+                <span>{oppShort}</span>
               </div>
             </div>
             <div className="lec-when">
@@ -382,7 +398,12 @@ function ScreenLecteur({ go, tweaks }) {
               <div className="lec-convo-yes-ic">✓</div>
               <div className="lec-convo-yes-t">
                 <b>{playerDisplay} est convoqué !</b>
-                <em>Titulaire · Milieu offensif · #10</em>
+                {(() => {
+                  const p = CDD_PLAYERS.find(x => x.id === playerId);
+                  if (!p) return null;
+                  const posLabel = (typeof POSITION_LABEL !== 'undefined' && POSITION_LABEL[p.pos]) || p.pos || '';
+                  return <em>{posLabel}{p.num ? ` · #${p.num}` : ''}</em>;
+                })()}
               </div>
             </div>
             <div className="lec-convo-cta">
@@ -416,7 +437,8 @@ function ScreenLecteur({ go, tweaks }) {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {tab === "effectif" && (
         <div className="lec-effectif">
@@ -609,20 +631,34 @@ function ScreenVote({ go, tweaks }) {
   return (
     <div className="scr scr-vote fade-in" data-screen-label="13 Vote post-match">
 
-      <div className="vote-hero">
-        <div className="vote-hero-bg"/>
-        <div className="vote-hero-grad"/>
-        <div className="vote-hero-in">
-          <div className="vote-hero-k">VOTE · 48H</div>
-          <div className="vote-hero-title">Note les joueurs<br/>du match</div>
-          <div className="vote-hero-score">
-            <span>FCMH</span>
-            <b className="num">2–1</b>
-            <span>FC PONTOISE</span>
+      {lastFinishedMatch ? (() => {
+        const M = lastFinishedMatch;
+        const teamLabel = (window.CDD?.getActiveTeam?.()?.name)
+          || (window.CDD?.getActiveTeam?.()?.category) || '';
+        const dateLabel = M.endedAt
+          ? new Date(M.endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'long' })
+          : '';
+        return (
+          <div className="vote-hero">
+            <div className="vote-hero-bg"/>
+            <div className="vote-hero-grad"/>
+            <div className="vote-hero-in">
+              <div className="vote-hero-k">VOTE · 48H</div>
+              <div className="vote-hero-title">Note les joueurs<br/>du match</div>
+              <div className="vote-hero-score">
+                <span>{M.tA?.n || 'Mon équipe'}</span>
+                <b className="num">{M.sA||0}–{M.sB||0}</b>
+                <span>{M.tB?.n || 'Adversaire'}</span>
+              </div>
+              {(dateLabel || teamLabel) && (
+                <div className="vote-hero-sub">
+                  {[dateLabel, teamLabel].filter(Boolean).join(' · ')}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="vote-hero-sub">17 mai · Match U15 D2 · stade Cerdan</div>
-        </div>
-      </div>
+        );
+      })() : null}
 
       <div className="vote-progress">
         <div className="vote-progress-bar">
