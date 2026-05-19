@@ -251,23 +251,32 @@ function ScreenArbitre({ go, tweaks }) {
       </div>
 
       <div className="sec-h"><span className="t">Derniers matchs arbitrés</span></div>
-      <div className="arb-list">
-        {[
-          { date:"10/05", h:"AS POISSY",   a:"FC HOUILLES", sc:[2,1], n:"M. Martin" },
-          { date:"03/05", h:"PSG U15 RÉG",  a:"FCMH",   sc:[3,1], n:"M. Martin" },
-          { date:"26/04", h:"VAUREAL FC",   a:"CERGY-PONT.",sc:[0,2], n:"M. Martin" },
-        ].map((m,i) => (
-          <div className="arb-item" key={i}>
-            <div className="arb-item-d num">{m.date}</div>
-            <div className="arb-item-m">
-              <span>{m.h}</span>
-              <b className="num">{m.sc[0]}–{m.sc[1]}</b>
-              <span>{m.a}</span>
+      {(() => {
+        const finished = (window.MATCH_HELPERS?.listCoachFinishedMatches?.() || []).slice(0, 5);
+        if (finished.length === 0) {
+          return (
+            <div className="arb-list" style={{padding:"14px 16px", opacity:0.55, fontSize:13, textAlign:"center"}}>
+              Aucun match arbitré pour l'instant.<br/>
+              Lance un match depuis l'accueil pour démarrer ton historique.
             </div>
-            <div className="arb-item-arr">›</div>
+          );
+        }
+        return (
+          <div className="arb-list">
+            {finished.map((m) => (
+              <div className="arb-item" key={m.id}>
+                <div className="arb-item-d num">{m.date}</div>
+                <div className="arb-item-m">
+                  <span>{m.home}</span>
+                  <b className="num">{m.score[0]}–{m.score[1]}</b>
+                  <span>{m.away}</span>
+                </div>
+                <div className="arb-item-arr">›</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       <button className="btn-cta ghost arb-switch" onClick={() => go("home")}>
         ⇄ Revenir en mode coach

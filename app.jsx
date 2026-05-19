@@ -208,6 +208,7 @@ function App() {
   const showBack = !["home", "onb"].includes(screen);
 
   const headerTitle = useMemo(() => {
+    const clubShort = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'MON CLUB';
     const map = {
       home: "",
       effectif: "EFFECTIF",
@@ -219,7 +220,7 @@ function App() {
       "fiche-match": "FEUILLE DE MATCH",
       prep: "PRÉPA MATCH",
       arb: "MODE ARBITRE",
-      lecteur: "FCMH · LECTEUR",
+      lecteur: `${clubShort.toUpperCase()} · LECTEUR`,
       vote: "VOTE POST-MATCH",
       transfert: "TRANSFERT",
       sync: "SYNC CLOUD",
@@ -249,13 +250,19 @@ function App() {
           )}
 
           {/* Home : floating header */}
-          {screen === "home" && (
-            <div className="app-hdr" style={{paddingTop: 0}}>
-              <button className="app-hdr-btn" onClick={() => go("set")} aria-label="Réglages">⚙</button>
-              <div className="app-hdr-title" style={{fontSize:14}}>FCMH · U15 D2</div>
-              <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
-            </div>
-          )}
+          {screen === "home" && (() => {
+            const clubShort = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'MON CLUB';
+            const teamCat = (window.CDD?.getActiveTeam?.()?.name)
+                         || (window.CDD?.getActiveTeam?.()?.category) || '';
+            const homeTitle = teamCat ? `${clubShort} · ${teamCat}` : clubShort;
+            return (
+              <div className="app-hdr" style={{paddingTop: 0}}>
+                <button className="app-hdr-btn" onClick={() => go("set")} aria-label="Réglages">⚙</button>
+                <div className="app-hdr-title" style={{fontSize:14}}>{homeTitle}</div>
+                <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+              </div>
+            );
+          })()}
 
           {/* Body */}
           <div className="app-body" key={screen}>
@@ -416,11 +423,16 @@ function ScreenFicheMatch({ go, tweaks }) {
         <div style={{fontSize:13, opacity:0.6, marginBottom:8}}>
           {m.date} · {m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}
         </div>
-        <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16, fontSize:18, fontWeight:700}}>
-          <span>{m.venue === "H" ? "FCMH" : m.opp}</span>
-          <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{m.score[0]}–{m.score[1]}</span>
-          <span>{m.venue === "H" ? m.opp : "FCMH"}</span>
-        </div>
+        {(() => {
+          const myShort = m.home || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
+          return (
+            <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16, fontSize:18, fontWeight:700}}>
+              <span>{m.venue === "H" ? myShort : m.opp}</span>
+              <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{m.score[0]}–{m.score[1]}</span>
+              <span>{m.venue === "H" ? m.opp : myShort}</span>
+            </div>
+          );
+        })()}
       </div>
       {m.scorers && m.scorers.length > 0 && (
         <div style={{padding:"20px"}}>
