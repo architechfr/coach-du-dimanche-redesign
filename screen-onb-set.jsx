@@ -429,6 +429,15 @@ function ClubLogoRow({ refresh }) {
         <div style={{fontSize:11, color:'rgba(255,255,255,0.55)', marginTop:2}}>
           Affiché partout : match live, mode vestiaire, partage parents
         </div>
+        {/* Contraintes techniques visibles AVANT le clic — évite les rejets surprise */}
+        <div style={{
+          fontSize:10, color:'rgba(255,200,40,0.85)', marginTop:6,
+          padding:'4px 8px', borderRadius:6,
+          background:'rgba(255,200,40,0.06)', border:'1px solid rgba(255,200,40,0.18)',
+          display:'inline-block',
+        }}>
+          💡 Image carrée recommandée · PNG/JPG · max 800 Ko
+        </div>
         <div style={{display:'flex', gap:6, marginTop:8}}>
           <button onClick={() => fileInputRef.current?.click()} style={{
             padding:'6px 10px', borderRadius:8,

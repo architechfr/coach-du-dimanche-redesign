@@ -289,6 +289,22 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
                   <span>{M.ch === 1 ? '1ère' : M.ch + 'ème'} Mi-temps</span>
                   {M.at > 0 && <><span style={{opacity:.5}}>·</span><span>+{M.at}'</span></>}
                 </div>
+                {/* Horodatages absolus — référence arbitre en cas de contestation */}
+                {(M.startedAt || (M.periodStartedAt && M.periodStartedAt[2])) && (() => {
+                  const fmtH = (ts) => ts ? new Date(ts).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) : null;
+                  const t1 = fmtH(M.startedAt);
+                  const t2 = fmtH(M.periodStartedAt && M.periodStartedAt[2]);
+                  return (
+                    <div style={{
+                      fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:4,
+                      letterSpacing:'.04em', display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap',
+                    }}>
+                      {t1 && <span>Coup d'envoi · {t1}</span>}
+                      {t2 && <span style={{opacity:.6}}>·</span>}
+                      {t2 && <span>2ème MT · {t2}</span>}
+                    </div>
+                  );
+                })()}
                 {/* Temps pause visible si en pause */}
                 {M.st === 'paused' && M.pauseStartedAt && (
                   <div style={{
@@ -530,7 +546,7 @@ function EventsTimeline({ M, onUndo, onEdit }) {
         const realIdx = M.ev.length - 1 - i;
         return (
           <div key={realIdx} className={`mv-ev mv-ev-${e.tp} mv-ev-${e.t || 'none'}`}>
-            <span className="mv-ev-min num">{e.mn}<i>'</i></span>
+            <span className="mv-ev-min num">{MATCH_HELPERS.fmtMatchMinute ? MATCH_HELPERS.fmtMatchMinute(e.mn, e.ch, M.cfg) : (e.mn + "'")}</span>
             <TeamEventBadge side={e.t} M={M}/>
             <div className="mv-ev-body">
               <span className={`mv-ev-tag mv-ev-tag-${e.tp}`}>{eventTagFr(e)}</span>
@@ -674,6 +690,10 @@ function ScreenMatchV2({ go, tweaks }) {
     M.tOff = 0;
     M.st = 'live';
     M.startedAt = Date.now();
+    // Horodatage absolu de la période en cours (1 au démarrage). Référence pour
+    // l'arbitre en cas de contestation post-match.
+    M.periodStartedAt = M.periodStartedAt || {};
+    M.periodStartedAt[1] = Date.now();
     // ⚠️ C'est ICI qu'on déclare officiellement le match comme "en cours".
     // Le pointeur cdd_match_current est positionné maintenant (et pas au bootstrap)
     // pour que les autres écrans (accueil) ne voient pas de fantôme prematch.
@@ -693,7 +713,7 @@ function ScreenMatchV2({ go, tweaks }) {
   const handleInjury = (side) => {
     if (side === 'B') {
       const mn = MATCH_HELPERS.gMin(M);
-      M.ev.push({ tp:'injury', t:'B', mn, pl:'Joueur adversaire', ts: Date.now() });
+      M.ev.push({ tp:'injury', t:'B', mn, ch: M.ch, pl:'Joueur adversaire', ts: Date.now() });
       MATCH_SFX.vibrate(150);
       rerender();
       return;
@@ -704,7 +724,7 @@ function ScreenMatchV2({ go, tweaks }) {
     if (MATCH_HELPERS.setInjured) MATCH_HELPERS.setInjured(M, side, player.id);
     else {
       const mn = MATCH_HELPERS.gMin(M);
-      M.ev.push({ tp:'injury', t: side, mn, pl: MATCH_HELPERS.playerLabel(player), ts: Date.now() });
+      M.ev.push({ tp:'injury', t: side, mn, ch: M.ch, pl: MATCH_HELPERS.playerLabel(player), ts: Date.now() });
     }
     MATCH_SFX.vibrate(150);
     setSubOut(player);
@@ -739,6 +759,12 @@ function ScreenMatchV2({ go, tweaks }) {
         M.pauseTotalMs = (M.pauseTotalMs || 0) + (Date.now() - M.pauseStartedAt);
         M.pauseStartedAt = null;
       }
+      // Capture l'horodatage de reprise de la période (utile à l'arbitre en cas
+      // de contestation). On enregistre une seule fois par période.
+      if (M.inHalftime && !M.periodStartedAt?.[M.ch]) {
+        M.periodStartedAt = M.periodStartedAt || {};
+        M.periodStartedAt[M.ch] = Date.now();
+      }
       M.inHalftime = false; // si on reprend, on sort de la mi-temps
       M.tSt = Date.now();
       M.st = 'live';
@@ -761,7 +787,7 @@ function ScreenMatchV2({ go, tweaks }) {
   const doHalftime = () => {
     const snap = { st:M.st, tOff:M.tOff, tSt:M.tSt, ch:M.ch };
     if (M.st === 'live') M.tOff += Date.now() - M.tSt;
-    M.ev.push({ tp:'half', mn: MATCH_HELPERS.gMin(M), ts: Date.now(), _prev: snap });
+    M.ev.push({ tp:'half', mn: MATCH_HELPERS.gMin(M), ch: M.ch, ts: Date.now(), _prev: snap });
     M.ch++; M.tOff = 0; M.st = 'paused'; M.tSt = Date.now();
     M.pauseStartedAt = Date.now();
     M.inHalftime = true; // #37 — entre 2 mi-temps : bloquer actions
@@ -787,7 +813,7 @@ function ScreenMatchV2({ go, tweaks }) {
   const endMatch = () => {
     const snap = { st:M.st, tOff:M.tOff, tSt:M.tSt, ch:M.ch };
     if (M.st === 'live') M.tOff += Date.now() - M.tSt;
-    M.ev.push({ tp:'end', mn: MATCH_HELPERS.gMin(M), ts: Date.now(), _prev: snap });
+    M.ev.push({ tp:'end', mn: MATCH_HELPERS.gMin(M), ch: M.ch, ts: Date.now(), _prev: snap });
     M.st = 'finished';
     M.endedAt = Date.now();
     MATCH_SFX.playBuzzer();
@@ -821,7 +847,7 @@ function ScreenMatchV2({ go, tweaks }) {
 
     const scorerLbl = '#'+scorer.num+(scorer.first?' '+scorer.first:'');
     let pl = scorerLbl;
-    let evt = { tp:'goal', t: side, mn, scorer: scorerLbl, ts: Date.now() };
+    let evt = { tp:'goal', t: side, mn, ch: M.ch, scorer: scorerLbl, ts: Date.now() };
 
     if (type === 'penalty') {
       evt.penalty = true;
@@ -870,9 +896,9 @@ function ScreenMatchV2({ go, tweaks }) {
     // AUTO 2nd yellow → red
     if (color === 'yellow' && window.MATCH_HELPERS.getYellowsForPlayer?.(M, side, playerLbl) >= 1) {
       if (side === 'A') M.yA++; else M.yB++;
-      M.ev.push({ tp:'yellow', t: side, mn, pl: playerLbl, ts: Date.now() });
+      M.ev.push({ tp:'yellow', t: side, mn, ch: M.ch, pl: playerLbl, ts: Date.now() });
       if (side === 'A') M.rA++; else M.rB++;
-      M.ev.push({ tp:'red', t: side, mn, pl: playerLbl, auto: true, ts: Date.now() });
+      M.ev.push({ tp:'red', t: side, mn, ch: M.ch, pl: playerLbl, auto: true, ts: Date.now() });
       MATCH_SFX.playCard();
       MATCH_SFX.vibrate(300);
       setActiveFlow(null);
@@ -889,7 +915,7 @@ function ScreenMatchV2({ go, tweaks }) {
     // Normal card
     if (color === 'yellow') { if (side === 'A') M.yA++; else M.yB++; }
     else { if (side === 'A') M.rA++; else M.rB++; }
-    M.ev.push({ tp: color, t: side, mn, pl: playerLbl, ts: Date.now() });
+    M.ev.push({ tp: color, t: side, mn, ch: M.ch, pl: playerLbl, ts: Date.now() });
     MATCH_SFX.playCard();
     MATCH_SFX.vibrate(200);
     setActiveFlow(null);
@@ -927,7 +953,7 @@ function ScreenMatchV2({ go, tweaks }) {
     if (side === 'A') M.uA++; else M.uB++;
     const outLbl = MATCH_HELPERS.playerLabel(subOut);
     const inLbl = MATCH_HELPERS.playerLabel(player);
-    M.ev.push({ tp:'sub', t: side, mn, out: outLbl, inn: inLbl, pl: outLbl+' → '+inLbl, ts: Date.now() });
+    M.ev.push({ tp:'sub', t: side, mn, ch: M.ch, out: outLbl, inn: inLbl, pl: outLbl+' → '+inLbl, ts: Date.now() });
 
     // ⚠️ SWAP RÉEL des positions : sans ça, le sortant reste considéré 'sur le terrain'
     // et l'entrant peut être resélectionné comme entrant -> match à 10 joueurs.
@@ -1763,11 +1789,11 @@ function MatchSummaryShareModal({ M, onClose }) {
       const existing = scorers.find(s => s.label === label);
       if (existing) {
         existing.count++;
-        existing.minutes.push(e.mn);
+        existing.minutes.push({ mn: e.mn, ch: e.ch });
       } else {
         const pid = window.CDD_COACH?._resolvePlayerIdFromLabel?.(label, lineup);
         const player = pid ? (window.CDD_PLAYERS || []).find(p => p.id === pid) : null;
-        scorers.push({ label, count: 1, minutes: [e.mn], player, isPenalty: !!e.penalty });
+        scorers.push({ label, count: 1, minutes: [{ mn: e.mn, ch: e.ch }], player, isPenalty: !!e.penalty });
       }
     }
   });
@@ -1927,7 +1953,11 @@ function MatchSummaryShareModal({ M, onClose }) {
                       {s.player ? `${s.player.first} ${s.player.last || ''}`.trim() : s.label}
                       {s.count > 1 && <span style={{color:primary, marginLeft:6}}>×{s.count}</span>}
                     </span>
-                    <span style={{opacity:0.55, fontSize:11}}>{s.minutes.join("' ")}'</span>
+                    <span style={{opacity:0.55, fontSize:11}}>
+                      {s.minutes.map(min =>
+                        MATCH_HELPERS.fmtMatchMinute ? MATCH_HELPERS.fmtMatchMinute(min.mn, min.ch, M.cfg) : `${min.mn}'`
+                      ).join(' · ')}
+                    </span>
                   </div>
                 ))}
               </div>

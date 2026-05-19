@@ -170,6 +170,25 @@ function isInHalftime(M) {
   return !!(M && M.inHalftime && M.st === 'paused' && !M.notStarted && M.ch < M.cfg.hs);
 }
 
+// Format réglementaire de la minute d'un évènement.
+// Mn = minute cumulée depuis le coup d'envoi (gMin), ch = période où l'event a eu lieu.
+//   Période 1 normale (mn <= hd)      → "12'"
+//   Période 1 additionnelle (mn > hd) → "45 + 2'"
+//   Période 2 normale (mn <= 2*hd)    → "47'", "78'"
+//   Période 2 additionnelle           → "90 + 4'"
+// Pour les events anciens sans champ ch : on infère depuis la minute.
+function fmtMatchMinute(mn, ch, cfg) {
+  const hd = (cfg && cfg.hd) || 45;
+  const hs = (cfg && cfg.hs) || 2;
+  let period = ch;
+  if (period == null) {
+    period = Math.min(hs, Math.max(1, Math.ceil((mn || 0) / hd)));
+  }
+  const periodEnd = hd * period;
+  if (mn <= periodEnd) return `${mn}'`;
+  return `${periodEnd} + ${mn - periodEnd}'`;
+}
+
 // Player helpers
 function isPlayerOut(M, t, playerLabel) {
   return M.ev.some(e => e.t === t && e.tp === 'red' && e.pl === playerLabel);
@@ -438,7 +457,7 @@ Object.assign(window.MATCH_HELPERS, {
   requestWakeLock, releaseWakeLock, goFullscreen, exitFullscreen,
   startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
   getLiveMatch, listCoachFinishedMatches, computeExploits, editEvent,
-  gPauseMs, gRealMs, fmtMMSS, isInHalftime,
+  gPauseMs, gRealMs, fmtMMSS, isInHalftime, fmtMatchMinute,
 });
 if (!window.MATCH_SFX) window.MATCH_SFX = {};
 Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });
