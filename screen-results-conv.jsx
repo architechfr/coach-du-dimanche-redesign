@@ -360,6 +360,54 @@ function ScreenConvocations({ go, tweaks }) {
   }, { yes:0, no:0, may:0 });
   const totalResponded = respCounts.yes + respCounts.no + respCounts.may;
 
+  // ─── Suivi présences : liste actionnable des non-respondants ───
+  // Le coach voit qui relancer et clique 1× pour WhatsApper le parent.
+  const convocPlayers = [...starterPlayers, ...benchPlayers];
+  const pendingPlayers = convocPlayers.filter(p => !parentResponses[p.id]);
+  const responseRate = convocPlayers.length > 0
+    ? Math.round((totalResponded / convocPlayers.length) * 100)
+    : 0;
+  // Lien lecteur public (token persistant, partagé via la page Partage).
+  const shareToken = (() => {
+    try {
+      let t = localStorage.getItem('cdd_share_token');
+      if (!t) {
+        t = Math.random().toString(36).slice(2, 9).toUpperCase();
+        localStorage.setItem('cdd_share_token', t);
+      }
+      return t;
+    } catch (e) { return 'PROTO123'; }
+  })();
+  const lecteurUrl = `https://coach-du-dimanche.app/lecteur/?t=${shareToken}`;
+  // Normalise un numéro français vers le format E.164 pour wa.me.
+  // '06 12 34 56 78' → '33612345678'. Si déjà international ou non-FR, laisse tel quel.
+  const normalizePhone = (raw) => {
+    if (!raw) return '';
+    const digits = String(raw).replace(/[^\d+]/g, '');
+    if (digits.startsWith('+')) return digits.slice(1);
+    if (digits.startsWith('33')) return digits;
+    if (digits.startsWith('0') && digits.length === 10) return '33' + digits.slice(1);
+    return digits;
+  };
+  const buildRelanceMsg = (playerFirst) => (
+    `Salut ! Petit rappel pour la convoc ${(CDD_CLUB && CDD_CLUB.team) || ''} ${next.home || ''} vs ${next.away || ''} (${next.date || ''}).\n\n` +
+    `Tu peux confirmer la présence de ${playerFirst} en 1 tap ici :\n${lecteurUrl}\n\nMerci 🙏`
+  );
+  const openRelanceWhatsApp = (player) => {
+    const phone = normalizePhone(player.parentPhone);
+    const txt = encodeURIComponent(buildRelanceMsg(player.first || 'ton enfant'));
+    const url = phone ? `https://wa.me/${phone}?text=${txt}` : `https://wa.me/?text=${txt}`;
+    window.open(url, '_blank');
+  };
+  const openRelanceAll = () => {
+    // Pas d'envoi groupé possible avec wa.me. On copie le message générique dans le presse-papier
+    // et on ouvre la page Partage pour le canal de diffusion choisi par le coach.
+    const txt = buildRelanceMsg('votre enfant');
+    try { navigator.clipboard?.writeText(txt); } catch (e) {}
+    go('share');
+  };
+  const [pendingExpanded, setPendingExpanded] = useState(true);
+
   return (
     <div className="scr scr-conv fade-in" data-screen-label="07 Convocations">
 
@@ -394,25 +442,120 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>
       </div>
 
-      {/* Réponses parents live (Firestore) */}
+      {/* Suivi présences — bandeau + section actionnable non-respondants */}
       <div className="cv-parent-bar" style={{
-        margin:"8px 14px 14px", padding:"10px 12px",
-        background:"rgba(200,241,105,0.06)", borderRadius:10, border:"1px solid rgba(200,241,105,0.18)",
-        display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:12
+        margin:"8px 14px 14px", padding:"12px 14px",
+        background:"rgba(200,241,105,0.06)", borderRadius:12, border:"1px solid rgba(200,241,105,0.18)",
       }}>
-        <span style={{fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", opacity:0.8}}>
-          Réponses parents
-        </span>
-        <span style={{display:"flex", gap:12, fontSize:13}}>
-          <span title="Présents">👍 <b className="num">{respCounts.yes}</b></span>
-          <span title="Absents">👎 <b className="num">{respCounts.no}</b></span>
-          <span title="Peut-être">❓ <b className="num">{respCounts.may}</b></span>
-          <span style={{opacity:0.5}}>·</span>
-          <span title="Total répondu">
-            <b className="num">{totalResponded}</b>
-            <span style={{opacity:0.5}}>/{starterPlayers.length + benchPlayers.length}</span>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:12}}>
+          <span style={{fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", opacity:0.85}}>
+            Suivi présences
           </span>
-        </span>
+          <span style={{display:"flex", gap:10, fontSize:13, alignItems:"center"}}>
+            <span title="Présents" style={{color:"#c8f169"}}>👍 <b className="num">{respCounts.yes}</b></span>
+            <span title="Absents" style={{color:"#ff8a8a"}}>👎 <b className="num">{respCounts.no}</b></span>
+            <span title="Peut-être" style={{color:"#ffc788"}}>❓ <b className="num">{respCounts.may}</b></span>
+            <span style={{opacity:0.4}}>·</span>
+            <span title="Total répondu">
+              <b className="num">{totalResponded}</b>
+              <span style={{opacity:0.5}}>/{convocPlayers.length}</span>
+            </span>
+          </span>
+        </div>
+        {/* Barre de progression */}
+        <div style={{
+          marginTop:8, height:6, borderRadius:3,
+          background:"rgba(255,255,255,0.08)", overflow:"hidden",
+        }}>
+          <div style={{
+            width: `${responseRate}%`, height:"100%",
+            background: responseRate >= 80 ? "#c8f169" : responseRate >= 50 ? "#ffc788" : "#ff8a8a",
+            transition:"width .3s",
+          }}/>
+        </div>
+        <div style={{marginTop:6, fontSize:11, opacity:0.65, display:"flex", justifyContent:"space-between"}}>
+          <span>{responseRate}% des parents ont répondu</span>
+          {pendingPlayers.length > 0 && (
+            <button
+              onClick={() => setPendingExpanded(e => !e)}
+              style={{
+                background:"transparent", border:"none", color:"#c8f169",
+                fontSize:11, fontWeight:700, cursor:"pointer", padding:0,
+              }}>
+              {pendingExpanded ? '▾' : '▸'} {pendingPlayers.length} à relancer
+            </button>
+          )}
+        </div>
+        {/* Liste des non-respondants — visibles par défaut quand il y en a */}
+        {pendingPlayers.length > 0 && pendingExpanded && (
+          <div style={{
+            marginTop:10, paddingTop:10,
+            borderTop:"1px solid rgba(255,255,255,0.08)",
+          }}>
+            <div style={{display:"flex", flexDirection:"column", gap:6}}>
+              {pendingPlayers.map(p => {
+                const hasPhone = !!normalizePhone(p.parentPhone);
+                return (
+                  <div key={p.id} style={{
+                    display:"flex", justifyContent:"space-between", alignItems:"center",
+                    padding:"6px 10px", background:"rgba(255,255,255,0.03)",
+                    border:"1px solid rgba(255,255,255,0.06)", borderRadius:8,
+                  }}>
+                    <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
+                      <span style={{
+                        minWidth:24, height:24, borderRadius:12,
+                        background:"rgba(255,255,255,0.06)",
+                        display:"inline-flex", alignItems:"center", justifyContent:"center",
+                        fontWeight:900, fontSize:11, color:"rgba(255,255,255,0.7)",
+                      }}>{p.num}</span>
+                      <span style={{fontSize:13, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                        {p.first} {p.last && <span style={{opacity:0.6, fontWeight:500}}>{p.last.toUpperCase()}</span>}
+                      </span>
+                      {!hasPhone && (
+                        <span title="Numéro parent manquant — clic ouvre WhatsApp sans destinataire pré-rempli" style={{
+                          fontSize:9.5, padding:"2px 6px", borderRadius:6,
+                          background:"rgba(255,170,40,0.12)", color:"#ffc788",
+                          border:"1px solid rgba(255,170,40,0.25)", flexShrink:0,
+                        }}>📞 ?</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => openRelanceWhatsApp(p)}
+                      title={hasPhone ? `Relancer ${p.first} sur WhatsApp` : "Aucun numéro parent — choisir le contact dans WhatsApp"}
+                      style={{
+                        flexShrink:0, padding:"5px 10px", borderRadius:7,
+                        background:"#25D366", color:"#fff", border:"none",
+                        fontSize:11, fontWeight:800, cursor:"pointer",
+                        display:"inline-flex", alignItems:"center", gap:4,
+                      }}>
+                      💬 Relancer
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={openRelanceAll}
+              style={{
+                marginTop:10, width:"100%", padding:"8px 12px", borderRadius:8,
+                background:"rgba(200,241,105,0.10)", color:"#c8f169",
+                border:"1px solid rgba(200,241,105,0.30)",
+                fontSize:11.5, fontWeight:700, cursor:"pointer",
+                letterSpacing:"0.04em",
+              }}>
+              📣 Relance groupée (message copié + page partage)
+            </button>
+          </div>
+        )}
+        {pendingPlayers.length === 0 && convocPlayers.length > 0 && (
+          <div style={{
+            marginTop:10, padding:"8px 10px", borderRadius:8,
+            background:"rgba(200,241,105,0.10)", border:"1px solid rgba(200,241,105,0.25)",
+            fontSize:12, color:"#c8f169", fontWeight:700, textAlign:"center",
+          }}>
+            ✓ Tous les parents ont répondu
+          </div>
+        )}
       </div>
 
       {/* Bandeau Compo type vs Convocation match (séparation des 3 couches) */}
