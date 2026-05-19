@@ -81,16 +81,23 @@ function ScreenEffectif({ go, tweaks }) {
       <div className="ef-banner">
         <div className="ef-banner-bg"/>
         <div className="ef-banner-grad"/>
-        <div className="ef-banner-in">
-          <div className="ef-banner-k">EFFECTIF · 2025-26</div>
-          <div className="ef-banner-title">{CDD_CLUB.team} · {CDD_CLUB.short}</div>
-          <div className="ef-banner-stats">
-            <span><b className="num">{total}</b> joueurs</span>
-            <span className="dot">●</span>
-            <span><b className="num">{avgOvr}</b> moy.</span>
-            <span className="dot">●</span>
-            <span><b className="num">{availableCount}</b> dispo</span>
-            {starsCount > 0 && <><span className="dot">●</span><span><b>{starsCount}</b> stars</span></>}
+        <div className="ef-banner-in" style={{display:'flex', alignItems:'center', gap:14}}>
+          {window.ClubBadge && (
+            <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                              clubName={CDD_CLUB.short || CDD_CLUB.name}
+                              colors={CDD_CLUB.colors} size={56} shape="square"/>
+          )}
+          <div style={{flex:1, minWidth:0}}>
+            <div className="ef-banner-k">EFFECTIF · 2025-26</div>
+            <div className="ef-banner-title">{CDD_CLUB.team} · {CDD_CLUB.short}</div>
+            <div className="ef-banner-stats">
+              <span><b className="num">{total}</b> joueurs</span>
+              <span className="dot">●</span>
+              <span><b className="num">{avgOvr}</b> moy.</span>
+              <span className="dot">●</span>
+              <span><b className="num">{availableCount}</b> dispo</span>
+              {starsCount > 0 && <><span className="dot">●</span><span><b>{starsCount}</b> stars</span></>}
+            </div>
           </div>
         </div>
       </div>

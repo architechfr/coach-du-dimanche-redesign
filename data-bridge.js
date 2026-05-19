@@ -865,6 +865,11 @@ async function applyFFFData(fffCfg, clubName, players) {
         away: next.away,
         homeBadge: next.home[0] || '?',
         awayBadge: next.away[0] || '?',
+        // Logos FFF (fournis par fff-fetcher quand l'API DOFA en a). Servent
+        // au composant ClubBadge via la prop forceLogo pour afficher le vrai
+        // logo de l'adversaire dans les ecrans Prepa / Lecteur / Vote.
+        homeLogoDataUrl: next.homeLogo || null,
+        awayLogoDataUrl: next.awayLogo || null,
         venue: next.venue === 'H' ? 'Domicile' : 'Extérieur',
         weather: '',
         competition: fffCfg.label,

@@ -335,10 +335,18 @@ function App() {
             const teamCat = (window.CDD?.getActiveTeam?.()?.name)
                          || (window.CDD?.getActiveTeam?.()?.category) || '';
             const homeTitle = teamCat ? `${clubShort} · ${teamCat}` : clubShort;
+            const activeClub = window.CDD?.getActiveClub?.() || null;
+            const clubColors = window.CDD_CLUB?.colors || [];
             return (
               <div className="app-hdr" style={{paddingTop: 0}}>
                 <button className="app-hdr-btn" onClick={() => go("set")} aria-label="Réglages">⚙</button>
-                <div className="app-hdr-title" style={{fontSize:14}}>{homeTitle}</div>
+                <div className="app-hdr-title" style={{fontSize:14, display:'flex', alignItems:'center', gap:8, justifyContent:'center'}}>
+                  {window.ClubBadge && (
+                    <window.ClubBadge clubId={activeClub?.id} clubName={clubShort}
+                                      colors={clubColors} size={22} shape="square"/>
+                  )}
+                  <span>{homeTitle}</span>
+                </div>
                 <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
               </div>
             );
@@ -505,11 +513,30 @@ function ScreenFicheMatch({ go, tweaks }) {
         </div>
         {(() => {
           const myShort = m.home || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
+          const myColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
+          const myClubId = window.CDD?.getActiveClub?.()?.id;
+          const homeName = m.venue === "H" ? myShort : m.opp;
+          const awayName = m.venue === "H" ? m.opp   : myShort;
+          const homeIsMe = m.venue === "H";
           return (
-            <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:16, fontSize:18, fontWeight:700}}>
-              <span>{m.venue === "H" ? myShort : m.opp}</span>
+            <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:12, fontSize:18, fontWeight:700, flexWrap:'wrap'}}>
+              {window.ClubBadge && (
+                <window.ClubBadge clubId={homeIsMe ? myClubId : null}
+                                  clubName={homeName}
+                                  colors={homeIsMe ? myColors : ['#3b82f6','#fff']}
+                                  forceLogo={homeIsMe ? null : (m.awayLogoDataUrl || null)}
+                                  size={28} shape="circle"/>
+              )}
+              <span>{homeName}</span>
               <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{m.score[0]}–{m.score[1]}</span>
-              <span>{m.venue === "H" ? m.opp : myShort}</span>
+              <span>{awayName}</span>
+              {window.ClubBadge && (
+                <window.ClubBadge clubId={homeIsMe ? null : myClubId}
+                                  clubName={awayName}
+                                  colors={homeIsMe ? ['#3b82f6','#fff'] : myColors}
+                                  forceLogo={homeIsMe ? (m.awayLogoDataUrl || null) : null}
+                                  size={28} shape="circle"/>
+              )}
             </div>
           );
         })()}

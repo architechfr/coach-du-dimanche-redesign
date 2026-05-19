@@ -215,11 +215,23 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           : (club.short || club.name || 'CO').slice(0, 2).toUpperCase();
         const displayName = coachName || `Coach ${club.name || ''}`.trim() || 'Coach';
         const roleLabel = window.CDD_ROLES?.roleLabel?.(role) || role.toUpperCase();
+        const activeClub = window.CDD?.getActiveClub?.() || null;
+        const clubColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
         return (
           <div className="set-profile">
-            <div className="set-avatar">
+            <div className="set-avatar" style={{position:'relative'}}>
               <div className="set-avatar-i">{initials}</div>
               <div className="set-avatar-badge">{roleLabel}</div>
+              {/* Petit badge club en sur-impression — rappel visuel du club rattaché */}
+              {window.ClubBadge && activeClub?.id && (
+                <div style={{
+                  position:'absolute', bottom:-4, right:-4,
+                  background:'#0a0e14', borderRadius:8, padding:2,
+                }}>
+                  <window.ClubBadge clubId={activeClub.id} clubName={club.short || club.name}
+                                    colors={clubColors} size={24} shape="square"/>
+                </div>
+              )}
             </div>
             <div className="set-profile-info">
               <div className="set-profile-name">{displayName}</div>

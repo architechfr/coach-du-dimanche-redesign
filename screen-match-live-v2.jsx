@@ -501,7 +501,12 @@ function TeamEventBadge({ side, M }) {
     }}/>;
   }
   const isA = side === 'A';
-  const clubLogo = isA ? (window.CDD_CLUB && window.CDD_CLUB.logoDataUrl) : null;
+  // Cote A : logo de mon club. Cote B : logo de l'adversaire si l'API FFF
+  // l'a fourni (CDD_NEXT_MATCH.awayLogoDataUrl) ou si configure manuellement
+  // sur le match (team.logoDataUrl).
+  const clubLogo = isA
+    ? (window.CDD_LOGO?.getForActiveClub?.() || (window.CDD_CLUB && window.CDD_CLUB.logoDataUrl))
+    : (team?.logoDataUrl || window.CDD_NEXT_MATCH?.awayLogoDataUrl || null);
   if (clubLogo) {
     return (
       <span style={{

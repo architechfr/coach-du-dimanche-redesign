@@ -33,13 +33,27 @@ function ScreenPrep({ go, tweaks }) {
           <div className="prep-hero-title">{next.competition}</div>
           <div className="prep-hero-vs">
             <span className="prep-team me">
-              <i className="prep-badge me">{(CDD_CLUB?.short || 'F').charAt(0)}</i>
+              {window.ClubBadge ? (
+                <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                  clubName={CDD_CLUB?.short || CDD_CLUB?.name || 'F'}
+                                  colors={CDD_CLUB?.colors} size={48} shape="circle"/>
+              ) : (
+                <i className="prep-badge me">{(CDD_CLUB?.short || 'F').charAt(0)}</i>
+              )}
               <em>{CDD_CLUB?.short || 'MON CLUB'}</em>
             </span>
             <span className="prep-vs-l">VS</span>
             <span className="prep-team them">
               <em>{noUpcoming ? 'À DÉTERMINER' : oppName}</em>
-              <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>
+              {window.ClubBadge ? (
+                <window.ClubBadge clubId={null}
+                                  clubName={noUpcoming ? '?' : (oppName || '?')}
+                                  colors={['#3b82f6','#fff']}
+                                  forceLogo={next?.awayLogoDataUrl || null}
+                                  size={48} shape="circle"/>
+              ) : (
+                <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>
+              )}
             </span>
           </div>
           <div className="prep-hero-when">
@@ -373,20 +387,28 @@ function ScreenLecteur({ go, tweaks }) {
       {tab === "prochain" && (() => {
         const myShort = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
         const oppShort = (next && next.away && next.away !== 'À déterminer') ? next.away : 'À venir';
-        const meInitial = (myShort[0] || '?').toUpperCase();
-        const themInitial = (oppShort[0] || '?').toUpperCase();
+        const myColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
         return (
         <div className="lec-prochain">
           <div className="lec-card">
             <div className="lec-card-k">PROCHAIN MATCH · J-{next.daysLeft}</div>
             <div className="lec-card-vs">
               <div className="lec-team">
-                <div className="lec-badge me">{meInitial}</div>
+                {window.ClubBadge && (
+                  <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                    clubName={myShort} colors={myColors}
+                                    size={42} shape="circle"/>
+                )}
                 <span>{myShort}</span>
               </div>
               <div className="lec-vs">VS</div>
               <div className="lec-team">
-                <div className="lec-badge them">{themInitial}</div>
+                {window.ClubBadge && (
+                  <window.ClubBadge clubId={null} clubName={oppShort}
+                                    colors={['#3b82f6','#fff']}
+                                    forceLogo={next?.awayLogoDataUrl || null}
+                                    size={42} shape="circle"/>
+                )}
                 <span>{oppShort}</span>
               </div>
             </div>
@@ -647,6 +669,8 @@ function ScreenVote({ go, tweaks }) {
         const dateLabel = M.endedAt
           ? new Date(M.endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'long' })
           : '';
+        const myColors = [M.tA?.c || '#c8f169', M.tA?.c2 || '#0a0e14'];
+        const oppColors = [M.tB?.c || '#3b82f6', M.tB?.c2 || '#fff'];
         return (
           <div className="vote-hero">
             <div className="vote-hero-bg"/>
@@ -654,10 +678,22 @@ function ScreenVote({ go, tweaks }) {
             <div className="vote-hero-in">
               <div className="vote-hero-k">VOTE · 48H</div>
               <div className="vote-hero-title">Note les joueurs<br/>du match</div>
-              <div className="vote-hero-score">
+              <div className="vote-hero-score" style={{display:'flex', alignItems:'center', justifyContent:'center', gap:14, flexWrap:'wrap'}}>
+                {window.ClubBadge && (
+                  <window.ClubBadge clubId={M.clubId || window.CDD?.getActiveClub?.()?.id}
+                                    clubName={M.tA?.n || 'F'} colors={myColors}
+                                    forceLogo={M.tA?.logoDataUrl || null}
+                                    size={36} shape="circle"/>
+                )}
                 <span>{M.tA?.n || 'Mon équipe'}</span>
                 <b className="num">{M.sA||0}–{M.sB||0}</b>
                 <span>{M.tB?.n || 'Adversaire'}</span>
+                {window.ClubBadge && (
+                  <window.ClubBadge clubId={null}
+                                    clubName={M.tB?.n || '?'} colors={oppColors}
+                                    forceLogo={M.tB?.logoDataUrl || null}
+                                    size={36} shape="circle"/>
+                )}
               </div>
               {(dateLabel || teamLabel) && (
                 <div className="vote-hero-sub">

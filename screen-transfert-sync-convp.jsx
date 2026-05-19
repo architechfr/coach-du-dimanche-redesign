@@ -956,12 +956,26 @@ function ScreenConvoParent({ go, tweaks }) {
         <div className="cvp-match-k">MATCH</div>
         <div className="cvp-match-vs">
           <div className="cvp-match-team">
-            <div className="cvp-match-badge me">{meInit}</div>
+            {window.ClubBadge ? (
+              <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                clubName={myShort}
+                                colors={(window.CDD_CLUB && window.CDD_CLUB.colors) || []}
+                                size={40} shape="circle"/>
+            ) : (
+              <div className="cvp-match-badge me">{meInit}</div>
+            )}
             <span>{myShort}</span>
           </div>
           <div className="cvp-match-vs-l">VS</div>
           <div className="cvp-match-team">
-            <div className="cvp-match-badge them">{themInit}</div>
+            {window.ClubBadge ? (
+              <window.ClubBadge clubId={null} clubName={oppShort}
+                                colors={['#3b82f6','#fff']}
+                                forceLogo={next?.awayLogoDataUrl || null}
+                                size={40} shape="circle"/>
+            ) : (
+              <div className="cvp-match-badge them">{themInit}</div>
+            )}
             <span>{oppShort}</span>
           </div>
         </div>

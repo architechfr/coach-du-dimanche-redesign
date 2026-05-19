@@ -150,13 +150,32 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
         <div className="pc-holo" />
       )}
 
-      {/* TOP : OVR + POS */}
-      <div className="pc-tl">
-        <div className="pc-ovr" style={{ color: r.ink }}>{ovr}</div>
-        <div className="pc-pos" style={{ color: r.ink }}>{POSITION_LABEL[player.pos] || player.pos}</div>
-        <div className="pc-flag" style={{ background: r.ink, opacity:.5 }} />
-        <div className="pc-club" style={{ background: r.ink, opacity:.5 }} />
-      </div>
+      {/* TOP : OVR + POS + flag + petit logo club discret */}
+      {(() => {
+        // Logo discret du club dans le carre pc-club (placeholder gris auparavant).
+        // Prend le club actif au render — la carte s'affiche toujours dans le
+        // contexte d'un club, donc c'est le bon logo. Si pas de logo configure,
+        // on garde le placeholder gris original.
+        const activeClubId = window.CDD?.getActiveClub?.()?.id;
+        const clubLogo = activeClubId ? window.CDD_LOGO?.getForClub?.(activeClubId) : null;
+        return (
+          <div className="pc-tl">
+            <div className="pc-ovr" style={{ color: r.ink }}>{ovr}</div>
+            <div className="pc-pos" style={{ color: r.ink }}>{POSITION_LABEL[player.pos] || player.pos}</div>
+            <div className="pc-flag" style={{ background: r.ink, opacity:.5 }} />
+            <div className="pc-club" style={{
+              background: clubLogo ? '#fff' : r.ink,
+              opacity: clubLogo ? 1 : .5,
+              overflow:'hidden', borderRadius:3,
+            }}>
+              {clubLogo && (
+                <img src={clubLogo} alt=""
+                     style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* PHOTO */}
       <div className="pc-photo">

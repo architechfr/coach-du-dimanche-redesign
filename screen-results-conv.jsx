@@ -53,8 +53,13 @@ function ScreenResults({ go, tweaks }) {
             )}
           </div>
           <div className="rs-hero-title">CHAMPIONNAT<br/>2025–2026</div>
-          <div className="rs-hero-sub">
-            {CDD_CLUB.name} {CDD_CLUB.rank ? <>· {CDD_CLUB.rank}<sup>e</sup> · {CDD_CLUB.pts} pts</> : <></>}
+          <div className="rs-hero-sub" style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+            {window.ClubBadge && (
+              <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                clubName={CDD_CLUB.short || CDD_CLUB.name}
+                                colors={CDD_CLUB.colors} size={24} shape="square"/>
+            )}
+            <span>{CDD_CLUB.name} {CDD_CLUB.rank ? <>· {CDD_CLUB.rank}<sup>e</sup> · {CDD_CLUB.pts} pts</> : <></>}</span>
             {fffSource && (
               <span className={`rs-source-tag rs-source-${fffSource}`}>
                 {fffSource === 'live' && <>● live</>}
