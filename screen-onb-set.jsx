@@ -191,12 +191,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       alert("Sur iPhone : tape ↑ puis 'Sur l'écran d'accueil'.\nSur Android : menu Chrome → 'Ajouter à l'écran d'accueil'.");
     }
   };
-  const editProfile = () => {
-    const name = prompt("Ton nom :", club.coach || "");
-    if (!name) return;
-    localStorage.setItem("cdd_coach_name", name);
-    alert("Nom enregistré. Recharge pour voir.");
-  };
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const editProfile = () => setShowProfileEdit(true);
 
   const accentOptions = [
     { id:"#c8f169", label:"Néon lime",  ink:"#062012" },
@@ -210,18 +206,51 @@ function ScreenSettings({ go, tweaks, setTweak }) {
   return (
     <div className="scr scr-set fade-in" data-screen-label="09 Settings">
 
-      <div className="set-profile">
-        <div className="set-avatar">
-          <div className="set-avatar-i">FC</div>
-          <div className="set-avatar-badge">COACH</div>
-        </div>
-        <div className="set-profile-info">
-          <div className="set-profile-name">{localStorage.getItem("cdd_coach_name") || club.coach}</div>
-          <div className="set-profile-club">{club.name} · {club.team}</div>
-          <div className="set-profile-since">Membre depuis Sept. 2024</div>
-        </div>
-        <button className="set-edit" onClick={editProfile}>✎</button>
-      </div>
+      {(() => {
+        const coachName = (localStorage.getItem("cdd_coach_name") || "").trim();
+        const userEmail = (localStorage.getItem("cdd_user_email") || "").trim();
+        const initials = coachName
+          ? coachName.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
+          : (club.short || club.name || 'CO').slice(0, 2).toUpperCase();
+        const displayName = coachName || `Coach ${club.name || ''}`.trim() || 'Coach';
+        const roleLabel = window.CDD_ROLES?.roleLabel?.(role) || role.toUpperCase();
+        return (
+          <div className="set-profile">
+            <div className="set-avatar">
+              <div className="set-avatar-i">{initials}</div>
+              <div className="set-avatar-badge">{roleLabel}</div>
+            </div>
+            <div className="set-profile-info">
+              <div className="set-profile-name">{displayName}</div>
+              <div className="set-profile-club">{club.name} · {club.team}</div>
+              <div className="set-profile-since">
+                {userEmail || (
+                  <span style={{color:'#fbbf24'}}>📧 Email non configuré — touche ✎ pour le renseigner</span>
+                )}
+              </div>
+            </div>
+            <button className="set-edit" onClick={editProfile}>✎</button>
+          </div>
+        );
+      })()}
+
+      {showProfileEdit && (
+        <ProfileEditModal
+          initialName={localStorage.getItem("cdd_coach_name") || ""}
+          initialEmail={localStorage.getItem("cdd_user_email") || ""}
+          onClose={() => setShowProfileEdit(false)}
+          onSave={({ name, email }) => {
+            if (name)  localStorage.setItem('cdd_coach_name', name);
+            else       localStorage.removeItem('cdd_coach_name');
+            if (email) localStorage.setItem('cdd_user_email', email);
+            else       localStorage.removeItem('cdd_user_email');
+            // Patch live des globals pour effet immédiat
+            window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+            if (window.CDD_REBUILD) window.CDD_REBUILD();
+            setRefresh(x => x + 1);
+            setShowProfileEdit(false);
+          }}/>
+      )}
 
       <div className="set-sec">
         <div className="set-sec-k">COMPTE</div>
@@ -648,6 +677,94 @@ function AdminInventoryPanel({ onClose }) {
                 <span style={{opacity:0.7, fontVariantNumeric:'tabular-nums'}}>{fmtBytes(bytes)}</span>
               </div>
             ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modale d'édition profil coach (nom + email) ───
+// Préfigure la Phase 3 : à terme l'email sera utilisé par Firebase Auth.
+// Aujourd'hui sert juste à compléter le profil affiché localement.
+function ProfileEditModal({ initialName, initialEmail, onClose, onSave }) {
+  const [name, setName] = React.useState(initialName || '');
+  const [email, setEmail] = React.useState(initialEmail || '');
+  const emailValid = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:500,
+      display:'flex', alignItems:'flex-start', justifyContent:'center', padding:20, overflow:'auto',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', maxWidth:440, background:'#0B1320', borderRadius:16,
+        border:'1px solid rgba(255,255,255,0.12)', padding:22, color:'#fff', marginTop:60,
+      }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
+          <div>
+            <div style={{fontSize:10, fontWeight:800, letterSpacing:'.12em', color:'#c8f169', textTransform:'uppercase'}}>
+              Mon profil
+            </div>
+            <div style={{fontSize:18, fontWeight:900, marginTop:2}}>Compléter mes infos</div>
+          </div>
+          <button onClick={onClose} style={{
+            background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.18)',
+            color:'#fff', width:32, height:32, borderRadius:16, cursor:'pointer', fontSize:16,
+          }}>✕</button>
+        </div>
+
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          <label style={{display:'flex', flexDirection:'column', gap:6}}>
+            <span style={{fontSize:11, fontWeight:800, letterSpacing:'.08em', color:'rgba(255,255,255,0.65)', textTransform:'uppercase'}}>
+              Ton nom (affiché dans l'app)
+            </span>
+            <input type="text" value={name} onChange={e => setName(e.target.value)}
+                   placeholder="Florian Clarion"
+                   autoFocus
+                   style={{
+                     width:'100%', padding:'12px 14px', borderRadius:10,
+                     background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.14)',
+                     color:'#fff', fontSize:15, outline:'none', boxSizing:'border-box',
+                   }}/>
+          </label>
+
+          <label style={{display:'flex', flexDirection:'column', gap:6}}>
+            <span style={{fontSize:11, fontWeight:800, letterSpacing:'.08em', color:'rgba(255,255,255,0.65)', textTransform:'uppercase'}}>
+              Email (sera utilisé pour la sync cloud Phase 3)
+            </span>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                   placeholder="ton.email@gmail.com"
+                   style={{
+                     width:'100%', padding:'12px 14px', borderRadius:10,
+                     background:'rgba(255,255,255,0.06)',
+                     border:`1px solid ${emailValid ? 'rgba(255,255,255,0.14)' : 'rgba(255,107,107,0.5)'}`,
+                     color:'#fff', fontSize:15, outline:'none', boxSizing:'border-box',
+                   }}/>
+            {!emailValid && (
+              <span style={{fontSize:11, color:'#ff8a8a'}}>
+                ⚠ Format email invalide
+              </span>
+            )}
+            <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)'}}>
+              💡 Renseigne <code style={{color:'#c8f169'}}>archi.tech.fr@gmail.com</code> pour avoir le rôle Owner.
+            </span>
+          </label>
+        </div>
+
+        <div style={{display:'flex', gap:8, marginTop:20}}>
+          <button onClick={onClose} style={{
+            flex:1, padding:'12px', borderRadius:10,
+            background:'rgba(255,255,255,0.06)', color:'#fff',
+            border:'1px solid rgba(255,255,255,0.14)', cursor:'pointer',
+            fontWeight:700, fontSize:13,
+          }}>Annuler</button>
+          <button onClick={() => emailValid && onSave({ name: name.trim(), email: email.trim() })}
+                  disabled={!emailValid} style={{
+            flex:2, padding:'12px', borderRadius:10,
+            background: emailValid ? '#c8f169' : 'rgba(200,241,105,0.3)',
+            color:'#0B1320', border:'none', cursor: emailValid ? 'pointer' : 'not-allowed',
+            fontWeight:800, fontSize:13,
+          }}>💾 Enregistrer</button>
         </div>
       </div>
     </div>
