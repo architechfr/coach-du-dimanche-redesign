@@ -251,6 +251,81 @@ function ScreenSyncCloud({ go, tweaks }) {
   // clics de switch déclenchent immédiatement le rafraîchissement de l'UI.
   const [activeClubId, setActiveClubId] = useState(currentClubId);
   const [activeTeamId, setActiveTeamId] = useState(currentTeamId);
+  const [healTick, setHealTick] = useState(0);
+
+  // ── SELF-HEALING : self-migration au mount de l'écran.
+  // Si l'user a un email ET pas de membership ET CDD_CLUB est disponible
+  // (data-bridge a fini de construire), créer la membership maintenant.
+  // C'est le fallback ultime quand la migration au boot a été aveugle
+  // (data-bridge pas encore prêt) ou quand les données sont uniquement
+  // dans CDD_CLUB (pas dans arb_clubs/arb_teams).
+  React.useEffect(() => {
+    const email = window.CDD_ROLES?.getCurrentEmail?.();
+    if (!email) return; // mode visiteur : on ne touche à rien
+    const myMemberships = window.CDD_ROLES?.listMemberships?.(email) || [];
+    if (myMemberships.length > 0) return; // déjà migré
+
+    // Étape 1 : tenter la migration normale (4 sources)
+    const result = window.CDD_ROLES?.runMigrationIfNeeded?.();
+    if (result?.added > 0) {
+      console.info('[SyncCloud] self-healing : migration normale a créé', result.added, 'membership(s)');
+      setHealTick(t => t + 1);
+      return;
+    }
+
+    // Étape 2 : fallback synthétique. Si CDD_CLUB existe (donc le coach
+    // voit bien son club dans l'app ailleurs), persiste-le en arb_clubs et
+    // crée la membership. Permet de récupérer même quand les sources
+    // brutes sont introuvables.
+    if (window.CDD_CLUB?.name) {
+      try {
+        const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+        const clubId = ctx.clubId
+                    || localStorage.getItem('arb_current_club')
+                    || ('club_recovered_' + window.CDD_CLUB.name.replace(/\s+/g, '_'));
+        // Persister le club dans arb_clubs si pas déjà présent
+        const existing = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
+        if (!existing.find(c => c.id === clubId)) {
+          existing.push({
+            id: clubId,
+            name: window.CDD_CLUB.name,
+            primaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[0]) || '#c8f169',
+            secondaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[1]) || '#0a0e14',
+            createdAt: Date.now(),
+            createdBy: email,
+            _recovered: true,
+          });
+          localStorage.setItem('arb_clubs', JSON.stringify(existing));
+          localStorage.setItem('arb_current_club', clubId);
+          try {
+            const ctx2 = { ...ctx, clubId };
+            localStorage.setItem('cdd_active_context', JSON.stringify(ctx2));
+          } catch (e) {}
+        }
+        // Crée la membership
+        window.CDD_ROLES?.addMembership?.(email, clubId, 'coach', { createdBy: 'self-healing' });
+        console.info('[SyncCloud] self-healing : club récupéré depuis CDD_CLUB →', window.CDD_CLUB.name, '(clubId=' + clubId + ')');
+        setHealTick(t => t + 1);
+        if (window.CDD_REBUILD) window.CDD_REBUILD();
+      } catch (e) {
+        console.warn('[SyncCloud] self-healing CDD_CLUB failed', e);
+      }
+    } else {
+      console.info('[SyncCloud] self-healing : aucune source disponible (email saisi mais ni arb_clubs ni CDD_CLUB). Mode coach sans rattachement.');
+    }
+  }, [healTick]); // healTick force re-trigger si besoin
+
+  // Si une migration crée des memberships pendant l'écran (ex : data-bridge
+  // finalise plus tard et dispatche cdd-data-rebuilt), re-render pour refléter.
+  React.useEffect(() => {
+    const onChange = () => setHealTick(t => t + 1);
+    window.addEventListener('cdd-memberships-changed', onChange);
+    window.addEventListener('cdd-data-rebuilt', onChange);
+    return () => {
+      window.removeEventListener('cdd-memberships-changed', onChange);
+      window.removeEventListener('cdd-data-rebuilt', onChange);
+    };
+  }, []);
 
   // Switch de club : écrit arb_current_club + cdd_active_context.clubId, et
   // sélectionne la 1ère équipe du club par défaut. Dispatch l'événement écouté
