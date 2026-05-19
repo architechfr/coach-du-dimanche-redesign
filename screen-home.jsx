@@ -44,8 +44,48 @@ function ScreenHome({ go, tweaks }) {
                   ? window.MATCH_HELPERS.getLiveMatch()
                   : null;
 
+  // Suivi présences live : compte les non-respondants pour le prochain match,
+  // sert d'alerte d'accueil "X parents à relancer" + badge sur la tile Convocations.
+  const matchId = (typeof window.cddSync !== 'undefined' && window.cddSync.matchId) || 'demo';
+  const [parentResponses, setParentResponses] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`cdd_v2_convoc_${matchId}`) || '{}'); }
+    catch (e) { return {}; }
+  });
+  useEffect(() => {
+    if (!window.cddSync?.watchConvocResponses) return;
+    const unsubscribe = window.cddSync.watchConvocResponses(matchId, (r) => setParentResponses(r));
+    return () => { try { unsubscribe?.(); } catch (e) {} };
+  }, [matchId]);
+  const convocIds = [...(CDD_CONVO?.starters || []), ...(CDD_CONVO?.bench || [])];
+  const respondedCount = convocIds.filter(id => parentResponses[id]).length;
+  const pendingCount = convocIds.length - respondedCount;
+
   return (
     <div className="scr scr-home fade-in" data-screen-label="01 Home">
+
+      {/* Alerte présences : visible quand match dans <= 7j ET parents pas tous répondu */}
+      {!liveMatch && pendingCount > 0 && next && !next.noUpcoming && (next.daysLeft || 0) <= 7 && (
+        <button onClick={() => go('convocations')}
+                style={{
+                  width:'calc(100% - 28px)', margin:'14px 14px 0',
+                  padding:'11px 14px', borderRadius:12,
+                  background:'rgba(249,115,22,0.10)',
+                  color:'#fff', border:'1px solid rgba(249,115,22,0.35)',
+                  cursor:'pointer', display:'flex', alignItems:'center', gap:10,
+                  textAlign:'left', fontFamily:'inherit',
+                }}>
+          <span style={{fontSize:20}}>📣</span>
+          <span style={{flex:1, minWidth:0}}>
+            <div style={{fontSize:13, fontWeight:800, color:'#f97316', lineHeight:1.3}}>
+              {pendingCount} parent{pendingCount>1?'s':''} pas encore répondu
+            </div>
+            <div style={{fontSize:11, opacity:0.7, marginTop:1}}>
+              Match {next.daysLeft > 0 ? `dans ${next.daysLeft}j` : 'imminent'} · tap pour relancer en 1 click
+            </div>
+          </span>
+          <span style={{fontSize:18, opacity:0.7, flexShrink:0}}>→</span>
+        </button>
+      )}
 
       {/* Bouton REPRENDRE match en cours (#20) */}
       {liveMatch && (
@@ -130,7 +170,11 @@ function ScreenHome({ go, tweaks }) {
         <button className="tile tile-convoc" onClick={() => go("convocations")}>
           <span className="tile-ic">📋</span>
           <span className="tile-t">Convocations</span>
-          <span className="tile-s">{CDD_CONVO?.starters.length + CDD_CONVO?.bench.length || 0} convoqués</span>
+          <span className="tile-s">
+            {convocIds.length > 0
+              ? <>{respondedCount}/{convocIds.length} répondus{pendingCount > 0 ? <span style={{color:'#f97316', fontWeight:700}}> · {pendingCount} à relancer</span> : null}</>
+              : `${CDD_CONVO?.starters.length + CDD_CONVO?.bench.length || 0} convoqués`}
+          </span>
         </button>
         <button className="tile tile-effectif" onClick={() => go("effectif")}>
           <span className="tile-ic">👥</span>
