@@ -314,9 +314,9 @@ function App() {
               color:'#fbbf24', fontSize:11, fontWeight:700,
               display:'flex', alignItems:'center', gap:8, letterSpacing:'.04em',
             }}>
-              <span>👁️</span>
-              <span style={{flex:1, minWidth:0}}>MODE VISITEUR · lecture seule</span>
-              <span style={{opacity:0.8, fontWeight:600}}>Configurer mon email →</span>
+              <span>🎮</span>
+              <span style={{flex:1, minWidth:0}}>BAC À SABLE · privé sur cet appareil</span>
+              <span style={{opacity:0.8, fontWeight:600}}>Activer mon compte →</span>
             </div>
           )}
 
