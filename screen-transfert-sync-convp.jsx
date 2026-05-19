@@ -185,7 +185,37 @@ function ScreenSyncCloud({ go, tweaks }) {
         <button className="sync-acc-sync" onClick={() => alert("Sync compte cloud — disponible avec l'auth Google (V2.x)")}>↻</button>
       </div>
 
-      <div className="sec-h"><span className="t">Mes clubs</span><span className="a">{clubs.length} actifs</span></div>
+      <div className="sec-h">
+        <span className="t">Mes équipes</span>
+        <span className="a">{clubs.length} actives</span>
+      </div>
+      {/* Hint pour expliquer pourquoi un même club peut apparaître plusieurs fois */}
+      <div style={{
+        margin:'0 14px 8px', padding:'8px 12px', borderRadius:8,
+        background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)',
+        fontSize:11, color:'rgba(255,255,255,0.55)', lineHeight:1.4,
+      }}>
+        💡 Une équipe = un club + une catégorie. Le même club (FCMH par ex.) peut avoir plusieurs équipes (U15, U11, vétérans…).
+      </div>
+      {/* Raccourci direct vers la personnalisation du logo club (dans Réglages) */}
+      <button onClick={() => go('set')} style={{
+        margin:'0 14px 12px', padding:'10px 12px', borderRadius:10,
+        width:'calc(100% - 28px)', textAlign:'left',
+        background:'rgba(200,241,105,0.08)', border:'1px solid rgba(200,241,105,0.30)',
+        color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:10,
+        fontFamily:'inherit',
+      }}>
+        <span style={{fontSize:18}}>🎨</span>
+        <span style={{flex:1, minWidth:0}}>
+          <div style={{fontSize:12, fontWeight:800, color:'#c8f169', letterSpacing:'.04em'}}>
+            PERSONNALISER MON CLUB
+          </div>
+          <div style={{fontSize:10.5, color:'rgba(255,255,255,0.6)', marginTop:1}}>
+            Logo, couleurs · affiché en match live, mode vestiaire, partage parents
+          </div>
+        </span>
+        <span style={{fontSize:18, opacity:0.7, flexShrink:0}}>›</span>
+      </button>
       <div className="sync-clubs">
         {clubs.map(c => (
           <button key={c.id}
@@ -198,7 +228,7 @@ function ScreenSyncCloud({ go, tweaks }) {
             </div>
             <div className="sync-club-status">
               {active === c.id ? (
-                <span className="sync-club-active">CLUB ACTIF</span>
+                <span className="sync-club-active">ÉQUIPE ACTIVE</span>
               ) : (
                 <span className="sync-club-arr">›</span>
               )}
@@ -206,19 +236,19 @@ function ScreenSyncCloud({ go, tweaks }) {
           </button>
         ))}
         <button className="sync-club-add" onClick={() => {
-          const name = prompt("Nom du nouveau club :");
+          const name = prompt("Nom du club (ex: FCMH) :");
           if (!name) return;
-          const team = prompt("Catégorie (ex: U15 D2) :", "U15 D2");
+          const team = prompt("Catégorie / équipe (ex: U15 D2) :", "U15 D2");
           if (!team) return;
           try {
             const arr = JSON.parse(localStorage.getItem("arb_clubs") || "[]");
             arr.push({ id:"club_"+Date.now(), name, team, players:0, color:"#"+Math.floor(Math.random()*16777215).toString(16) });
             localStorage.setItem("arb_clubs", JSON.stringify(arr));
-            alert(`Club "${name}" ajouté. Recharge l'app pour le voir apparaître.`);
+            alert(`Équipe "${name} · ${team}" ajoutée. Recharge l'app pour la voir apparaître.`);
           } catch(e) { alert("Erreur sauvegarde : " + e.message); }
         }}>
           <div className="sync-club-add-ic">+</div>
-          <span>Ajouter un club</span>
+          <span>Ajouter une équipe</span>
         </button>
       </div>
 
