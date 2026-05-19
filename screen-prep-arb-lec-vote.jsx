@@ -318,18 +318,38 @@ function ScreenLecteur({ go, tweaks }) {
     if (q) return new URLSearchParams(q).get('p');
     return null;
   })();
-  const playerId = playerIdFromUrl || (CDD_PLAYERS[0]?.id || 'demo_player');
+  // Pas de pré-sélection si l'URL ne précise pas ?p= : le parent doit chercher
+  // son enfant lui-même. Évite le piège "Ilian s'affiche tout le temps" du seed
+  // démo (avant: fallback sur CDD_PLAYERS[0]).
+  const [selectedPlayerId, setSelectedPlayerId] = useState(playerIdFromUrl || null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const playerId = selectedPlayerId;
   const playerDisplay = (() => {
+    if (!playerId) return "";
     const p = CDD_PLAYERS.find(x => x.id === playerId);
-    return p ? `${p.first} ${p.last}` : "Sékou";
+    return p ? `${p.first} ${p.last}` : "";
   })();
+  // Liste filtrée pour la recherche : prénom OU nom, en starts-with d'abord
+  // puis includes pour tolérer la frappe partielle au milieu.
+  const searchResults = (searchQuery.trim().length >= 1 && !selectedPlayerId)
+    ? CDD_PLAYERS.filter(p => {
+        const q = searchQuery.trim().toLowerCase();
+        const first = (p.first || '').toLowerCase();
+        const last = (p.last || '').toLowerCase();
+        return first.startsWith(q) || last.startsWith(q)
+            || first.includes(q) || last.includes(q);
+      }).slice(0, 8)
+    : [];
   const matchId = (typeof window.cddSync !== 'undefined' && window.cddSync.matchId) || 'demo';
-  const [resp, setResp] = useState(() => {
+  const [resp, setResp] = useState(null);
+  // Resync la réponse RSVP cachée localement à chaque changement de joueur.
+  useEffect(() => {
+    if (!playerId) { setResp(null); return; }
     try {
       const cached = JSON.parse(localStorage.getItem(`cdd_v2_convoc_${matchId}`) || '{}');
-      return cached[playerId]?.resp || null;
-    } catch (e) { return null; }
-  });
+      setResp(cached[playerId]?.resp || null);
+    } catch (e) { setResp(null); }
+  }, [playerId, matchId]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
   const sendResponse = async (newResp) => {
@@ -421,50 +441,128 @@ function ScreenLecteur({ go, tweaks }) {
 
           <div className="sec-h"><span className="t">Mon enfant est-il convoqué ?</span></div>
           <div className="lec-convo">
-            <div className="lec-convo-search">
+            <div className="lec-convo-search" style={{position:"relative"}}>
               <span>🔍</span>
-              <input placeholder="Cherche le prénom de ton enfant…" defaultValue={playerDisplay}/>
+              <input
+                placeholder="Cherche le prénom de ton enfant…"
+                value={selectedPlayerId ? playerDisplay : searchQuery}
+                onChange={(e) => {
+                  setSelectedPlayerId(null);
+                  setSearchQuery(e.target.value);
+                }}
+                autoComplete="off"
+              />
+              {selectedPlayerId && (
+                <button
+                  type="button"
+                  aria-label="Effacer"
+                  onClick={() => { setSelectedPlayerId(null); setSearchQuery(""); }}
+                  style={{
+                    position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                    background:"transparent", border:"none", color:"var(--tx2,#a7adb8)",
+                    fontSize:18, cursor:"pointer", padding:"4px 8px", lineHeight:1,
+                  }}>
+                  ×
+                </button>
+              )}
             </div>
-            <div className="lec-convo-yes">
-              <div className="lec-convo-yes-ic">✓</div>
-              <div className="lec-convo-yes-t">
-                <b>{playerDisplay} est convoqué !</b>
-                {(() => {
-                  const p = CDD_PLAYERS.find(x => x.id === playerId);
-                  if (!p) return null;
-                  const posLabel = (typeof POSITION_LABEL !== 'undefined' && POSITION_LABEL[p.pos]) || p.pos || '';
-                  return <em>{posLabel}{p.num ? ` · #${p.num}` : ''}</em>;
-                })()}
+
+            {/* Liste des résultats de recherche */}
+            {searchResults.length > 0 && (
+              <div className="lec-convo-results" style={{
+                display:"flex", flexDirection:"column", gap:6, marginTop:8,
+                maxHeight:240, overflowY:"auto"
+              }}>
+                {searchResults.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => { setSelectedPlayerId(p.id); setSearchQuery(""); }}
+                    style={{
+                      display:"flex", alignItems:"center", gap:10,
+                      padding:"10px 12px", borderRadius:10,
+                      background:"rgba(255,255,255,0.04)",
+                      border:"1px solid rgba(255,255,255,0.08)",
+                      color:"inherit", cursor:"pointer", textAlign:"left",
+                      fontFamily:"inherit", fontSize:13
+                    }}>
+                    <span style={{
+                      width:28, height:28, borderRadius:"50%",
+                      background:"rgba(198,255,58,0.12)", color:"#c6ff3a",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      fontSize:11, fontWeight:800, flexShrink:0
+                    }}>{p.num || '?'}</span>
+                    <span style={{flex:1, fontWeight:700}}>{p.first} {p.last}</span>
+                  </button>
+                ))}
               </div>
-            </div>
-            <div className="lec-convo-cta">
-              <button
-                className={`lec-btn-resp lec-btn-yes ${resp === 'yes' ? 'on' : ''}`}
-                disabled={sending}
-                onClick={() => sendResponse('yes')}>
-                ✓ JE VIENS
-              </button>
-              <button
-                className={`lec-btn-resp lec-btn-no ${resp === 'no' ? 'on' : ''}`}
-                disabled={sending}
-                onClick={() => sendResponse('no')}>
-                ✕ Absent
-              </button>
-              <button
-                className={`lec-btn-resp lec-btn-may ${resp === 'may' ? 'on' : ''}`}
-                disabled={sending}
-                onClick={() => sendResponse('may')}>
-                ?
-              </button>
-            </div>
-            {resp && (
-              <div className="lec-convo-confirm" style={{padding:"10px 14px", textAlign:"center", color:"var(--accent,#c8f169)", fontSize:13, fontWeight:600}}>
-                {sending ? "Envoi en cours…" :
-                 sendError ? `⚠ ${sendError} (sauvegardé localement)` :
-                 resp === 'yes' ? "✓ Réponse envoyée : présent" :
-                 resp === 'no'  ? "✓ Réponse envoyée : absent" :
-                                  "✓ Réponse envoyée : peut-être"}
+            )}
+
+            {/* Hint si pas de sélection ni recherche */}
+            {!selectedPlayerId && searchQuery.trim().length === 0 && (
+              <div style={{
+                padding:"14px 4px 4px", fontSize:12,
+                color:"var(--tx2,#a7adb8)", lineHeight:1.5
+              }}>
+                Tape les premières lettres du prénom de ton enfant pour vérifier s'il est convoqué.
               </div>
+            )}
+
+            {/* Aucun résultat trouvé */}
+            {!selectedPlayerId && searchQuery.trim().length >= 1 && searchResults.length === 0 && (
+              <div style={{
+                padding:"14px 4px 4px", fontSize:12,
+                color:"var(--tx2,#a7adb8)", lineHeight:1.5
+              }}>
+                Aucun joueur trouvé. Vérifie l'orthographe ou demande au coach.
+              </div>
+            )}
+
+            {/* Bloc confirmation + CTA — uniquement si un joueur est sélectionné */}
+            {selectedPlayerId && (
+              <>
+                <div className="lec-convo-yes">
+                  <div className="lec-convo-yes-ic">✓</div>
+                  <div className="lec-convo-yes-t">
+                    <b>{playerDisplay} est convoqué !</b>
+                    {(() => {
+                      const p = CDD_PLAYERS.find(x => x.id === playerId);
+                      if (!p) return null;
+                      const posLabel = (typeof POSITION_LABEL !== 'undefined' && POSITION_LABEL[p.pos]) || p.pos || '';
+                      return <em>{posLabel}{p.num ? ` · #${p.num}` : ''}</em>;
+                    })()}
+                  </div>
+                </div>
+                <div className="lec-convo-cta">
+                  <button
+                    className={`lec-btn-resp lec-btn-yes ${resp === 'yes' ? 'on' : ''}`}
+                    disabled={sending}
+                    onClick={() => sendResponse('yes')}>
+                    ✓ JE VIENS
+                  </button>
+                  <button
+                    className={`lec-btn-resp lec-btn-no ${resp === 'no' ? 'on' : ''}`}
+                    disabled={sending}
+                    onClick={() => sendResponse('no')}>
+                    ✕ Absent
+                  </button>
+                  <button
+                    className={`lec-btn-resp lec-btn-may ${resp === 'may' ? 'on' : ''}`}
+                    disabled={sending}
+                    onClick={() => sendResponse('may')}>
+                    ?
+                  </button>
+                </div>
+                {resp && (
+                  <div className="lec-convo-confirm" style={{padding:"10px 14px", textAlign:"center", color:"var(--accent,#c8f169)", fontSize:13, fontWeight:600}}>
+                    {sending ? "Envoi en cours…" :
+                     sendError ? `⚠ ${sendError} (sauvegardé localement)` :
+                     resp === 'yes' ? "✓ Réponse envoyée : présent" :
+                     resp === 'no'  ? "✓ Réponse envoyée : absent" :
+                                      "✓ Réponse envoyée : peut-être"}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
