@@ -599,19 +599,106 @@ function ScreenSyncCloud({ go, tweaks }) {
             </div>
           );
         }
+        // Affiche un diagnostic en ligne pour comprendre pourquoi rien
+        // n'est detecte (visible directement sur l'ecran, sans F12).
+        const dump = window.CDD_ROLES?.diagnose?.() || {};
+        const detected = {
+          ls_clubs: Array.isArray(dump.localStorage?.arb_clubs) ? dump.localStorage.arb_clubs.length : '—',
+          ls_teams: dump.localStorage?.arb_teams_count ?? '—',
+          seed_clubs: dump.seed?.clubs_count ?? 0,
+          seed_teams: dump.seed?.teams_count ?? 0,
+          override_clubs: dump.override?.arb_clubs_count ?? 0,
+          override_teams: dump.override?.arb_teams_count ?? 0,
+          adapter_clubs: dump.adapter?.getAllClubs_count ?? 0,
+          adapter_active: dump.adapter?.getActiveClub?.name || '—',
+          global_club: dump.globals?.CDD_CLUB?.name || '—',
+          ctx_clubId: dump.localStorage?.cdd_active_context?.clubId || '—',
+        };
+        const anySource =
+          (typeof detected.ls_clubs === 'number' && detected.ls_clubs > 0) ||
+          detected.seed_clubs > 0 ||
+          detected.override_clubs > 0 ||
+          detected.adapter_clubs > 0 ||
+          detected.global_club !== '—';
         return (
           <div style={{
-            margin:'0 14px 12px', padding:'24px 18px', borderRadius:12,
+            margin:'0 14px 12px', padding:'18px 16px', borderRadius:12,
             background:'rgba(200,241,105,0.06)', border:'1px dashed rgba(200,241,105,0.30)',
-            textAlign:'center',
           }}>
-            <div style={{fontSize:32, marginBottom:8}}>⚽</div>
-            <div style={{fontWeight:800, marginBottom:6}}>Aucun club rattaché</div>
-            <div style={{fontSize:12, opacity:0.7, marginBottom:14, lineHeight:1.5}}>
-              Aucun club n'est rattaché à <b>{myEmail}</b>.<br/>
-              Crée ton propre club, ou rejoins-en un via une invitation.
+            <div style={{textAlign:'center', marginBottom:12}}>
+              <div style={{fontSize:32, marginBottom:8}}>⚽</div>
+              <div style={{fontWeight:800, marginBottom:6}}>Aucun club rattaché</div>
+              <div style={{fontSize:12, opacity:0.7, lineHeight:1.5}}>
+                Email : <b>{myEmail}</b>
+              </div>
             </div>
-            <button className="btn-cta" onClick={() => addNewClub()}>+ Créer un club</button>
+
+            {/* Diagnostic visible directement à l'écran. */}
+            <div style={{
+              padding:'10px 12px', borderRadius:8, marginBottom:12,
+              background:'rgba(0,0,0,0.30)', border:'1px solid rgba(255,255,255,0.08)',
+              fontFamily:'JetBrains Mono, monospace', fontSize:10.5, lineHeight:1.6,
+              color:'rgba(255,255,255,0.75)',
+            }}>
+              <div style={{color:'#c8f169', fontWeight:800, marginBottom:6, fontFamily:'inherit'}}>
+                🩺 ÉTAT DÉTECTÉ
+              </div>
+              <div>localStorage arb_clubs : <b>{detected.ls_clubs}</b></div>
+              <div>localStorage arb_teams : <b>{detected.ls_teams}</b></div>
+              <div>seed clubs : <b>{detected.seed_clubs}</b></div>
+              <div>seed teams : <b>{detected.seed_teams}</b></div>
+              <div>override clubs : <b>{detected.override_clubs}</b></div>
+              <div>override teams : <b>{detected.override_teams}</b></div>
+              <div>adapter getAllClubs : <b>{detected.adapter_clubs}</b></div>
+              <div>adapter activeClub : <b style={{color: detected.adapter_active !== '—' ? '#c8f169' : 'inherit'}}>{detected.adapter_active}</b></div>
+              <div>CDD_CLUB global : <b style={{color: detected.global_club !== '—' ? '#c8f169' : 'inherit'}}>{detected.global_club}</b></div>
+              <div>active_context.clubId : <b>{detected.ctx_clubId}</b></div>
+            </div>
+
+            {anySource ? (
+              <button onClick={() => {
+                // Forcer la migration + le fallback CDD_CLUB
+                const r1 = window.CDD_ROLES?.runMigrationIfNeeded?.();
+                if (r1?.added > 0) { setHealTick(t => t + 1); return; }
+                // Fallback synthetique
+                if (window.CDD_CLUB?.name) {
+                  try {
+                    const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+                    const clubId = ctx.clubId || localStorage.getItem('arb_current_club')
+                                || ('club_recovered_' + window.CDD_CLUB.name.replace(/\s+/g, '_'));
+                    const existing = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
+                    if (!existing.find(c => c.id === clubId)) {
+                      existing.push({
+                        id: clubId,
+                        name: window.CDD_CLUB.name,
+                        primaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[0]) || '#c8f169',
+                        secondaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[1]) || '#0a0e14',
+                        createdAt: Date.now(),
+                        createdBy: myEmail,
+                        _recovered: true,
+                      });
+                      localStorage.setItem('arb_clubs', JSON.stringify(existing));
+                      localStorage.setItem('arb_current_club', clubId);
+                      localStorage.setItem('cdd_active_context', JSON.stringify({ ...ctx, clubId }));
+                    }
+                    window.CDD_ROLES?.addMembership?.(myEmail, clubId, 'coach', { createdBy: 'manual-recovery' });
+                    if (window.CDD_REBUILD) window.CDD_REBUILD();
+                    setHealTick(t => t + 1);
+                  } catch (e) { alert('Récupération échouée : ' + e.message); }
+                } else {
+                  alert('Aucune source de données disponible. Crée un nouveau club ou contacte le support.');
+                }
+              }} style={{
+                width:'100%', padding:'12px', borderRadius:10, marginBottom:8,
+                background:'rgba(200,241,105,0.15)', border:'1px solid rgba(200,241,105,0.45)',
+                color:'#c8f169', fontWeight:900, fontSize:13, fontFamily:'inherit',
+                cursor:'pointer',
+              }}>🔧 RATTACHER {detected.global_club !== '—' ? detected.global_club.toUpperCase() : 'MES DONNÉES'} À MON COMPTE</button>
+            ) : null}
+
+            <button className="btn-cta" style={{width:'100%'}} onClick={() => addNewClub()}>
+              + Créer un nouveau club
+            </button>
           </div>
         );
       })() : (
