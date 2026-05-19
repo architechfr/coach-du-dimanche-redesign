@@ -172,20 +172,32 @@ class ScreenErrorBoundary extends React.Component {
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   // ── Routage d'arrivée
-  //   1. Token magique dans URL → écran scopé au token (carnet, parent, lecteur, invite)
-  //   2. Email coach saisi → app normale (home)
-  //   3. Rien → landing publique (modèle E : pas d'exposition data sans token/email)
+  //   1. Token magique COLLECTIF (lecteur public) → toujours accessible sans auth
+  //   2. Token magique INDIVIDUEL (carnet/parent) → exige email saisi sinon landing
+  //   3. Email coach saisi → app normale (home)
+  //   4. Rien → landing publique (modèle E)
+  //
+  // Distinction collective vs individuelle (decision coach 2026-05-19) :
+  // une fiche/carnet individuel ne doit pas etre accessible sans rattachement
+  // explicite (parent loggue + membership pour cet enfant). Vraie protection
+  // server-side viendra avec Firebase Auth (Sprint 2). Aujourd'hui on bloque
+  // au moins la fuite anonyme.
   const initialScreen = (() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
-      // Token magique d'abord — prioritaire sur l'email pour ne pas casser un
-      // lien envoyé à un parent qui a déjà un compte coach saisi sur le même device.
-      if (params.get('carnet') || params.get('joueur')) return 'carnet';
-      if (params.get('p'))      return 'convoP';
-      if (params.get('t'))      return 'lecteur';
-      if (params.get('invite')) return 'home'; // Sprint 3 : route vers screen-invite
-      // Pas de token : check si l'user est connecté
       const email = (localStorage.getItem('cdd_user_email') || '').trim();
+      // Lecteur public (vue collective neutre) — toujours OK sans auth
+      if (params.get('t')) return 'lecteur';
+      // Invitation — toujours OK (la landing gere)
+      if (params.get('invite')) return 'landing';
+      // Carnet / convoc individuels : EXIGE email sinon landing avec contexte
+      if (params.get('carnet') || params.get('joueur')) {
+        return email ? 'carnet' : 'landing';
+      }
+      if (params.get('p')) {
+        return email ? 'convoP' : 'landing';
+      }
+      // Pas de token : check si l'user est connecte
       if (!email) return 'landing';
     } catch (e) {}
     return 'home';

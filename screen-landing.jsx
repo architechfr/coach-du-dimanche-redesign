@@ -13,7 +13,26 @@
 
 function ScreenLanding({ onLoggedIn, onOpenLink }) {
   const { useState: useLS } = React;
-  const [mode, setMode] = useLS('home'); // 'home' | 'coach-signup' | 'paste-link'
+
+  // ── Detection du contexte d'arrivée : un parent peut arriver via un lien
+  // individuel (?carnet= ou ?p=) MAIS sans email saisi. On adapte le message
+  // pour expliquer pourquoi il doit creer un compte avant de voir la fiche.
+  const arrivalContext = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const carnet = params.get('carnet') || params.get('joueur');
+      const p      = params.get('p');
+      const invite = params.get('invite');
+      if (carnet) return { kind: 'carnet', playerId: carnet };
+      if (p)      return { kind: 'convoc', playerId: p };
+      if (invite) return { kind: 'invite', token: invite };
+    } catch (e) {}
+    return { kind: 'none' };
+  })();
+
+  const hasIndividualToken = arrivalContext.kind === 'carnet' || arrivalContext.kind === 'convoc';
+  const initialMode = hasIndividualToken ? 'parent-signup' : 'home';
+  const [mode, setMode] = useLS(initialMode); // 'home' | 'coach-signup' | 'parent-signup' | 'paste-link'
   const [email, setEmail] = useLS('');
   const [name, setName] = useLS('');
   const [linkInput, setLinkInput] = useLS('');
@@ -37,6 +56,31 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
     } catch (e) {}
     window.dispatchEvent(new Event('cdd-auth-changed'));
     window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+    if (typeof onLoggedIn === 'function') onLoggedIn();
+  };
+
+  const submitParent = () => {
+    const eClean = email.trim().toLowerCase();
+    const nClean = name.trim();
+    if (!eClean || !nClean) {
+      alert('Email et nom requis pour créer ton compte parent.');
+      return;
+    }
+    if (!emailValid) {
+      alert('Format email invalide.');
+      return;
+    }
+    try {
+      localStorage.setItem('cdd_user_email', eClean);
+      localStorage.setItem('cdd_coach_name', nClean); // re-utilise pour 'nom de la personne'
+      localStorage.setItem('cdd_user_role', 'parent');
+      // Note : creation reelle de la membership parent + envoi demande au
+      // coach se fait Sprint 3. Pour l'instant on enregistre juste l'identite.
+    } catch (e) {}
+    window.dispatchEvent(new Event('cdd-auth-changed'));
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+    // En attendant Sprint 3, on bascule directement (la verif coach manquante
+    // sera ajoutee quand Firebase Auth + invitations seront branches).
     if (typeof onLoggedIn === 'function') onLoggedIn();
   };
 
@@ -237,6 +281,103 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             La vraie auth Google arrive prochainement — quand elle sera là, le même email te
             retrouvera tes données.
           </div>
+        </div>
+      )}
+
+      {/* MODE PARENT-SIGNUP : declenche par arrivee via lien individuel
+          (?carnet= ou ?p=) sans email saisi. Bloque l'acces a la fiche
+          tant que le compte parent n'est pas cree. */}
+      {mode === 'parent-signup' && (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          {!hasIndividualToken && (
+            <button onClick={() => setMode('home')} style={{
+              background:'transparent', border:'none', color:'rgba(255,255,255,0.6)',
+              cursor:'pointer', textAlign:'left', padding:'4px 0',
+              fontFamily:'inherit', fontSize:13,
+            }}>‹ Retour</button>
+          )}
+
+          <div style={{
+            padding:'14px 16px', borderRadius:12, marginBottom:4,
+            background:'rgba(251,191,36,0.08)', border:'1px solid rgba(251,191,36,0.30)',
+          }}>
+            <div style={{fontWeight:900, fontSize:14, marginBottom:6, color:'#fbbf24'}}>
+              🔒 Contenu protégé
+            </div>
+            <div style={{fontSize:12, opacity:0.85, lineHeight:1.5}}>
+              {arrivalContext.kind === 'carnet'
+                ? `Tu essaies d'ouvrir le carnet personnel d'un joueur. C'est une donnée privée d'enfant : on ne peut pas la montrer sans vérifier que tu es bien un parent légitime.`
+                : arrivalContext.kind === 'convoc'
+                ? `Tu essaies d'ouvrir la convocation individuelle d'un joueur. C'est une donnée privée d'enfant : on ne peut pas la montrer sans vérifier que tu es bien un parent légitime.`
+                : `Pour voir les informations personnelles d'un joueur, tu dois créer un compte parent.`}
+            </div>
+          </div>
+
+          <div style={{fontSize:20, fontWeight:900, marginBottom:4}}>Crée ton compte parent</div>
+          <div style={{fontSize:12, opacity:0.65, lineHeight:1.5, marginBottom:8}}>
+            Ton coach validera ensuite ton rattachement à ton enfant. Une fois validé, tu auras accès à ses convocations, sa fiche et son carnet.
+          </div>
+
+          <label style={{display:'flex', flexDirection:'column', gap:6}}>
+            <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
+              TON NOM
+            </span>
+            <input value={name} onChange={e => setName(e.target.value)}
+                   placeholder="ex: Sarah HAMDAOUI" autoFocus
+                   style={{
+                     padding:'12px 14px', borderRadius:10, fontSize:14,
+                     background:'rgba(255,255,255,0.05)',
+                     border:'1px solid rgba(255,255,255,0.12)',
+                     color:'#fff', fontFamily:'inherit',
+                   }}/>
+          </label>
+
+          <label style={{display:'flex', flexDirection:'column', gap:6}}>
+            <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
+              TON EMAIL
+            </span>
+            <input value={email} onChange={e => setEmail(e.target.value)}
+                   type="email" placeholder="ex: sarah@gmail.com"
+                   style={{
+                     padding:'12px 14px', borderRadius:10, fontSize:14,
+                     background:'rgba(255,255,255,0.05)',
+                     border: `1px solid ${emailValid ? 'rgba(255,255,255,0.12)' : 'rgba(239,68,68,0.45)'}`,
+                     color:'#fff', fontFamily:'inherit',
+                   }}/>
+            {!emailValid && (
+              <span style={{fontSize:11, color:'#ff8a8a'}}>⚠ Format email invalide</span>
+            )}
+            <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)', lineHeight:1.5}}>
+              C'est avec cet email que ton coach reconnaîtra ton compte. Utilise un email auquel tu as accès — il sera vérifié par Google Auth prochainement.
+            </span>
+          </label>
+
+          <button onClick={submitParent}
+                  disabled={!email.trim() || !name.trim() || !emailValid}
+                  className="btn-cta"
+                  style={{marginTop:8, opacity: (!email.trim() || !name.trim() || !emailValid) ? 0.5 : 1}}>
+            CRÉER MON COMPTE PARENT →
+          </button>
+
+          <div style={{
+            marginTop:14, padding:'12px 14px', borderRadius:10,
+            background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+            fontSize:11, opacity:0.7, lineHeight:1.6,
+          }}>
+            <b style={{display:'block', marginBottom:6}}>📋 Prochaine étape (à venir)</b>
+            Une fois ton compte créé, tu rempliras un petit formulaire avec les infos de ton enfant (taille, poids, photo, position préférée). Ces infos seront envoyées à ton coach pour validation, puis intégrées à la fiche officielle.
+          </div>
+
+          {!hasIndividualToken && (
+            <button onClick={() => setMode('home')} style={{
+              marginTop:8, padding:'10px', borderRadius:8,
+              background:'transparent', border:'1px solid rgba(255,255,255,0.15)',
+              color:'rgba(255,255,255,0.7)', fontFamily:'inherit', fontSize:12,
+              cursor:'pointer',
+            }}>
+              Annuler
+            </button>
+          )}
         </div>
       )}
 
