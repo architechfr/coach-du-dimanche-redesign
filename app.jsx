@@ -52,6 +52,7 @@ const NAV = [
   { id:"onb",          label:"Onboarding",    ic:"✦",   icon:SparkIcon,  bottom:false },
   { id:"tv",           label:"Visuel compo",  ic:"📷",  icon:PitchIcon,  bottom:false },
   { id:"tactique",     label:"Tactique",      ic:"🎬",  icon:PitchIcon,  bottom:false },
+  { id:"carnet",       label:"Carnet joueur", ic:"🎴",  icon:CardIcon,   bottom:false },
 ];
 
 function HomeIcon() {
@@ -170,8 +171,16 @@ class ScreenErrorBoundary extends React.Component {
 
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [screen, setScreen] = useState("home");
-  const [stack, setStack] = useState(["home"]);
+  // Auto-route vers le Carnet du joueur si URL ?carnet=PLAYER_ID (lien magique enfant)
+  const initialScreen = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      if (params.get('carnet') || params.get('joueur')) return 'carnet';
+    } catch (e) {}
+    return 'home';
+  })();
+  const [screen, setScreen] = useState(initialScreen);
+  const [stack, setStack] = useState([initialScreen]);
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [screenMenuOpen, setScreenMenuOpen] = useState(false);
 
@@ -219,6 +228,7 @@ function App() {
       set: "RÉGLAGES",
       onb: "",
       tv: "MODE VESTIAIRE",
+      carnet: "MON CARNET",
     };
     return map[screen] ?? "";
   }, [screen]);
@@ -260,6 +270,7 @@ function App() {
             {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t}/>}
             {screen === "tv"           && <ScreenTV go={go} tweaks={t}/>}
             {screen === "tactique"     && <ScreenTactique go={go} tweaks={t}/>}
+            {screen === "carnet"       && window.ScreenCarnetJoueur && <window.ScreenCarnetJoueur go={go} tweaks={t} playerId={currentPlayer?.id}/>}
             {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
             {screen === "arb"          && <ScreenArbitre go={go} tweaks={t}/>}
             {screen === "lecteur"      && <ScreenLecteur go={go} tweaks={t}/>}
