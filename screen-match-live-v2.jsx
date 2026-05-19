@@ -485,19 +485,27 @@ function ScreenMatchV2({ go, tweaks }) {
       const existing = localStorage.getItem('cdd_match_current');
       if (existing) {
         const loaded = MATCH_HELPERS.loadMatch(existing);
-        // Ne ré-ouvre PAS un match déjà terminé (sinon on retombe sur le dernier
-        // match joué en pensant qu'il est en cours). Le matchId reste dans
-        // cdd_match_last_finished pour que la page Vote sache de quoi parler.
-        if (loaded && loaded.st !== 'finished') {
+        // Ne ré-ouvre PAS un match terminé ni un brouillon notStarted (fantôme
+        // d'une visite précédente où le coach a ouvert l'écran sans lancer).
+        if (loaded && loaded.st !== 'finished' && !loaded.notStarted) {
           Mref.current = loaded;
         } else if (loaded && loaded.st === 'finished') {
           try { localStorage.setItem('cdd_match_last_finished', existing); } catch (e) {}
+          // On purge le pointeur stale aussi
+          try { localStorage.removeItem('cdd_match_current'); } catch (e) {}
+        } else if (loaded && loaded.notStarted) {
+          // Brouillon abandonné → on nettoie pour repartir sur du propre
+          try { localStorage.removeItem('cdd_match_current'); } catch (e) {}
+          try { localStorage.removeItem('cdd_match_' + existing); } catch (e) {}
         }
       }
       if (!Mref.current) {
         const teams = MATCH_HELPERS.buildDefaultTeams();
         Mref.current = MATCH_HELPERS.newMatch(teams.tA, teams.tB);
-        localStorage.setItem('cdd_match_current', Mref.current.id);
+        // ⚠️ On N'écrit PAS cdd_match_current ici. Tant que le coach n'a pas
+        // cliqué LANCER, le match reste un brouillon en mémoire — ni l'accueil
+        // ni un autre device ne doivent le voir comme "match en cours".
+        // Le pointeur cdd_match_current est positionné dans startMatch().
       }
     } catch (err) {
       console.error('[ScreenMatchV2] init failed', err);
@@ -553,6 +561,10 @@ function ScreenMatchV2({ go, tweaks }) {
     M.tOff = 0;
     M.st = 'live';
     M.startedAt = Date.now();
+    // ⚠️ C'est ICI qu'on déclare officiellement le match comme "en cours".
+    // Le pointeur cdd_match_current est positionné maintenant (et pas au bootstrap)
+    // pour que les autres écrans (accueil) ne voient pas de fantôme prematch.
+    try { localStorage.setItem('cdd_match_current', M.id); } catch (e) {}
     MATCH_SFX.playWhistle();
     MATCH_SFX.vibrate(200);
     if (MATCH_HELPERS.requestWakeLock) MATCH_HELPERS.requestWakeLock();
