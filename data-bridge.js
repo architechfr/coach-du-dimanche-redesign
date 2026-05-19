@@ -157,6 +157,23 @@ function deriveStats(player) {
     }
   } catch (e) {}
 
+  // Auto-progression OVR par matchs joués (Niveau 1 — voir ANALYSE_STRATEGIQUE).
+  // Les deltas sont accumulés dans cdd_player_perf_deltas par CDD_COACH.applyMatchPerformanceDeltas
+  // après chaque match terminé. Cappé à ±10 par stat sur la saison.
+  if (window.CDD_COACH && window.CDD_COACH.getPerfDeltaSum) {
+    const perfDelta = window.CDD_COACH.getPerfDeltaSum(player.id);
+    let mutated = false;
+    ['PAC','SHO','PAS','DRI','DEF','PHY'].forEach(k => {
+      if (perfDelta[k]) {
+        stats[k] = clamp(stats[k] + perfDelta[k]);
+        mutated = true;
+      }
+    });
+    if (mutated) {
+      stats.ovr = Math.round((stats.PAC + stats.SHO + stats.PAS + stats.DRI + stats.DEF + stats.PHY) / 6);
+    }
+  }
+
   return stats;
 }
 

@@ -521,7 +521,21 @@ function ScreenVote({ go, tweaks }) {
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
-  const starters = CDD_CONVO.starters.map(id => CDD_PLAYERS.find(p => p.id === id)).filter(Boolean);
+
+  // Source des joueurs à noter : ceux qui ont VRAIMENT JOUÉ le dernier match terminé,
+  // pas la convocation du prochain match. Fallback : CDD_CONVO.starters si pas de
+  // match terminé en mémoire (cas démo / 1ère utilisation).
+  const lastFinishedMatch = (() => {
+    try {
+      const lastId = localStorage.getItem('cdd_match_last_finished');
+      if (!lastId || !window.MATCH_HELPERS?.loadMatch) return null;
+      return window.MATCH_HELPERS.loadMatch(lastId);
+    } catch (e) { return null; }
+  })();
+  const playedLineup = lastFinishedMatch?.tA?.p || [];
+  const starters = (playedLineup.length > 0)
+    ? playedLineup.map(lp => CDD_PLAYERS.find(p => p.id === lp.id) || lp).filter(Boolean)
+    : CDD_CONVO.starters.map(id => CDD_PLAYERS.find(p => p.id === id)).filter(Boolean);
 
   const setRating = (id, r) => setVotes(v => ({...v, [id]: r}));
   const allRated = starters.every(p => votes[p.id]);
@@ -541,6 +555,17 @@ function ScreenVote({ go, tweaks }) {
           votes
         );
       }
+      // Applique les deltas OVR avec le vote du coach comme signal qualitatif.
+      // Le match a déjà appliqué les deltas "perf brute" (buts/passes/cartons) à la fin ;
+      // ici on RE-applique avec le voteAggregate pour intégrer la note coach (la dernière
+      // applique écrase la précédente pour ce matchId, idempotent).
+      if (lastFinishedMatch && window.CDD_COACH?.applyMatchPerformanceDeltas) {
+        const voteAggregate = {};
+        Object.entries(votes).forEach(([pid, rating]) => {
+          voteAggregate[pid] = { avg: rating, count: 1 };
+        });
+        window.CDD_COACH.applyMatchPerformanceDeltas(lastFinishedMatch, voteAggregate);
+      }
       setSubmitted(true);
     } catch (err) {
       console.warn('[vote] submit failed:', err.message);
@@ -552,19 +577,26 @@ function ScreenVote({ go, tweaks }) {
   };
 
   if (submitted) {
+    // MVP = joueur avec la note la plus haute parmi ceux votés (et non plus hardcodé au 1er)
+    const mvp = starters.reduce((best, p) => {
+      const r = votes[p.id] || 0;
+      return r > (best?.r || 0) ? { p, r } : best;
+    }, null);
     return (
       <div className="scr scr-vote fade-in" data-screen-label="13 Vote — Submitted">
         <div className="vote-success">
           <div className="vote-success-ic">⭐</div>
           <div className="vote-success-t">Notes envoyées !</div>
           <div className="vote-success-d">Tes notes sont prises en compte dans la synthèse collective de l'équipe.</div>
-          <div className="vote-success-mvp">
-            <div className="vote-success-mvp-k">TON HOMME DU MATCH</div>
-            <div className="vote-success-mvp-name">
-              <span>{starters[0].first}</span><b>{starters[0].last}</b>
+          {mvp && (
+            <div className="vote-success-mvp">
+              <div className="vote-success-mvp-k">TON HOMME DU MATCH</div>
+              <div className="vote-success-mvp-name">
+                <span>{mvp.p.first}</span><b>{mvp.p.last}</b>
+              </div>
+              <div className="vote-success-mvp-rate">{'⭐'.repeat(mvp.r)}</div>
             </div>
-            <div className="vote-success-mvp-rate">⭐⭐⭐⭐⭐</div>
-          </div>
+          )}
           <button className="btn-cta ghost" onClick={() => setSubmitted(false)}>← Modifier mes notes</button>
         </div>
       </div>

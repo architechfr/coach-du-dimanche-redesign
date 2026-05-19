@@ -659,6 +659,13 @@ function ScreenMatchV2({ go, tweaks }) {
       localStorage.setItem('cdd_match_last_finished', M.id);
       localStorage.removeItem('cdd_match_current');
     } catch (e) {}
+    // Auto-progression OVR : applique les deltas de stats sur chaque joueur ayant joué.
+    // Le vote parents/coach viendra s'ajouter plus tard via ScreenVote.submitVote().
+    try {
+      if (window.CDD_COACH?.applyMatchPerformanceDeltas) {
+        window.CDD_COACH.applyMatchPerformanceDeltas(M);
+      }
+    } catch (e) { console.warn('[match] perf deltas failed', e); }
     rerender();
   };
 

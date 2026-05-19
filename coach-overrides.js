@@ -223,6 +223,156 @@ window.CDD_COACH = {
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
   },
+
+  // ─── Auto-progression OVR par match (Niveau 1 de l'analyse stratégique) ───
+  // Calcule les deltas de stats à appliquer après chaque match selon : buts marqués,
+  // passes décisives, cartons, clean sheet (GK), vote parents/coach.
+  // Storage : cdd_player_perf_deltas = { [playerId]: { [matchId]: { PAC, SHO, PAS, DRI, DEF, PHY, source } } }
+  // L'agrégation est cappée à ±10 par stat sur la saison (évite les "stars instantanées").
+  PERF_CAP_PER_STAT: 10,
+
+  // Cherche l'id d'un joueur depuis son label "#10 Djibril" (format utilisé dans M.ev).
+  _resolvePlayerIdFromLabel(label, lineup) {
+    if (!label || !lineup) return null;
+    const m = String(label).match(/^#(\d+)/);
+    const num = m ? parseInt(m[1], 10) : null;
+    if (num != null) {
+      const found = lineup.find(p => p.num === num);
+      if (found) return found.id;
+    }
+    // Fallback : matche par prénom si présent dans le label
+    const firstMatch = lineup.find(p => p.first && label.includes(p.first));
+    return firstMatch ? firstMatch.id : null;
+  },
+
+  // Calcule les deltas pour CE match et les enregistre. Appelé depuis endMatch().
+  // voteAggregate (optionnel) : { [playerId]: { avg: 4.2, count: 3 } } — moyenne des votes
+  applyMatchPerformanceDeltas(M, voteAggregate) {
+    if (!M || !M.id || !M.tA) return;
+    const lineup = [...(M.tA.p || []), ...(M.tA.bench || [])];
+    if (!lineup.length) return;
+
+    const allDeltas = (() => {
+      try { return JSON.parse(localStorage.getItem('cdd_player_perf_deltas') || '{}'); }
+      catch (e) { return {}; }
+    })();
+
+    // Compte buts / passes / cartons par joueur (depuis M.ev, équipe A uniquement)
+    const counts = {};
+    (M.ev || []).forEach(e => {
+      if (!e || e.t !== 'A') return;
+      const pid = (e.scorerId || e.passerId || e.plId)
+                || this._resolvePlayerIdFromLabel(e.scorer || e.passer || e.pl, lineup);
+      if (!pid) return;
+      if (!counts[pid]) counts[pid] = { goals:0, assists:0, yellows:0, reds:0 };
+      if (e.tp === 'goal' && (e.scorer || e.pl)) {
+        const scorerPid = e.scorerId || this._resolvePlayerIdFromLabel(e.scorer || e.pl, lineup);
+        if (scorerPid) {
+          if (!counts[scorerPid]) counts[scorerPid] = { goals:0, assists:0, yellows:0, reds:0 };
+          counts[scorerPid].goals++;
+        }
+        if (e.passer) {
+          const passerPid = e.passerId || this._resolvePlayerIdFromLabel(e.passer, lineup);
+          if (passerPid) {
+            if (!counts[passerPid]) counts[passerPid] = { goals:0, assists:0, yellows:0, reds:0 };
+            counts[passerPid].assists++;
+          }
+        }
+      }
+      if (e.tp === 'yellow' && e.pl) {
+        const yPid = this._resolvePlayerIdFromLabel(e.pl, lineup);
+        if (yPid) {
+          if (!counts[yPid]) counts[yPid] = { goals:0, assists:0, yellows:0, reds:0 };
+          counts[yPid].yellows++;
+        }
+      }
+      if (e.tp === 'red' && e.pl) {
+        const rPid = this._resolvePlayerIdFromLabel(e.pl, lineup);
+        if (rPid) {
+          if (!counts[rPid]) counts[rPid] = { goals:0, assists:0, yellows:0, reds:0 };
+          counts[rPid].reds++;
+        }
+      }
+    });
+
+    const cleanSheet = (M.sB || 0) === 0;
+    const goalkeeper = lineup.find(p => p.num === 1); // approximation : #1 = GK
+
+    // Calcule les deltas pour chaque joueur de la lineup A (titulaires + banc qui ont joué)
+    lineup.forEach(p => {
+      const c = counts[p.id] || { goals:0, assists:0, yellows:0, reds:0 };
+      const vote = voteAggregate?.[p.id];
+      const delta = { PAC:0, SHO:0, PAS:0, DRI:0, DEF:0, PHY:0 };
+
+      // Performance brute
+      delta.SHO += c.goals   * 0.4;
+      delta.PAS += c.assists * 0.4;
+      delta.PHY -= c.yellows * 0.15;
+      delta.PHY -= c.reds    * 0.6;
+
+      // Clean sheet → bonus pour le gardien
+      if (cleanSheet && goalkeeper && p.id === goalkeeper.id) {
+        delta.DEF += 0.5;
+      }
+
+      // Vote parents/coach (moyenne 1-5) → étalé sur les 6 stats
+      if (vote && vote.avg != null) {
+        const voteDelta = (vote.avg - 3) * 0.15; // 5⭐ → +0.3, 1⭐ → -0.3, 3⭐ → 0
+        ['PAC','SHO','PAS','DRI','DEF','PHY'].forEach(k => { delta[k] += voteDelta; });
+      }
+
+      // Si aucune contribution, on n'enregistre rien (évite le bruit dans le storage)
+      const sum = Math.abs(delta.PAC)+Math.abs(delta.SHO)+Math.abs(delta.PAS)
+                 +Math.abs(delta.DRI)+Math.abs(delta.DEF)+Math.abs(delta.PHY);
+      if (sum < 0.01) return;
+
+      if (!allDeltas[p.id]) allDeltas[p.id] = {};
+      allDeltas[p.id][M.id] = {
+        ...delta,
+        source: 'match',
+        matchDate: M.endedAt || M.startedAt || Date.now(),
+        opp: M.tB?.n || '?',
+        goals: c.goals, assists: c.assists, yellows: c.yellows, reds: c.reds,
+        voteAvg: vote?.avg ?? null,
+      };
+    });
+
+    try { localStorage.setItem('cdd_player_perf_deltas', JSON.stringify(allDeltas)); } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
+
+  // Somme cumulée des deltas pour un joueur, cappée à ±CAP par stat.
+  // Utilisée par data-bridge.deriveStats() pour appliquer la progression aux cartes.
+  getPerfDeltaSum(playerId) {
+    const cap = this.PERF_CAP_PER_STAT;
+    const empty = { PAC:0, SHO:0, PAS:0, DRI:0, DEF:0, PHY:0 };
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_perf_deltas') || '{}');
+      const byMatch = all[playerId];
+      if (!byMatch) return empty;
+      const sum = { ...empty };
+      Object.values(byMatch).forEach(d => {
+        ['PAC','SHO','PAS','DRI','DEF','PHY'].forEach(k => { sum[k] += d[k] || 0; });
+      });
+      // Cap chaque stat à ±cap
+      ['PAC','SHO','PAS','DRI','DEF','PHY'].forEach(k => {
+        sum[k] = Math.max(-cap, Math.min(cap, sum[k]));
+      });
+      return sum;
+    } catch (e) { return empty; }
+  },
+
+  // Historique des deltas (pour affichage évolution dans la fiche joueur)
+  getPerfDeltaHistory(playerId) {
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_perf_deltas') || '{}');
+      const byMatch = all[playerId] || {};
+      return Object.entries(byMatch)
+        .map(([matchId, d]) => ({ matchId, ...d }))
+        .sort((a, b) => (b.matchDate || 0) - (a.matchDate || 0));
+    } catch (e) { return []; }
+  },
 };
 
 /* ============================================================
