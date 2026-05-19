@@ -213,9 +213,10 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
         <div className="mv-score-block">
           <div className="mv-score-row">
             <span className="mv-score-num num">{M.sA}</span>
-            <button className="mv-whistle" onClick={onWhistle} title="Sifflet" aria-label="Sifflet">
-              📣
-            </button>
+            <span className="mv-score-dash" style={{
+              color:'rgba(255,255,255,0.45)', fontSize:'48px', fontWeight:300,
+              margin:'0 14px', lineHeight:1,
+            }}>–</span>
             <span className="mv-score-num num">{M.sB}</span>
           </div>
 
@@ -516,11 +517,16 @@ function ScreenMatchV2({ go, tweaks }) {
     );
   }
 
-  // Tick chrono every second while live
-  const [minute, setMinute] = useStateMV(MATCH_HELPERS.gMin(M));
+  // Tick chrono every second while live.
+  // BUG FIX : avant, on stockait setMinute(gMin) qui ne change qu'une fois par minute
+  // → React voyait la même valeur et ne re-renderait pas → les secondes étaient figées.
+  // On stocke Date.now() pour garantir un re-render à chaque tick.
+  const [chronoTick, setChronoTick] = useStateMV(Date.now());
+  // eslint-disable-next-line no-unused-vars
+  const minute = MATCH_HELPERS.gMin(M); // recalculé à chaque render grâce au tick
   useEffectMV(() => {
     if (M.st !== 'live') return;
-    const t = setInterval(() => setMinute(MATCH_HELPERS.gMin(M)), 1000);
+    const t = setInterval(() => setChronoTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, [M.st]);
 
@@ -556,7 +562,19 @@ function ScreenMatchV2({ go, tweaks }) {
   };
 
   // Blessure flow (#16)
-  const handleInjury = (side) => setActiveFlow({ kind: 'injury', side });
+  // Côté A (mon équipe) : picker joueur + workflow remplacement.
+  // Côté B (adversaire) : pas d'effectif détaillé → on enregistre juste l'évènement
+  // dans la timeline pour qu'il apparaisse sur la feuille de match (utile au compte-rendu).
+  const handleInjury = (side) => {
+    if (side === 'B') {
+      const mn = MATCH_HELPERS.gMin(M);
+      M.ev.push({ tp:'injury', t:'B', mn, pl:'Joueur adversaire', ts: Date.now() });
+      MATCH_SFX.vibrate(150);
+      rerender();
+      return;
+    }
+    setActiveFlow({ kind: 'injury', side });
+  };
   const handleInjuryPick = (side) => (player) => {
     if (MATCH_HELPERS.setInjured) MATCH_HELPERS.setInjured(M, side, player.id);
     else {
@@ -869,7 +887,8 @@ function ScreenMatchV2({ go, tweaks }) {
           <ActionGrid side="B" M={M} disabled={disabled}
             onGoal={() => setActiveFlow({ kind:'goal', side:'B' })}
             onCard={handleCard}
-            onSub={(side) => setActiveFlow({ kind:'sub-out', side })}/>
+            onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
+            onInjury={handleInjury}/>
 
           <div className="mv-control-row">
             {M.st === 'live' && <button className="mv-ctrl mv-ctrl-pause" onClick={togglePause}>⏸ Pause</button>}

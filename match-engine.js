@@ -269,19 +269,29 @@ function getLiveMatch() {
   try {
     const activeClub = JSON.parse(localStorage.getItem('cdd_active_context') || '{}').clubId
                      || localStorage.getItem('arb_current_club');
+    // Seuil d'abandon : un match "live"/"paused" mais non touché depuis 6h
+    // est considéré abandonné (pas le coach qui revient le lundi pour terminer
+    // son match du dimanche matin). Évite les bannières "MATCH EN COURS" fantômes.
+    const ABANDON_MS = 6 * 60 * 60 * 1000;
+    const now = Date.now();
+    // Ne lit que les clés cdd_match_*, en évitant les marqueurs (current/last_finished)
+    const matchKeyPrefix = 'cdd_match_';
+    const markerKeys = new Set(['cdd_match_current', 'cdd_match_last_finished']);
     let best = null;
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (!k || !k.startsWith('cdd_match_')) continue;
+      if (!k || !k.startsWith(matchKeyPrefix) || markerKeys.has(k)) continue;
       try {
         const m = JSON.parse(localStorage.getItem(k) || 'null');
         if (!m) continue;
-        if (m.notStarted || m.st === 'finished') continue;
+        if (m.notStarted) continue;
+        if (m.st === 'finished') continue;
+        if (m.endedAt) continue;           // double sécurité : endedAt = match clôturé
+        const lastTouched = m.savedAt || m.tSt || 0;
+        if (lastTouched && (now - lastTouched) > ABANDON_MS) continue; // abandonné
         // Filtre par club actif si match tagge
         if (activeClub && m.clubId && m.clubId !== activeClub) continue;
-        // Garder le plus recent (par tSt ou savedAt)
-        const t = m.savedAt || m.tSt || 0;
-        if (!best || t > (best.savedAt || best.tSt || 0)) best = m;
+        if (!best || lastTouched > (best.savedAt || best.tSt || 0)) best = m;
       } catch (e) {}
     }
     return best;
