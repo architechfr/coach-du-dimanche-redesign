@@ -91,9 +91,12 @@ function ScreenPrep({ go, tweaks }) {
               <div className="prep-opp-stat">
                 <em>Forme</em>
                 <div className="prep-opp-form">
-                  {(opp.form||[]).map((r,i) => (
-                    <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{r}</span>
-                  ))}
+                  {(opp.form||[]).map((r,i) => {
+                    // Traduction W/D/L (FFF) → V/N/D (FR). Classes CSS conservées sur la lettre EN
+                    // (fd-w = vert, fd-d = gris/orange nul, fd-l = rouge défaite).
+                    const display = r === 'W' ? 'V' : r === 'L' ? 'D' : r === 'D' ? 'N' : r;
+                    return <span key={i} className={`fd fd-${String(r).toLowerCase()}`}>{display}</span>;
+                  })}
                   {(!opp.form || opp.form.length === 0) && <span style={{opacity:0.5, fontSize:11}}>—</span>}
                 </div>
               </div>

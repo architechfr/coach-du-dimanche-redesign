@@ -298,6 +298,60 @@ function getLiveMatch() {
   } catch (e) { return null; }
 }
 
+// ─── Liste des matchs ARBITRÉS et TERMINÉS du coach ───
+// Scanne cdd_match_* pour récupérer tous les matchs finis (st === 'finished').
+// Retourne dans le format attendu par CDD_LAST_MATCHES (utilisé par l'écran Accueil).
+// Le type de match (championnat / amical / coupe / etc.) est inclus pour l'affichage.
+function listCoachFinishedMatches() {
+  try {
+    const activeClub = JSON.parse(localStorage.getItem('cdd_active_context') || '{}').clubId
+                     || localStorage.getItem('arb_current_club');
+    const markerKeys = new Set(['cdd_match_current', 'cdd_match_last_finished']);
+    const matches = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('cdd_match_') || markerKeys.has(k)) continue;
+      try {
+        const m = JSON.parse(localStorage.getItem(k) || 'null');
+        if (!m || (m.st !== 'finished' && !m.endedAt)) continue;
+        if (activeClub && m.clubId && m.clubId !== activeClub) continue;
+        const sA = m.sA || 0, sB = m.sB || 0;
+        const result = sA > sB ? 'V' : sA < sB ? 'D' : 'N';
+        const endedAt = m.endedAt || m.savedAt || 0;
+        const date = endedAt
+          ? new Date(endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
+          : '?';
+        // Buteurs équipe A (mon équipe) — formaté pour l'aperçu
+        const scorers = (m.ev || [])
+          .filter(e => e.t === 'A' && e.tp === 'goal')
+          .map(e => (e.scorer || e.pl || '').replace(/^#\d+\s*/, ''))
+          .filter(Boolean);
+        matches.push({
+          id: m.id,
+          date,
+          dateRaw: endedAt ? new Date(endedAt).toISOString() : null,
+          endedAt,
+          opp: m.tB?.n || 'Adversaire',
+          home: m.tA?.n || 'Mon équipe',
+          away: m.tB?.n || 'Adversaire',
+          venue: '?',
+          score: [sA, sB],
+          result,
+          journee: null,
+          forfeit: false,
+          played: true,
+          scorers,
+          matchType: m.matchType || 'amical',
+          coachArbitrated: true,    // flag pour distinguer des matchs FFF officiels
+        });
+      } catch (e) {}
+    }
+    // Tri du plus récent au plus ancien
+    matches.sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
+    return matches;
+  } catch (e) { return []; }
+}
+
 // ─── Calculer les exploits joueurs depuis M.ev (#19) ───
 // doubles, triples (hat-tricks), sortie blanche pour le gardien.
 function computeExploits(M) {
@@ -345,7 +399,7 @@ Object.assign(window.MATCH_HELPERS, {
   newMatch, loadMatch, saveMatch, gMatch, gMin, buildDefaultTeams, playerLabel,
   requestWakeLock, releaseWakeLock, goFullscreen, exitFullscreen,
   startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
-  getLiveMatch, computeExploits, editEvent,
+  getLiveMatch, listCoachFinishedMatches, computeExploits, editEvent,
   gPauseMs, gRealMs, fmtMMSS, isInHalftime,
 });
 if (!window.MATCH_SFX) window.MATCH_SFX = {};

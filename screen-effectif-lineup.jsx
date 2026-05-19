@@ -280,16 +280,33 @@ function ScreenLineup({ go, tweaks }) {
 
   // ===== Initial state — 3 listes : starters (map slotIdx→pid), bench[], reserve[] =====
   // Règle banc foot amateur : strictement 3 OU 5 remplaçants, jamais 4, jamais autre chose.
-  // Tout banc chargé d'une longueur invalide est snappé : <=3 → 3, 4 → 3 (le surplus retombe en réserve),
-  // >=5 → 5 (le reste retombe en réserve). Évite l'état intermédiaire qui agace.
+  // - Tout banc chargé invalide est snappé : <3 → top-up depuis la réserve pour atteindre 3
+  // - = 4 → snap down à 3 (le 4ème retourne en tête de réserve)
+  // - >= 5 → cap à 5 (surplus en tête de réserve)
+  // Aussi : nettoie les IDs orphelins (joueur supprimé de l'effectif depuis la dernière sauvegarde).
   const snapBench = (bench, reserve) => {
-    if (bench.length <= 3) return { bench: bench.slice(), reserve: reserve.slice() };
-    if (bench.length === 4) {
-      // Snap down vers 3 : le 4ème joueur va en tête de réserve (non destructif).
-      return { bench: bench.slice(0, 3), reserve: [bench[3], ...reserve] };
+    const allPlayers = window.CDD_PLAYERS || [];
+    const playerExists = (pid) => allPlayers.some(p => p.id === pid);
+    // 1. Garde uniquement les joueurs qui existent encore (cas effectif modifié depuis la sauvegarde)
+    let cleanBench   = (bench || []).filter(playerExists);
+    let cleanReserve = (reserve || []).filter(playerExists);
+    // 2. Top-up si banc < 3 : on pioche dans la réserve les premiers joueurs disponibles
+    if (cleanBench.length < 3 && cleanReserve.length > 0) {
+      const benchSet = new Set(cleanBench);
+      const needed = 3 - cleanBench.length;
+      const toAdd = cleanReserve.filter(pid => !benchSet.has(pid)).slice(0, needed);
+      cleanBench = [...cleanBench, ...toAdd];
+      cleanReserve = cleanReserve.filter(pid => !toAdd.includes(pid));
     }
-    // bench.length >= 5 : cap à 5, surplus en tête de réserve.
-    return { bench: bench.slice(0, 5), reserve: [...bench.slice(5), ...reserve] };
+    // 3. Snap down si banc = 4
+    if (cleanBench.length === 4) {
+      return { bench: cleanBench.slice(0, 3), reserve: [cleanBench[3], ...cleanReserve] };
+    }
+    // 4. Cap à 5 si banc >= 5
+    if (cleanBench.length >= 5) {
+      return { bench: cleanBench.slice(0, 5), reserve: [...cleanBench.slice(5), ...cleanReserve] };
+    }
+    return { bench: cleanBench, reserve: cleanReserve };
   };
   const buildInitial = () => {
     const activeTeam = window.CDD?.getActiveTeam?.();

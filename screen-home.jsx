@@ -16,9 +16,12 @@ function CountdownPill({ days }) {
   );
 }
 
+// Accepte W/D/L (anglais, vient de FFF) ou V/N/D (français, traduit).
+// Affiche toujours en français V/N/D — convention coach FR.
 function FormDot({ r, big }) {
-  const cls = r === "W" ? "fd-w" : r === "D" ? "fd-d" : "fd-l";
-  return <span className={`fd ${cls} ${big?"fd-big":""}`}>{r}</span>;
+  const display = r === 'W' ? 'V' : r === 'L' ? 'D' : r === 'D' ? 'N' : r;
+  const cls = display === 'V' ? 'fd-w' : display === 'D' ? 'fd-l' : 'fd-d';
+  return <span className={`fd ${cls} ${big?"fd-big":""}`}>{display}</span>;
 }
 
 // ---------- Visuel jour/nuit auto selon heure ----------
@@ -271,25 +274,58 @@ function ScreenHome({ go, tweaks }) {
         {topAssist && <FutCard player={topAssist} size="md" onClick={() => go("fiche", topAssist)} />}
       </div>
 
-      {/* DERNIERS MATCHS */}
+      {/* DERNIERS MATCHS — inclut désormais les matchs arbitrés par le coach
+          (avec date + type) en plus des matchs FFF officiels */}
       <div className="sec-h"><span className="t">Derniers matchs</span><button className="a" onClick={() => go("results")}>Tous →</button></div>
       <div className="lm-list">
-        {last.map((m,i) => (
-          <button className={`lm-card lm-${m.result.toLowerCase()}`} key={i} onClick={() => go("fiche-match")}>
-            <div className="lm-result"><FormDot r={m.result} big/></div>
-            <div className="lm-main">
-              <div className="lm-opp">
-                <span className="lm-venue">{m.venue}</span>
-                <span className="lm-club">{m.opp}</span>
+        {last.slice(0, 5).map((m,i) => {
+          const typeLabels = {
+            championnat: { l: 'Champ.', c: '#c8f169' },
+            coupe:       { l: 'Coupe',  c: '#fbbf24' },
+            amical:      { l: 'Amical', c: '#94a3b8' },
+            entrainement:{ l: 'Entr.',  c: '#94a3b8' },
+            tournoi:     { l: 'Tournoi',c: '#a78bfa' },
+          };
+          const typ = typeLabels[m.matchType] || typeLabels.amical;
+          // Normalise le résultat W/D/L (FFF) vers V/N/D (français)
+          const resultFR = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : m.result === 'D' ? 'N' : m.result;
+          return (
+            <button className={`lm-card lm-${(m.result || '').toLowerCase()}`} key={m.id || i}
+                    onClick={() => go("fiche-match")}>
+              <div className="lm-result"><FormDot r={resultFR} big/></div>
+              <div className="lm-main">
+                <div className="lm-opp">
+                  <span className="lm-venue">{m.venue}</span>
+                  <span className="lm-club">{m.opp}</span>
+                </div>
+                <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
+                  <span style={{
+                    fontSize:9, fontWeight:800, letterSpacing:'.06em',
+                    padding:'2px 6px', borderRadius:5,
+                    background: typ.c + '20', color: typ.c, border:`1px solid ${typ.c}40`,
+                  }}>{typ.l}</span>
+                  {m.scorers && m.scorers.length > 0 && (
+                    <span className="lm-scorers" style={{fontSize:10, opacity:0.7}}>
+                      {m.scorers.slice(0, 3).join(' · ')}{m.scorers.length > 3 ? '…' : ''}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="lm-scorers">{m.scorers.join(" · ")}</div>
-            </div>
-            <div className="lm-score num">
-              <span>{m.score[0]}</span><i>–</i><span>{m.score[1]}</span>
-            </div>
-            <div className="lm-date">{m.date}</div>
-          </button>
-        ))}
+              <div className="lm-score num">
+                <span>{m.score[0]}</span><i>–</i><span>{m.score[1]}</span>
+              </div>
+              <div className="lm-date">{m.date}</div>
+            </button>
+          );
+        })}
+        {last.length === 0 && (
+          <div style={{
+            padding:'16px', textAlign:'center', fontSize:12, opacity:0.55,
+            background:'rgba(255,255,255,0.03)', borderRadius:10,
+          }}>
+            Aucun match joué encore — termine ton premier match pour le voir ici.
+          </div>
+        )}
       </div>
 
     </div>

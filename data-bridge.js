@@ -528,7 +528,12 @@ async function rebuildCDDGlobals() {
   };
 
   // Default placeholders — overridden by FFF data
-  window.CDD_LAST_MATCHES = [];
+  // Mais on charge tout de suite les matchs arbitrés par le coach (cdd_match_*) pour qu'ils
+  // apparaissent immédiatement sur l'accueil, sans attendre la sync FFF.
+  const coachFinished = (window.MATCH_HELPERS && window.MATCH_HELPERS.listCoachFinishedMatches)
+    ? window.MATCH_HELPERS.listCoachFinishedMatches()
+    : [];
+  window.CDD_LAST_MATCHES = coachFinished;
   window.CDD_STANDINGS = [];
   window.CDD_TOP_SCORERS = [];
 
@@ -766,7 +771,7 @@ async function applyFFFData(fffCfg, clubName, players) {
     const played = myMatches.filter(m => m.played);
     const upcoming = myMatches.filter(m => !m.played).reverse();
 
-    window.CDD_LAST_MATCHES = played.slice(0, 99).map(m => ({
+    const fffMatches = played.slice(0, 99).map(m => ({
       date: m.date,
       dateRaw: m.dateRaw,
       opp: m.opp,
@@ -779,7 +784,33 @@ async function applyFFFData(fffCfg, clubName, players) {
       forfeit: m.forfeit,
       played: true,
       scorers: [],
+      matchType: 'championnat',  // FFF -> championnat par définition
+      coachArbitrated: false,
     }));
+    // Merge avec les matchs arbitrés par le coach (cdd_match_*) : ils prennent priorité
+    // sur les matchs FFF du même adversaire (à +/- 2j) car ils contiennent le détail
+    // (buteurs, cartons, type) saisi par le coach.
+    const coachMatches = (window.MATCH_HELPERS && window.MATCH_HELPERS.listCoachFinishedMatches)
+      ? window.MATCH_HELPERS.listCoachFinishedMatches()
+      : [];
+    const matchesOppDate = (a, b) => {
+      const oppMatch = (a.opp || '').toLowerCase() === (b.opp || '').toLowerCase();
+      const dateA = a.dateRaw ? new Date(a.dateRaw).getTime() : 0;
+      const dateB = b.dateRaw ? new Date(b.dateRaw).getTime() : 0;
+      const dateMatch = dateA && dateB && Math.abs(dateA - dateB) < 2 * 86400000;
+      return oppMatch && dateMatch;
+    };
+    const merged = [...coachMatches];
+    fffMatches.forEach(f => {
+      if (!coachMatches.some(c => matchesOppDate(c, f))) merged.push(f);
+    });
+    // Tri par date desc, en gardant les sans-date en queue
+    merged.sort((a, b) => {
+      const dA = a.dateRaw ? new Date(a.dateRaw).getTime() : (a.endedAt || 0);
+      const dB = b.dateRaw ? new Date(b.dateRaw).getTime() : (b.endedAt || 0);
+      return dB - dA;
+    });
+    window.CDD_LAST_MATCHES = merged.slice(0, 99);
 
     // Also store all matches (past + upcoming) for full agenda
     window.CDD_ALL_MATCHES = [...played, ...upcoming.map(m => ({
