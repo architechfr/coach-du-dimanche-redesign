@@ -271,6 +271,15 @@ function ScreenSettings({ go, tweaks, setTweak }) {
 
       {isCoach && (
         <div className="set-sec">
+          <div className="set-sec-k">MON CLUB</div>
+          <div className="set-rows">
+            <ClubLogoRow refresh={() => setRefresh(x => x + 1)}/>
+          </div>
+        </div>
+      )}
+
+      {isCoach && (
+        <div className="set-sec">
           <div className="set-sec-k">MATCH</div>
           <div className="set-rows">
             <SetRow ic="🔊" t="Sons" d={sons ? "Activés" : "Désactivés"} rightToggle on={sons} onToggle={() => setToggle("sons", !sons)}/>
@@ -355,6 +364,92 @@ function SetRow({ ic, t, d, status, rightToggle, on, onToggle, warn, go }) {
         !status && <span className="set-row-arr">›</span>
       )}
     </button>
+  );
+}
+
+// ─── Upload du logo club (affiché partout : match live, mode vestiaire, timeline) ───
+function ClubLogoRow({ refresh }) {
+  const club = window.CDD_CLUB || {};
+  const currentLogo = club.logoDataUrl || null;
+  const fileInputRef = React.useRef(null);
+
+  const handleFile = (file) => {
+    if (!file) return;
+    if (file.size > 800 * 1024) {
+      alert('Logo trop lourd (max 800 Ko). Redimensionne ton image et réessaie.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        // On stocke le logo dans cdd_club_logo_override (lu par data-bridge au rebuild)
+        const dataUrl = reader.result;
+        localStorage.setItem('cdd_club_logo_override', dataUrl);
+        // Patch live de CDD_CLUB pour effet immédiat sans recharger l'app
+        if (window.CDD_CLUB) window.CDD_CLUB.logoDataUrl = dataUrl;
+        window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+        if (window.CDD_REBUILD) window.CDD_REBUILD();
+        if (refresh) refresh();
+      } catch (e) { alert('Erreur enregistrement : ' + e.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeLogo = () => {
+    if (!confirm('Supprimer le logo du club ?')) return;
+    try {
+      localStorage.removeItem('cdd_club_logo_override');
+      if (window.CDD_CLUB) window.CDD_CLUB.logoDataUrl = null;
+      window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+      if (refresh) refresh();
+    } catch (e) {}
+  };
+
+  return (
+    <div style={{
+      padding: '14px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+      display:'flex', alignItems:'center', gap:14,
+    }}>
+      <div style={{
+        width:56, height:56, borderRadius:14, flexShrink:0,
+        background: currentLogo ? '#fff' : 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        overflow:'hidden',
+      }}>
+        {currentLogo ? (
+          <img src={currentLogo} alt="Logo club" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+        ) : (
+          <span style={{fontSize:24, opacity:0.5}}>🛡</span>
+        )}
+      </div>
+      <div style={{flex:1, minWidth:0}}>
+        <div style={{fontSize:14, fontWeight:700, color:'#fff'}}>Logo du club</div>
+        <div style={{fontSize:11, color:'rgba(255,255,255,0.55)', marginTop:2}}>
+          Affiché partout : match live, mode vestiaire, partage parents
+        </div>
+        <div style={{display:'flex', gap:6, marginTop:8}}>
+          <button onClick={() => fileInputRef.current?.click()} style={{
+            padding:'6px 10px', borderRadius:8,
+            background:'rgba(200,241,105,0.12)', color:'#c8f169',
+            border:'1px solid rgba(200,241,105,0.35)',
+            fontSize:11, fontWeight:700, cursor:'pointer',
+          }}>{currentLogo ? '🔄 Changer' : '📤 Uploader'}</button>
+          {currentLogo && (
+            <button onClick={removeLogo} style={{
+              padding:'6px 10px', borderRadius:8,
+              background:'rgba(255,107,107,0.10)', color:'#ff8a8a',
+              border:'1px solid rgba(255,107,107,0.30)',
+              fontSize:11, fontWeight:700, cursor:'pointer',
+            }}>Supprimer</button>
+          )}
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*"
+               style={{display:'none'}}
+               onChange={(e) => handleFile(e.target.files && e.target.files[0])}/>
+      </div>
+    </div>
   );
 }
 

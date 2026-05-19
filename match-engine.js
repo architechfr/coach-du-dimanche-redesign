@@ -75,22 +75,58 @@ function newMatch(tA, tB, cfg = {}) {
   };
 }
 
-// Build default teams from CDD_PLAYERS
+// Build default teams from la vraie compo : convocation match si dispo,
+// sinon compo type (cdd_lineup_template), sinon fallback isStarter.
 function buildDefaultTeams() {
   const players = window.CDD_PLAYERS || [];
   const club = window.CDD_CLUB || {};
+  const byId = (id) => players.find(p => p.id === id);
+  const toToken = (p, onField) => ({
+    num: p.num, first: p.first, last: p.last, id: p.id, onField,
+  });
+
+  // Priorité 1 : CDD_CONVO (overlay convocation match, calculé par data-bridge)
+  const conv = window.CDD_CONVO;
+  let starters = null, bench = null;
+  if (conv && Array.isArray(conv.starters) && conv.starters.length > 0) {
+    starters = conv.starters.map(byId).filter(Boolean);
+    bench    = (conv.bench || []).map(byId).filter(Boolean);
+  }
+
+  // Priorité 2 : cdd_lineup_template (compo type sauvée par le coach)
+  if (!starters || starters.length === 0) {
+    try {
+      const activeTeam = window.CDD?.getActiveTeam?.();
+      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      const s = activeTeam && all[activeTeam.id];
+      if (s && s.starters) {
+        const idsInOrder = Object.keys(s.starters).sort((a,b) => +a - +b).map(k => s.starters[k]);
+        starters = idsInOrder.map(byId).filter(Boolean);
+        bench    = (s.bench || []).map(byId).filter(Boolean);
+      }
+    } catch (e) {}
+  }
+
+  // Priorité 3 (fallback) : isStarter + premiers dispo en banc
+  if (!starters || starters.length === 0) {
+    starters = players.filter(p => p.isStarter).slice(0, 11);
+    bench    = players.filter(p => !p.isStarter && p.status !== 'reserve').slice(0, 5);
+  }
+
   return {
     tA: {
-      n: club.short || 'Mon équipe',
+      n: club.short || club.name || 'Mon équipe',
       c: club.colors?.[0] || '#c8f169',
       c2: club.colors?.[1] || '#000000',
-      p: players.filter(p => p.isStarter).slice(0, 11).map(p => ({ num: p.num, first: p.first, last: p.last, id: p.id, onField: true })),
-      bench: players.filter(p => !p.isStarter && p.status !== 'reserve').slice(0, 7).map(p => ({ num: p.num, first: p.first, last: p.last, id: p.id, onField: false })),
+      logoDataUrl: club.logoDataUrl || null,
+      p:     starters.map(p => toToken(p, true)),
+      bench: (bench || []).map(p => toToken(p, false)),
     },
     tB: {
       n: 'Adversaire',
       c: '#3b82f6',
       c2: '#ffffff',
+      logoDataUrl: null,
       p: Array.from({length:11}, (_,i) => ({ num: i+1, first: '', last: '#'+(i+1), id: 'b_'+i, onField: true })),
       bench: Array.from({length:5}, (_,i) => ({ num: 12+i, first: '', last: '#'+(12+i), id: 'b_'+(11+i), onField: false })),
     }

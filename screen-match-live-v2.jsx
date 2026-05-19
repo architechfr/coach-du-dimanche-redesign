@@ -196,6 +196,36 @@ function CardOverlay({ color, side, player, hint, onClose, onCloseShow2 }) {
 }
 
 // ──────────────────────────────────────────────────────────
+// Team Badge — affiche le logo club si dispo, sinon fallback couleurs + initiale
+// ──────────────────────────────────────────────────────────
+function TeamBadgeBig({ team }) {
+  const logo = team && team.logoDataUrl;
+  if (logo) {
+    return (
+      <div className="mv-team-badge" style={{
+        background:'#fff', overflow:'hidden',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        borderColor: team.c || 'rgba(255,255,255,0.2)',
+      }}>
+        <img src={logo} alt={team.n}
+             style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+      </div>
+    );
+  }
+  // Fallback : pastille couleurs club + initiale (comportement historique)
+  return (
+    <div className="mv-team-badge" style={{
+      background: team.c2
+        ? `linear-gradient(135deg, ${team.c} 50%, ${team.c2} 50%)`
+        : `linear-gradient(160deg, ${team.c}, ${team.c}99)`,
+      borderColor: team.c
+    }}>
+      {team.n[0]}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
 // Match Header (sticky)
 // ──────────────────────────────────────────────────────────
 function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
@@ -206,16 +236,12 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
 
       <div className="mv-teams-row">
         <div className="mv-team mv-team-A">
-          <div className="mv-team-badge" style={{
-            background: M.tA.c2
-              ? `linear-gradient(135deg, ${M.tA.c} 50%, ${M.tA.c2} 50%)`
-              : `linear-gradient(160deg, ${M.tA.c}, ${M.tA.c}99)`,
-            borderColor: M.tA.c
-          }}>
-            {M.tA.n[0]}
-          </div>
-          {/* #38 — nom club agrandi */}
-          <div className="mv-team-n" style={{fontSize:'17px', fontWeight:900, letterSpacing:'.04em'}}>{M.tA.n}</div>
+          <TeamBadgeBig team={M.tA}/>
+          {/* Nom club bien lisible (#38 puis agrandissement demande par le coach) */}
+          <div className="mv-team-n" style={{
+            fontSize:'clamp(20px, 5vw, 26px)', fontWeight:900,
+            letterSpacing:'.02em', lineHeight:1.05,
+          }}>{M.tA.n}</div>
         </div>
 
         <div className="mv-score-block">
@@ -260,7 +286,7 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
                   {M.st === 'live' && <span className="mv-live-dot" style={{animation:'pulse 1.2s infinite'}}/>}
                   <span>{inHt ? 'MI-TEMPS' : M.st === 'live' ? 'LIVE' : 'PAUSE'}</span>
                   <span style={{opacity:.5}}>·</span>
-                  <span>{M.ch}<sup>e</sup> MT</span>
+                  <span>{M.ch === 1 ? '1ère' : M.ch + 'ème'} Mi-temps</span>
                   {M.at > 0 && <><span style={{opacity:.5}}>·</span><span>+{M.at}'</span></>}
                 </div>
                 {/* Temps pause visible si en pause */}
@@ -320,16 +346,11 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
         </div>
 
         <div className="mv-team mv-team-B">
-          <div className="mv-team-badge" style={{
-            background: M.tB.c2
-              ? `linear-gradient(135deg, ${M.tB.c} 50%, ${M.tB.c2} 50%)`
-              : `linear-gradient(160deg, ${M.tB.c}, ${M.tB.c}99)`,
-            borderColor: M.tB.c
-          }}>
-            {M.tB.n[0]}
-          </div>
-          {/* #38 — nom club agrandi */}
-          <div className="mv-team-n" style={{fontSize:'17px', fontWeight:900, letterSpacing:'.04em'}}>{M.tB.n}</div>
+          <TeamBadgeBig team={M.tB}/>
+          <div className="mv-team-n" style={{
+            fontSize:'clamp(20px, 5vw, 26px)', fontWeight:900,
+            letterSpacing:'.02em', lineHeight:1.05,
+          }}>{M.tB.n}</div>
         </div>
       </div>
 
@@ -618,18 +639,17 @@ function ScreenMatchV2({ go, tweaks }) {
     );
   }
 
-  // Tick chrono every second while live.
-  // BUG FIX : avant, on stockait setMinute(gMin) qui ne change qu'une fois par minute
-  // → React voyait la même valeur et ne re-renderait pas → les secondes étaient figées.
-  // On stocke Date.now() pour garantir un re-render à chaque tick.
+  // Tick chrono every second. On tique DÈS QUE le match est commencé et pas terminé
+  // → couvre live + pause (pour le compteur de pause) + mi-temps (pour le countdown).
+  // Sans ça, le coach doit refresh la page pour voir avancer le temps en pause/mi-temps.
   const [chronoTick, setChronoTick] = useStateMV(Date.now());
   // eslint-disable-next-line no-unused-vars
   const minute = MATCH_HELPERS.gMin(M); // recalculé à chaque render grâce au tick
   useEffectMV(() => {
-    if (M.st !== 'live') return;
+    if (!M || M.notStarted || M.st === 'finished') return;
     const t = setInterval(() => setChronoTick(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [M.st]);
+  }, [M, M && M.st, M && M.notStarted]);
 
   const rerender = () => {
     forceRender({});

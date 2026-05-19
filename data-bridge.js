@@ -439,12 +439,19 @@ async function rebuildCDDGlobals() {
   const fffCfg = activeTeam?.fff || null;
   const clubName = activeClub?.name || '';
 
+  // Logo club : priorité à l'override coach (uploadé dans Réglages), sinon
+  // celui de la donnée club brute s'il existe.
+  let logoDataUrl = null;
+  try { logoDataUrl = localStorage.getItem('cdd_club_logo_override') || null; } catch (e) {}
+  if (!logoDataUrl) logoDataUrl = activeClub?.logoDataUrl || null;
+
   window.CDD_CLUB = {
     name: clubName || 'AS Club',
     short: clubName || 'CLUB',
     team: activeTeam?.name || 'Équipe',
     season: '2025–2026',
     colors: [activeClub?.primaryColor || '#22c55e', activeClub?.secondaryColor || '#000000'],
+    logoDataUrl,
     league: fffCfg?.label || 'Championnat',
     rank: 0, played: 0, W: 0, D: 0, L: 0, gf: 0, ga: 0, pts: 0,
     form: [],
