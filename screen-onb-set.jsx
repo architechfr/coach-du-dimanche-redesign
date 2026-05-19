@@ -271,6 +271,29 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                       alert('Rôle changé en ' + choice + '. Recharge si nécessaire.');
                     }
                   }}/>
+          {userEmail && (
+            <SetRow ic="🚪" t="Se déconnecter"
+                    d="Passer en mode visiteur (données conservées)"
+                    go={() => {
+                      const ok = confirm(
+                        'Te déconnecter ?\n\n' +
+                        '  • Ton email sera retiré de cet appareil\n' +
+                        '  • L\'app passe en mode visiteur (lecture seule)\n' +
+                        '  • Tes données locales ne sont PAS supprimées\n' +
+                        '  • Tes rattachements (memberships) restent intacts\n' +
+                        '  • Tu retrouveras tout en re-saisissant le même email'
+                      );
+                      if (!ok) return;
+                      try { localStorage.removeItem('cdd_user_email'); } catch (e) {}
+                      // Bascule en mode visiteur partout
+                      window.dispatchEvent(new Event('cdd-auth-changed'));
+                      window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
+                      window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+                      if (window.CDD_REBUILD) window.CDD_REBUILD();
+                      setRefresh(x => x + 1);
+                      alert('Déconnecté. Tu es en mode visiteur. Touche ✎ en haut pour te reconnecter.');
+                    }}/>
+          )}
         </div>
       </div>
 
