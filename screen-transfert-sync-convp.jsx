@@ -152,40 +152,145 @@ window.ScreenTransfert = ScreenTransfert;
    ============================================================ */
 
 function ScreenSyncCloud({ go, tweaks }) {
-  // Lit les vraies équipes depuis localStorage (arb_teams) au lieu du mock historique.
-  // Une "carte" ici = une équipe (club + catégorie). Les équipes du même club
-  // partagent le logo et les couleurs (voir CDD_CLUB côté data-bridge).
-  const buildClubsList = () => {
+  // ── Modèle : clubs[] avec leurs teams[] imbriquées.
+  // Source de vérité : arb_clubs (liste des clubs) + arb_teams (équipes liées par clubId).
+  // L'écran est cloisonné : on n'affiche QUE les équipes du club du tab actif.
+  // Tab actif = club actif (arb_current_club + cdd_active_context.clubId).
+  const buildClubsWithTeams = () => {
     try {
-      const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
       const allClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
-      const clubById = {};
-      allClubs.forEach(c => { clubById[c.id] = c; });
-      return teams.map(t => {
-        const club = clubById[t.clubId] || {};
-        return {
-          id: t.id,
-          name: club.name || t.clubName || 'Club',
-          team: t.name || t.category || 'Équipe',
-          players: (t.players || []).length || t.playersCount || 0,
-          color: club.primaryColor || t.color || '#c8f169',
-          createdAt: t.createdAt || null,
-          createdBy: t.createdBy || null,
-        };
-      });
+      const allTeams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+      const logos    = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
+      return allClubs.map(c => ({
+        id: c.id,
+        name: c.name || 'Club',
+        primaryColor: c.primaryColor || c.color || '#c8f169',
+        logoDataUrl: logos[c.id] || null,
+        createdAt: c.createdAt || null,
+        createdBy: c.createdBy || null,
+        teams: allTeams
+          .filter(t => t.clubId === c.id)
+          .map(t => ({
+            id: t.id,
+            name: t.name || t.category || 'Équipe',
+            players: (t.players || []).length || t.playersCount || 0,
+            createdAt: t.createdAt || null,
+          })),
+      }));
     } catch (e) { return []; }
   };
-  const realClubs = buildClubsList();
-  // Fallback démo seulement si vraiment aucune équipe en local
-  const clubs = realClubs.length > 0 ? realClubs : [
-    { id:"demo-1", name:"FCMH", team:"U15 D2", players:18, color:"#c8f169" },
-    { id:"demo-2", name:"USDF", team:"Vétérans", players:22, color:"#3b82f6" },
-  ];
+  const clubs = buildClubsWithTeams();
+
+  // Contexte actuel (club actif + équipe active)
   const activeCtx = (() => {
     try { return JSON.parse(localStorage.getItem('cdd_active_context') || '{}'); }
     catch (e) { return {}; }
   })();
-  const [active, setActive] = useState(activeCtx.teamId || clubs[0]?.id || "");
+  const currentClubId = activeCtx.clubId || localStorage.getItem('arb_current_club') || clubs[0]?.id || '';
+  const currentTeamId = activeCtx.teamId || '';
+
+  // Le tab visible suit le club actif. On force un re-render via state pour que les
+  // clics de switch déclenchent immédiatement le rafraîchissement de l'UI.
+  const [activeClubId, setActiveClubId] = useState(currentClubId);
+  const [activeTeamId, setActiveTeamId] = useState(currentTeamId);
+
+  // Switch de club : écrit arb_current_club + cdd_active_context.clubId, et
+  // sélectionne la 1ère équipe du club par défaut. Dispatch l'événement écouté
+  // par data-bridge pour rebuild CDD_PLAYERS / CDD_NEXT_MATCH / etc.
+  const switchClub = (clubId) => {
+    if (!clubId || clubId === activeClubId) return;
+    const club = clubs.find(c => c.id === clubId);
+    const firstTeamId = club?.teams[0]?.id || null;
+    try {
+      localStorage.setItem('arb_current_club', clubId);
+      const ctx = { ...activeCtx, clubId, teamId: firstTeamId, matchId: null };
+      localStorage.setItem('cdd_active_context', JSON.stringify(ctx));
+    } catch (e) {}
+    setActiveClubId(clubId);
+    setActiveTeamId(firstTeamId);
+    try { window.dispatchEvent(new CustomEvent('cdd-active-club-changed', { detail: { clubId } })); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('cdd-active-team-changed', { detail: { teamId: firstTeamId } })); } catch (e) {}
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  };
+
+  const switchTeam = (teamId) => {
+    if (!teamId || teamId === activeTeamId) return;
+    try {
+      const ctx = { ...activeCtx, clubId: activeClubId, teamId, matchId: null };
+      localStorage.setItem('cdd_active_context', JSON.stringify(ctx));
+    } catch (e) {}
+    setActiveTeamId(teamId);
+    try { window.dispatchEvent(new CustomEvent('cdd-active-team-changed', { detail: { teamId } })); } catch (e) {}
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  };
+
+  const activeClub = clubs.find(c => c.id === activeClubId) || clubs[0] || null;
+
+  // Audit helper : journalise dans cdd_audit_log (visible par la vue admin).
+  const audit = (kind, target) => {
+    try {
+      const by = localStorage.getItem('cdd_user_email')
+              || localStorage.getItem('cdd_coach_name')
+              || 'anonyme';
+      const log = JSON.parse(localStorage.getItem('cdd_audit_log') || '[]');
+      log.unshift({ ts: Date.now(), kind, by, target });
+      localStorage.setItem('cdd_audit_log', JSON.stringify(log.slice(0, 200)));
+    } catch (e) {}
+  };
+
+  // Création d'un VRAI nouveau club (push dans arb_clubs). On switch dessus
+  // immédiatement pour que le tab actif devienne le nouveau club.
+  const addNewClub = () => {
+    const name = prompt('Nom du club (ex: FCMH, USDF, AS POISSY) :');
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
+      const newClub = {
+        id: 'club_' + Date.now(),
+        name: trimmed,
+        primaryColor: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
+        secondaryColor: '#0a0e14',
+        createdAt: Date.now(),
+        createdBy: localStorage.getItem('cdd_user_email') || localStorage.getItem('cdd_coach_name') || 'anonyme',
+      };
+      existing.push(newClub);
+      localStorage.setItem('arb_clubs', JSON.stringify(existing));
+      audit('club-created', trimmed);
+      switchClub(newClub.id);
+      alert(`Club "${trimmed}" créé. Ajoute maintenant une équipe à ce club.`);
+    } catch (e) { alert('Erreur sauvegarde club : ' + e.message); }
+  };
+
+  // Création d'une VRAIE équipe DANS le club fourni (push dans arb_teams avec clubId).
+  // Plus de confusion entre arb_clubs et arb_teams.
+  const addNewTeam = (club) => {
+    if (!club) return;
+    const name = prompt(`Catégorie / nom de l'équipe pour ${club.name} (ex: U15 D2, Vétérans, Seniors B) :`, 'U15 D2');
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+      const newTeam = {
+        id: 'team_' + Date.now(),
+        clubId: club.id,
+        name: trimmed,
+        category: trimmed,
+        players: [],
+        lineupTemplate: null,
+        createdAt: Date.now(),
+        createdBy: localStorage.getItem('cdd_user_email') || localStorage.getItem('cdd_coach_name') || 'anonyme',
+      };
+      existing.push(newTeam);
+      localStorage.setItem('arb_teams', JSON.stringify(existing));
+      audit('team-created', `${club.name} · ${trimmed}`);
+      // Cible cette équipe comme active dans le club courant
+      switchTeam(newTeam.id);
+      alert(`Équipe "${trimmed}" ajoutée à ${club.name}. Va dans Effectif pour ajouter des joueurs.`);
+    } catch (e) { alert('Erreur sauvegarde équipe : ' + e.message); }
+  };
 
   // Activité récente : on combine plusieurs sources locales pour afficher
   // un journal HONNÊTE de ce qui s'est vraiment passé (au lieu d'un mock).
@@ -329,86 +434,149 @@ function ScreenSyncCloud({ go, tweaks }) {
       })()}
 
       <div className="sec-h">
-        <span className="t">Mes équipes</span>
-        <span className="a">{clubs.length} actives</span>
+        <span className="t">Mes clubs</span>
+        <span className="a">{clubs.length} actif{clubs.length > 1 ? 's' : ''}</span>
       </div>
-      {/* Hint pour expliquer pourquoi un même club peut apparaître plusieurs fois */}
-      <div style={{
-        margin:'0 14px 8px', padding:'8px 12px', borderRadius:8,
-        background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)',
-        fontSize:11, color:'rgba(255,255,255,0.55)', lineHeight:1.4,
-      }}>
-        💡 Une équipe = un club + une catégorie. Le même club (FCMH par ex.) peut avoir plusieurs équipes (U15, U11, vétérans…).
-      </div>
-      {/* Raccourci direct vers la personnalisation du logo club (dans Réglages) */}
-      <button onClick={() => go('set')} style={{
-        margin:'0 14px 12px', padding:'10px 12px', borderRadius:10,
-        width:'calc(100% - 28px)', textAlign:'left',
-        background:'rgba(200,241,105,0.08)', border:'1px solid rgba(200,241,105,0.30)',
-        color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:10,
-        fontFamily:'inherit',
-      }}>
-        <span style={{fontSize:18}}>🎨</span>
-        <span style={{flex:1, minWidth:0}}>
-          <div style={{fontSize:12, fontWeight:800, color:'#c8f169', letterSpacing:'.04em'}}>
-            PERSONNALISER MON CLUB
-          </div>
-          <div style={{fontSize:10.5, color:'rgba(255,255,255,0.6)', marginTop:1}}>
-            Logo, couleurs · affiché en match live, mode vestiaire, partage parents
-          </div>
-        </span>
-        <span style={{fontSize:18, opacity:0.7, flexShrink:0}}>›</span>
-      </button>
-      <div className="sync-clubs">
-        {clubs.map(c => (
-          <button key={c.id}
-            className={`sync-club ${active === c.id ? "on" : ""}`}
-            onClick={() => setActive(c.id)}>
-            <div className="sync-club-badge" style={{background: c.color, color:"#0a0e14"}}>{c.name[0]}</div>
-            <div className="sync-club-info">
-              <b>{c.name}</b>
-              <em>{c.team} · {c.players} joueurs</em>
-            </div>
-            <div className="sync-club-status">
-              {active === c.id ? (
-                <span className="sync-club-active">ÉQUIPE ACTIVE</span>
-              ) : (
-                <span className="sync-club-arr">›</span>
-              )}
-            </div>
-          </button>
-        ))}
-        <button className="sync-club-add" onClick={() => {
-          const name = prompt("Nom du club (ex: FCMH) :");
-          if (!name) return;
-          const team = prompt("Catégorie / équipe (ex: U15 D2) :", "U15 D2");
-          if (!team) return;
-          try {
-            // Audit : on trace QUI crée QUOI ET QUAND. Permet la vue admin.
-            const createdBy = localStorage.getItem('cdd_user_email')
-                            || localStorage.getItem('cdd_coach_name')
-                            || 'anonyme';
-            const createdAt = Date.now();
-            const arr = JSON.parse(localStorage.getItem("arb_clubs") || "[]");
-            arr.push({
-              id:"club_"+Date.now(), name, team, players:0,
-              color:"#"+Math.floor(Math.random()*16777215).toString(16),
-              createdAt, createdBy,
-            });
-            localStorage.setItem("arb_clubs", JSON.stringify(arr));
-            // Journal audit dédié (pour la vue admin)
-            try {
-              const log = JSON.parse(localStorage.getItem('cdd_audit_log') || '[]');
-              log.unshift({ ts: createdAt, kind: 'team-created', by: createdBy, target: `${name} · ${team}` });
-              localStorage.setItem('cdd_audit_log', JSON.stringify(log.slice(0, 200)));
-            } catch(e) {}
-            alert(`Équipe "${name} · ${team}" ajoutée. Recharge l'app pour la voir apparaître.`);
-          } catch(e) { alert("Erreur sauvegarde : " + e.message); }
+
+      {clubs.length === 0 ? (
+        <div style={{
+          margin:'0 14px 12px', padding:'24px 18px', borderRadius:12,
+          background:'rgba(200,241,105,0.06)', border:'1px dashed rgba(200,241,105,0.30)',
+          textAlign:'center',
         }}>
-          <div className="sync-club-add-ic">+</div>
-          <span>Ajouter une équipe</span>
-        </button>
-      </div>
+          <div style={{fontSize:32, marginBottom:8}}>⚽</div>
+          <div style={{fontWeight:800, marginBottom:6}}>Aucun club pour l'instant</div>
+          <div style={{fontSize:12, opacity:0.7, marginBottom:14}}>
+            Crée ton premier club pour démarrer.<br/>
+            Une équipe vit toujours à l'intérieur d'un club.
+          </div>
+          <button className="btn-cta" onClick={() => addNewClub()}>+ Créer un club</button>
+        </div>
+      ) : (
+        <>
+          {/* Tabs : un par club. Tab actif = club actif (synchro arb_current_club). */}
+          <div style={{
+            display:'flex', gap:6, padding:'0 14px 10px', overflowX:'auto',
+            scrollbarWidth:'none', WebkitOverflowScrolling:'touch',
+          }}>
+            {clubs.map(c => {
+              const on = c.id === activeClubId;
+              const initial = (c.name[0] || '?').toUpperCase();
+              return (
+                <button key={c.id} onClick={() => switchClub(c.id)} style={{
+                  flexShrink:0, padding:'8px 14px', borderRadius:10,
+                  background: on ? c.primaryColor : 'rgba(255,255,255,0.05)',
+                  color:    on ? '#0a0e14' : '#fff',
+                  border:   on ? `1px solid ${c.primaryColor}` : '1px solid rgba(255,255,255,0.10)',
+                  fontWeight: on ? 900 : 600, fontSize:13, fontFamily:'inherit',
+                  cursor:'pointer', display:'flex', alignItems:'center', gap:8,
+                  boxShadow: on ? `0 0 12px ${c.primaryColor}55` : 'none',
+                }}>
+                  {c.logoDataUrl
+                    ? <img src={c.logoDataUrl} alt={c.name} style={{width:20, height:20, borderRadius:5, objectFit:'cover'}}/>
+                    : <span style={{
+                        width:20, height:20, borderRadius:5, display:'inline-flex',
+                        alignItems:'center', justifyContent:'center',
+                        background: on ? 'rgba(10,14,20,0.20)' : c.primaryColor,
+                        color: on ? c.primaryColor : '#0a0e14',
+                        fontWeight:900, fontSize:11,
+                      }}>{initial}</span>}
+                  <span>{c.name}</span>
+                </button>
+              );
+            })}
+            <button onClick={() => addNewClub()} style={{
+              flexShrink:0, padding:'8px 12px', borderRadius:10,
+              background:'transparent', border:'1px dashed rgba(255,255,255,0.25)',
+              color:'rgba(255,255,255,0.7)', fontWeight:700, fontSize:13, fontFamily:'inherit',
+              cursor:'pointer',
+            }}>+ Club</button>
+          </div>
+
+          {/* Tab actif : section logo + section équipes du club. */}
+          {activeClub && (
+            <div style={{margin:'0 14px 8px', padding:'14px 14px 12px', borderRadius:12,
+                         background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)'}}>
+
+              {/* Identité du club + raccourci personnalisation */}
+              <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:14}}>
+                {activeClub.logoDataUrl
+                  ? <img src={activeClub.logoDataUrl} alt={activeClub.name}
+                         style={{width:48, height:48, borderRadius:10, objectFit:'cover',
+                                 border:`2px solid ${activeClub.primaryColor}`}}/>
+                  : <div style={{
+                      width:48, height:48, borderRadius:10,
+                      background: activeClub.primaryColor, color:'#0a0e14',
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      fontWeight:900, fontSize:20,
+                    }}>{(activeClub.name[0] || '?').toUpperCase()}</div>}
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontWeight:900, fontSize:16}}>{activeClub.name}</div>
+                  <div style={{fontSize:11, opacity:0.6, marginTop:2}}>
+                    {activeClub.teams.length} équipe{activeClub.teams.length > 1 ? 's' : ''}
+                    {activeClub.logoDataUrl ? ' · logo configuré' : ' · sans logo'}
+                  </div>
+                </div>
+                <button onClick={() => go('set')} title="Personnaliser ce club (Réglages)"
+                        style={{
+                          padding:'8px 12px', borderRadius:8,
+                          background:'rgba(200,241,105,0.10)', border:'1px solid rgba(200,241,105,0.35)',
+                          color:'#c8f169', fontWeight:800, fontSize:12, fontFamily:'inherit',
+                          cursor:'pointer', whiteSpace:'nowrap',
+                        }}>🎨 Personnaliser</button>
+              </div>
+
+              {/* Liste des équipes du club actif */}
+              <div style={{fontSize:11, fontWeight:800, opacity:0.55,
+                           letterSpacing:'.06em', marginBottom:8}}>
+                ÉQUIPES DE {activeClub.name.toUpperCase()}
+              </div>
+              <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                {activeClub.teams.length === 0 ? (
+                  <div style={{padding:'14px 12px', borderRadius:8,
+                               background:'rgba(255,255,255,0.02)',
+                               border:'1px dashed rgba(255,255,255,0.10)',
+                               textAlign:'center', fontSize:12, opacity:0.6}}>
+                    Aucune équipe dans ce club. Ajoute-en une ci-dessous.
+                  </div>
+                ) : activeClub.teams.map(t => {
+                  const on = t.id === activeTeamId;
+                  return (
+                    <button key={t.id} onClick={() => switchTeam(t.id)} style={{
+                      padding:'10px 12px', borderRadius:8, textAlign:'left',
+                      background: on ? 'rgba(200,241,105,0.10)' : 'rgba(255,255,255,0.02)',
+                      border: on ? '1px solid rgba(200,241,105,0.45)' : '1px solid rgba(255,255,255,0.06)',
+                      color:'#fff', fontFamily:'inherit', cursor:'pointer',
+                      display:'flex', alignItems:'center', gap:10,
+                    }}>
+                      <div style={{flex:1, minWidth:0}}>
+                        <b style={{fontSize:14}}>{t.name}</b>
+                        <em style={{display:'block', fontSize:11, opacity:0.6, fontStyle:'normal', marginTop:2}}>
+                          {t.players} joueur{t.players > 1 ? 's' : ''}
+                        </em>
+                      </div>
+                      {on ? (
+                        <span style={{
+                          padding:'4px 10px', borderRadius:6, fontSize:10, fontWeight:900,
+                          background:'#c8f169', color:'#0a0e14',
+                        }}>ACTIVE</span>
+                      ) : (
+                        <span style={{opacity:0.5, fontSize:18}}>›</span>
+                      )}
+                    </button>
+                  );
+                })}
+                <button onClick={() => addNewTeam(activeClub)} style={{
+                  padding:'10px 12px', borderRadius:8,
+                  background:'transparent', border:'1px dashed rgba(255,255,255,0.20)',
+                  color:'rgba(255,255,255,0.65)', fontWeight:700, fontSize:13,
+                  fontFamily:'inherit', cursor:'pointer', textAlign:'left',
+                }}>+ Équipe à {activeClub.name}</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       <div className="sec-h">
         <span className="t">Activité récente</span>
