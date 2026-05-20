@@ -7,11 +7,12 @@
 function ScreenOnboarding({ go, tweaks }) {
   const [step, setStep] = useState(0);
   const [role, setRole] = useState(() => localStorage.getItem("cdd_user_role") || null);
-  const [sport, setSport] = useState(() => localStorage.getItem("cdd_user_sport") || "foot");
 
   // Persist on change
   React.useEffect(() => { if (role) localStorage.setItem("cdd_user_role", role); }, [role]);
-  React.useEffect(() => { if (sport) localStorage.setItem("cdd_user_sport", sport); }, [sport]);
+  // #53 — Football uniquement. Le multi-sport (futsal/rugby) est retiré :
+  // nombre de joueurs et terrain différents, hors périmètre produit.
+  React.useEffect(() => { localStorage.setItem("cdd_user_sport", "foot"); }, []);
 
   const next = () => setStep(s => s + 1);
 
@@ -65,37 +66,14 @@ function ScreenOnboarding({ go, tweaks }) {
                 <div className="onb-role-d">Bascule entre les modes à la volée</div>
               </button>
             </div>
-            <button className="btn-cta" disabled={!role} onClick={next}>
-              <span>CONTINUER</span><span className="arr">→</span>
-            </button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="onb-step">
-            <div className="onb-k">CONFIG · 1 min</div>
-            <h1 className="onb-title">Ton sport</h1>
-            <div className="onb-sports">
-              {[
-                {id:"foot", l:"Football",  ic:"⚽", desc:"11v11 · 9v9 · 7v7"},
-                {id:"futsal", l:"Futsal",  ic:"🏟️", desc:"5v5"},
-                {id:"rugby", l:"Rugby",    ic:"🏉", desc:"15 · 13 · 7"},
-              ].map(s => (
-                <button key={s.id} className={`onb-sport ${sport===s.id?"on":""}`} onClick={()=>setSport(s.id)}>
-                  <span className="onb-sport-ic">{s.ic}</span>
-                  <span className="onb-sport-l">{s.l}</span>
-                  <span className="onb-sport-d">{s.desc}</span>
-                </button>
-              ))}
-            </div>
-            <button className="btn-cta" onClick={() => go("home")}>
+            <button className="btn-cta" disabled={!role} onClick={() => go("home")}>
               <span>ENTRER DANS L'APP</span><span className="arr">→</span>
             </button>
           </div>
         )}
 
         <div className="onb-progress">
-          {[0,1,2].map(i => (
+          {[0,1].map(i => (
             <span key={i} className={`onb-dot ${step>=i?"on":""}`}/>
           ))}
         </div>
@@ -177,9 +155,20 @@ function ScreenSettings({ go, tweaks, setTweak }) {
     alert(`${keys.length} clés supprimées. Recharge l'app.`);
   };
   const logout = () => {
-    if (!confirm("Se déconnecter ?")) return;
+    if (!confirm("Se déconnecter ?\n\nTu devras te reconnecter via le lien envoyé par email. Les données du club restent sur l'appareil.")) return;
+    // #52 / #54 — Vraie déconnexion. On retire le profil local ET on coupe la
+    // session Firebase : sans signOut(), onAuthStateChanged ressusciterait
+    // cdd_user_email au rechargement et la déconnexion ne servirait à rien.
     localStorage.removeItem("cdd_user_role");
     localStorage.removeItem("cdd_user_sport");
+    localStorage.removeItem("cdd_coach_name");
+    if (window.cddAuth && window.cddAuth.ready) {
+      // signOut() retire cdd_user_email et dispatche cdd-auth-changed.
+      window.cddAuth.signOut();
+    } else {
+      localStorage.removeItem("cdd_user_email");
+      window.dispatchEvent(new CustomEvent('cdd-auth-changed'));
+    }
     go("onb");
   };
   const installApp = () => {
@@ -252,12 +241,11 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           initialName={localStorage.getItem("cdd_coach_name") || ""}
           initialEmail={localStorage.getItem("cdd_user_email") || ""}
           onClose={() => setShowProfileEdit(false)}
-          onSave={({ name, email }) => {
+          onSave={({ name }) => {
+            // #54 — On ne persiste que le NOM. L'email est l'identité
+            // authentifiée Firebase, géré par cddAuth — jamais réécrit ici.
             if (name)  localStorage.setItem('cdd_coach_name', name);
             else       localStorage.removeItem('cdd_coach_name');
-            if (email) localStorage.setItem('cdd_user_email', email);
-            else       localStorage.removeItem('cdd_user_email');
-            // Patch live des globals pour effet immédiat
             window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
             if (window.CDD_REBUILD) window.CDD_REBUILD();
             setRefresh(x => x + 1);
@@ -270,7 +258,11 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         <div className="set-rows">
           <SetRow ic="🏆" t="Mon club" d={club.name} go={() => isCoach ? go("sync") : alert('Réservé au coach')}/>
           <SetRow ic="👥" t={isParent ? 'Équipe' : 'Mon équipe'} d={`${club.team} · 18 joueurs`} go={() => go("effectif")}/>
-          <SetRow ic="🔐" t="Compte Google" d={userEmail || 'Non connecté'} go={() => alert("Auth Google — disponible Sprint 7")}/>
+          <SetRow ic="🔐" t="Compte" d={userEmail || 'Non connecté'}
+                  status={userEmail ? 'ok' : undefined}
+                  go={() => alert(userEmail
+                    ? `Connecté en tant que ${userEmail}\n\nConnexion vérifiée par lien email. Pour changer de compte, déconnecte-toi puis reconnecte-toi.`
+                    : "Tu n'es pas connecté. Reviens à l'accueil pour recevoir un lien de connexion.")}/>
           {isCoach && (
             <SetRow ic="📡" t="Synchronisation" d="Firestore · à jour" status="ok" go={() => go("sync")}/>
           )}
@@ -285,25 +277,28 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                   }}/>
           {userEmail && (
             <SetRow ic="🚪" t="Se déconnecter"
-                    d="Passer en mode visiteur (données conservées)"
+                    d="Couper la session (données conservées)"
                     go={() => {
                       const ok = confirm(
                         'Te déconnecter ?\n\n' +
-                        '  • Ton email sera retiré de cet appareil\n' +
-                        '  • L\'app passe en mode visiteur (lecture seule)\n' +
+                        '  • Ta session de connexion sera fermée\n' +
                         '  • Tes données locales ne sont PAS supprimées\n' +
                         '  • Tes rattachements (memberships) restent intacts\n' +
-                        '  • Tu retrouveras tout en re-saisissant le même email'
+                        '  • Tu te reconnecteras via le lien envoyé par email'
                       );
                       if (!ok) return;
-                      try { localStorage.removeItem('cdd_user_email'); } catch (e) {}
-                      // Bascule en mode visiteur partout
-                      window.dispatchEvent(new Event('cdd-auth-changed'));
+                      // #54 — Vraie déconnexion : coupe la session Firebase.
+                      // Sans signOut(), onAuthStateChanged ressusciterait l'email.
+                      if (window.cddAuth && window.cddAuth.ready) {
+                        window.cddAuth.signOut();
+                      } else {
+                        try { localStorage.removeItem('cdd_user_email'); } catch (e) {}
+                        window.dispatchEvent(new Event('cdd-auth-changed'));
+                      }
                       window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
                       window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
                       if (window.CDD_REBUILD) window.CDD_REBUILD();
                       setRefresh(x => x + 1);
-                      alert('Déconnecté. Tu es en mode visiteur. Touche ✎ en haut pour te reconnecter.');
                     }}/>
           )}
         </div>
@@ -926,23 +921,20 @@ function ProfileEditModal({ initialName, initialEmail, onClose, onSave }) {
 
           <label style={{display:'flex', flexDirection:'column', gap:6}}>
             <span style={{fontSize:11, fontWeight:800, letterSpacing:'.08em', color:'rgba(255,255,255,0.65)', textTransform:'uppercase'}}>
-              Email (sera utilisé pour la sync cloud Phase 3)
+              Email de connexion
             </span>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+            <input type="email" value={email} readOnly disabled
                    placeholder="ton.email@gmail.com"
                    style={{
                      width:'100%', padding:'12px 14px', borderRadius:10,
-                     background:'rgba(255,255,255,0.06)',
-                     border:`1px solid ${emailValid ? 'rgba(255,255,255,0.14)' : 'rgba(255,107,107,0.5)'}`,
-                     color:'#fff', fontSize:15, outline:'none', boxSizing:'border-box',
+                     background:'rgba(255,255,255,0.03)',
+                     border:'1px solid rgba(255,255,255,0.08)',
+                     color:'rgba(255,255,255,0.6)', fontSize:15, outline:'none',
+                     boxSizing:'border-box', cursor:'not-allowed',
                    }}/>
-            {!emailValid && (
-              <span style={{fontSize:11, color:'#ff8a8a'}}>
-                ⚠ Format email invalide
-              </span>
-            )}
-            <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)'}}>
-              💡 Ton email te rattache à tes clubs. Il sera vérifié par Google Auth quand l'auth réelle sera en place.
+            <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)', lineHeight:1.5}}>
+              🔐 Ton email est ton identité de connexion vérifiée — il n'est pas modifiable
+              ici. Pour changer d'email, déconnecte-toi et reconnecte-toi avec le nouvel email.
             </span>
           </label>
         </div>
@@ -954,11 +946,11 @@ function ProfileEditModal({ initialName, initialEmail, onClose, onSave }) {
             border:'1px solid rgba(255,255,255,0.14)', cursor:'pointer',
             fontWeight:700, fontSize:13,
           }}>Annuler</button>
-          <button onClick={() => emailValid && onSave({ name: name.trim(), email: email.trim() })}
-                  disabled={!emailValid} style={{
+          <button onClick={() => onSave({ name: name.trim(), email: email.trim() })}
+                  style={{
             flex:2, padding:'12px', borderRadius:10,
-            background: emailValid ? '#c8f169' : 'rgba(200,241,105,0.3)',
-            color:'#0B1320', border:'none', cursor: emailValid ? 'pointer' : 'not-allowed',
+            background:'#c8f169',
+            color:'#0B1320', border:'none', cursor:'pointer',
             fontWeight:800, fontSize:13,
           }}>💾 Enregistrer</button>
         </div>

@@ -36,52 +36,43 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
   const [email, setEmail] = useLS('');
   const [name, setName] = useLS('');
   const [linkInput, setLinkInput] = useLS('');
+  // #54 — Phase B : connexion par lien magique email.
+  const [sentTo, setSentTo] = useLS('');     // email auquel le lien a été envoyé
+  const [sending, setSending] = useLS(false); // envoi en cours
   const emailValid = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  // Envoie un lien de connexion Firebase. Le nom + rôle sont mis en attente
+  // et appliqués automatiquement quand l'utilisateur revient via le lien.
+  const sendMagicLink = async (eClean, nClean, role) => {
+    if (!window.cddAuth || !window.cddAuth.ready) {
+      alert("Service d'authentification indisponible. Vérifie ta connexion internet et réessaie dans un instant.");
+      return;
+    }
+    setSending(true);
+    try {
+      await window.cddAuth.sendLoginLink(eClean, { name: nClean, role });
+      setSentTo(eClean);
+    } catch (err) {
+      alert("Envoi du lien échoué : " + (err && err.message ? err.message : err));
+    } finally {
+      setSending(false);
+    }
+  };
 
   const submitCoach = () => {
     const eClean = email.trim().toLowerCase();
     const nClean = name.trim();
-    if (!eClean || !nClean) {
-      alert('Email et nom requis pour créer ton compte coach.');
-      return;
-    }
-    if (!emailValid) {
-      alert('Format email invalide.');
-      return;
-    }
-    try {
-      localStorage.setItem('cdd_user_email', eClean);
-      localStorage.setItem('cdd_coach_name', nClean);
-      localStorage.setItem('cdd_user_role', 'coach');
-    } catch (e) {}
-    window.dispatchEvent(new Event('cdd-auth-changed'));
-    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
-    if (typeof onLoggedIn === 'function') onLoggedIn();
+    if (!eClean || !nClean) { alert('Email et nom requis pour créer ton compte coach.'); return; }
+    if (!emailValid) { alert('Format email invalide.'); return; }
+    sendMagicLink(eClean, nClean, 'coach');
   };
 
   const submitParent = () => {
     const eClean = email.trim().toLowerCase();
     const nClean = name.trim();
-    if (!eClean || !nClean) {
-      alert('Email et nom requis pour créer ton compte parent.');
-      return;
-    }
-    if (!emailValid) {
-      alert('Format email invalide.');
-      return;
-    }
-    try {
-      localStorage.setItem('cdd_user_email', eClean);
-      localStorage.setItem('cdd_coach_name', nClean); // re-utilise pour 'nom de la personne'
-      localStorage.setItem('cdd_user_role', 'parent');
-      // Note : creation reelle de la membership parent + envoi demande au
-      // coach se fait Sprint 3. Pour l'instant on enregistre juste l'identite.
-    } catch (e) {}
-    window.dispatchEvent(new Event('cdd-auth-changed'));
-    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
-    // En attendant Sprint 3, on bascule directement (la verif coach manquante
-    // sera ajoutee quand Firebase Auth + invitations seront branches).
-    if (typeof onLoggedIn === 'function') onLoggedIn();
+    if (!eClean || !nClean) { alert('Email et nom requis pour créer ton compte parent.'); return; }
+    if (!emailValid) { alert('Format email invalide.'); return; }
+    sendMagicLink(eClean, nClean, 'parent');
   };
 
   const submitLink = () => {
@@ -146,6 +137,39 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
           Vraies données FFF. Sans pub. Hors-ligne.
         </div>
       </div>
+
+      {/* #54 — ÉCRAN "LIEN ENVOYÉ" : remplace tout le reste tant que sentTo est set */}
+      {sentTo && (
+        <div style={{display:'flex', flexDirection:'column', gap:14, marginTop:8}}>
+          <div style={{fontSize:52, textAlign:'center'}}>📬</div>
+          <div style={{fontSize:22, fontWeight:900, textAlign:'center'}}>
+            Vérifie ta boîte mail
+          </div>
+          <div style={{fontSize:13, opacity:0.78, lineHeight:1.6, textAlign:'center'}}>
+            On a envoyé un lien de connexion à<br/>
+            <b style={{color:'#c8f169', wordBreak:'break-all'}}>{sentTo}</b>
+          </div>
+          <div style={{
+            padding:'12px 14px', borderRadius:10,
+            background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+            fontSize:12, opacity:0.75, lineHeight:1.6,
+          }}>
+            Ouvre ce mail <b>sur cet appareil</b> et clique le lien : tu seras connecté
+            automatiquement. Pense à vérifier tes spams. Le lien est valable un temps limité.
+          </div>
+          <button onClick={() => setSentTo('')} style={{
+            marginTop:4, padding:'12px', borderRadius:10,
+            background:'transparent', border:'1px solid rgba(255,255,255,0.15)',
+            color:'rgba(255,255,255,0.75)', fontFamily:'inherit', fontSize:13,
+            cursor:'pointer',
+          }}>
+            ‹ Modifier mon email
+          </button>
+        </div>
+      )}
+
+      {/* Parcours d'entrée — masqués tant qu'un lien est en attente */}
+      {!sentTo && (<>
 
       {/* MODE HOME : 3 chemins d'entrée */}
       {mode === 'home' && (
@@ -259,16 +283,16 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
               <span style={{fontSize:11, color:'#ff8a8a'}}>⚠ Format email invalide</span>
             )}
             <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)', lineHeight:1.5}}>
-              Important : utilise ton vrai email Gmail / pro. Quand l'auth Google sera branchée,
-              tu retrouveras tes clubs en te connectant avec exactement cet email.
+              Utilise un email auquel tu as accès : on t'y enverra un lien de connexion.
+              C'est cet email qui te rattache à tes clubs.
             </span>
           </label>
 
           <button onClick={submitCoach}
-                  disabled={!email.trim() || !name.trim() || !emailValid}
+                  disabled={!email.trim() || !name.trim() || !emailValid || sending}
                   className="btn-cta"
-                  style={{marginTop:8, opacity: (!email.trim() || !name.trim() || !emailValid) ? 0.5 : 1}}>
-            CRÉER MON COMPTE COACH →
+                  style={{marginTop:8, opacity: (!email.trim() || !name.trim() || !emailValid || sending) ? 0.5 : 1}}>
+            {sending ? 'ENVOI EN COURS…' : 'RECEVOIR MON LIEN DE CONNEXION →'}
           </button>
 
           <div style={{
@@ -276,10 +300,10 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
             fontSize:11, opacity:0.7, lineHeight:1.5,
           }}>
-            <b style={{display:'block', marginBottom:6}}>⚠ Sécurité actuelle</b>
-            Pas encore d'authentification Google. Ton compte est local à cet appareil.
-            La vraie auth Google arrive prochainement — quand elle sera là, le même email te
-            retrouvera tes données.
+            <b style={{display:'block', marginBottom:6}}>🔐 Connexion sécurisée</b>
+            Pas de mot de passe à retenir : on t'envoie un lien par email. Cliquer le lien
+            prouve que cet email est bien le tien. Tu retrouves tes données en te reconnectant
+            avec le même email.
           </div>
         </div>
       )}
@@ -348,15 +372,15 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
               <span style={{fontSize:11, color:'#ff8a8a'}}>⚠ Format email invalide</span>
             )}
             <span style={{fontSize:10.5, color:'rgba(255,255,255,0.5)', lineHeight:1.5}}>
-              C'est avec cet email que ton coach reconnaîtra ton compte. Utilise un email auquel tu as accès — il sera vérifié par Google Auth prochainement.
+              C'est avec cet email que ton coach reconnaîtra ton compte. Utilise un email auquel tu as accès — on t'y enverra un lien de connexion à cliquer.
             </span>
           </label>
 
           <button onClick={submitParent}
-                  disabled={!email.trim() || !name.trim() || !emailValid}
+                  disabled={!email.trim() || !name.trim() || !emailValid || sending}
                   className="btn-cta"
-                  style={{marginTop:8, opacity: (!email.trim() || !name.trim() || !emailValid) ? 0.5 : 1}}>
-            CRÉER MON COMPTE PARENT →
+                  style={{marginTop:8, opacity: (!email.trim() || !name.trim() || !emailValid || sending) ? 0.5 : 1}}>
+            {sending ? 'ENVOI EN COURS…' : 'RECEVOIR MON LIEN DE CONNEXION →'}
           </button>
 
           <div style={{
@@ -430,6 +454,8 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
           </div>
         </div>
       )}
+
+      </>)}
 
     </div>
   );

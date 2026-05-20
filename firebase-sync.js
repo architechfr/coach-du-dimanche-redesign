@@ -22,6 +22,10 @@ import {
   getFirestore, doc, setDoc, onSnapshot, serverTimestamp,
   collection, query, where
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+import {
+  getAuth, sendSignInLinkToEmail, isSignInWithEmailLink,
+  signInWithEmailLink, onAuthStateChanged, signOut as fbSignOut
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCsAHr2QpRwL-LiC_hawce_rbWyOAl-wrc",
@@ -40,10 +44,11 @@ const COLL_PLAYERS = 'cdd_v2_players';
 
 const VALID_STATUSES = ['active', 'rest', 'injured', 'suspended', 'reserve'];
 
-let app, db;
+let app, db, auth;
 try {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
+  auth = getAuth(app);
 } catch (err) {
   console.error('[cddSync] init failed', err);
 }
@@ -381,6 +386,142 @@ async function ensureSharedTeamPushed(token, opts) {
   await pushSharedTeamPayload(token);
   return { skipped: false };
 }
+
+/* ============================================================
+   AUTH — Connexion par lien magique email (Phase B)
+   ============================================================
+   Modèle : pas de mot de passe. L'utilisateur saisit son email,
+   reçoit un lien, clique → session Firebase authentifiée. L'email
+   est de facto vérifié (il faut accéder à la boîte mail).
+
+   window.cddAuth :
+     ready                  → bool (Firebase Auth initialisé)
+     currentUser()          → User Firebase | null
+     sendLoginLink(email,o) → envoie le lien magique (o = {name, role})
+     hasPendingLink()       → true si l'URL courante est un lien de connexion
+     completeSignIn()       → finalise la connexion depuis le lien
+     onChange(cb)           → s'abonne aux changements d'état (renvoie unsub)
+     signOut()              → déconnexion réelle
+
+   Compat : à chaque changement d'état, cdd_user_email est tenu à
+   jour en miroir pour que le code existant (app.jsx, roles.js)
+   continue de fonctionner sans réécriture.
+============================================================ */
+
+const AUTH_PENDING_EMAIL = 'cdd_auth_email_pending';
+const AUTH_PENDING_NAME  = 'cdd_auth_name_pending';
+const AUTH_PENDING_ROLE  = 'cdd_auth_role_pending';
+
+const authSubscribers = new Set();
+let authResolved = false;
+
+function authActionSettings() {
+  return {
+    // URL de retour : la page courante. Le domaine doit être autorisé
+    // dans Firebase Console → Authentication → Settings → Authorized domains.
+    url: window.location.origin + window.location.pathname,
+    handleCodeInApp: true,
+  };
+}
+
+async function sendLoginLink(email, opts) {
+  if (!auth) throw new Error('Firebase Auth non initialisé');
+  const clean = (email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) throw new Error('Format email invalide');
+  await sendSignInLinkToEmail(auth, clean, authActionSettings());
+  try {
+    localStorage.setItem(AUTH_PENDING_EMAIL, clean);
+    if (opts && opts.name) localStorage.setItem(AUTH_PENDING_NAME, opts.name);
+    if (opts && opts.role) localStorage.setItem(AUTH_PENDING_ROLE, opts.role);
+  } catch (e) {}
+  return { ok: true, email: clean };
+}
+
+function hasPendingLink() {
+  return !!auth && isSignInWithEmailLink(auth, window.location.href);
+}
+
+async function completeSignIn() {
+  if (!auth || !isSignInWithEmailLink(auth, window.location.href)) return null;
+  let email = '';
+  try { email = localStorage.getItem(AUTH_PENDING_EMAIL) || ''; } catch (e) {}
+  if (!email) {
+    // Lien ouvert sur un autre appareil que celui de la demande : on
+    // redemande l'email pour finaliser (sécurité Firebase).
+    email = window.prompt('Confirme ton email pour terminer la connexion :') || '';
+  }
+  if (!email) return null;
+  try {
+    const result = await signInWithEmailLink(auth, email.trim().toLowerCase(), window.location.href);
+    try { localStorage.removeItem(AUTH_PENDING_EMAIL); } catch (e) {}
+    // Nettoie l'URL (retire les longs paramètres oobCode du lien magique).
+    try {
+      window.history.replaceState({}, document.title,
+        window.location.origin + window.location.pathname);
+    } catch (e) {}
+    return result.user;
+  } catch (err) {
+    console.error('[cddAuth] completeSignIn failed', err);
+    alert('Connexion échouée : le lien est peut-être expiré ou déjà utilisé. Redemande un lien depuis l\'écran d\'accueil.');
+    return null;
+  }
+}
+
+async function signOutUser() {
+  try { if (auth) await fbSignOut(auth); } catch (e) { console.warn('[cddAuth] signOut', e); }
+  try {
+    localStorage.removeItem('cdd_user_email');
+    localStorage.removeItem(AUTH_PENDING_EMAIL);
+  } catch (e) {}
+  // onAuthStateChanged se déclenchera et dispatchera cdd-auth-changed.
+}
+
+function onAuthChange(cb) {
+  if (typeof cb !== 'function') return () => {};
+  authSubscribers.add(cb);
+  if (authResolved) { try { cb(auth ? auth.currentUser : null); } catch (e) {} }
+  return () => authSubscribers.delete(cb);
+}
+
+if (auth) {
+  onAuthStateChanged(auth, (user) => {
+    authResolved = true;
+    try {
+      if (user && user.email) {
+        // Miroir de compat : le code existant route sur cdd_user_email.
+        localStorage.setItem('cdd_user_email', user.email.toLowerCase());
+        // Applique le profil saisi avant l'envoi du lien (nom + rôle).
+        const pendName = localStorage.getItem(AUTH_PENDING_NAME);
+        const pendRole = localStorage.getItem(AUTH_PENDING_ROLE);
+        if (pendName) { localStorage.setItem('cdd_coach_name', pendName); localStorage.removeItem(AUTH_PENDING_NAME); }
+        if (pendRole) { localStorage.setItem('cdd_user_role', pendRole); localStorage.removeItem(AUTH_PENDING_ROLE); }
+      } else {
+        // Pas de session authentifiée → on retire le miroir.
+        localStorage.removeItem('cdd_user_email');
+      }
+    } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-auth-changed', { detail: { user: user || null } }));
+    authSubscribers.forEach(cb => { try { cb(user || null); } catch (e) {} });
+  });
+
+  // Auto-complète la connexion si on arrive via un lien magique.
+  if (isSignInWithEmailLink(auth, window.location.href)) {
+    completeSignIn();
+  }
+}
+
+window.cddAuth = {
+  get ready() { return !!auth; },
+  get resolved() { return authResolved; },
+  currentUser() { return auth ? auth.currentUser : null; },
+  sendLoginLink,
+  hasPendingLink,
+  completeSignIn,
+  onChange: onAuthChange,
+  signOut: signOutUser,
+};
+window.dispatchEvent(new Event('cdd-auth-ready'));
+console.info('[cddAuth] ready=' + (!!auth));
 
 /* ---------- Expose globally ---------- */
 
