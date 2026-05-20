@@ -26,9 +26,13 @@ function ScreenSharePartage({ go, tweaks }) {
     } catch (e) { return 'PROTO123'; }
   }, []);
 
-  const baseUrl = 'coach-du-dimanche.app/lecteur';
+  // v43.79 : le domaine coach-du-dimanche.app a expiré et le redesign V2
+  // n'embarque pas la page autonome /lecteur/. On pointe explicitement
+  // vers le projet V1 qui héberge la page lecteur (page autonome légère
+  // ~30 Ko, fetch payload Firestore via shared_teams/<token>).
+  const baseUrl = 'https://coach-du-dimanche.vercel.app/lecteur';
   const url = `${baseUrl}/?t=${token}`;
-  const fullUrl = `https://${url}`;
+  const fullUrl = url;
 
   const [tab, setTab] = useSP('match'); // match | team | season
   const [copied, setCopied] = useSP(false);

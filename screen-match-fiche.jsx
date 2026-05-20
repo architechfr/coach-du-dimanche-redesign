@@ -135,6 +135,10 @@ function ScreenFiche({ go, tweaks, player }) {
 
           {/* Actions Carnet du joueur — distribution lien magique au parent + preview coach */}
           <CarnetActions player={p} go={go}/>
+
+          {/* v43.79 : Convoc perso joueur — lien ciblé /lecteur/?t=&p= avec
+              statut convoc + RSVP (Je viens / Absent / Peut-être) */}
+          <ConvocPersoActions player={p} go={go}/>
         </div>
       </div>
 
@@ -557,6 +561,149 @@ function CarnetActions({ player, go }) {
           ⚠️ Ajoute le numéro parent dans l'onglet <b>Profil</b> pour pré-remplir le destinataire
         </div>
       )}
+    </div>
+  );
+}
+
+
+/* ============================================================
+   ConvocPersoActions — boutons "Aperçu" + "Envoyer convoc parent"
+   ============================================================
+   v43.79. Sur la fiche d'un joueur, donne au coach :
+   1. Une preview du lien lecteur ciblé (?t=&p=) en 1 tap
+   2. Un partage WhatsApp du lien magique au parent (pré-rempli avec
+      son numéro si renseigné, sinon picker contact natif)
+   3. Copier le lien dans le presse-papier
+
+   Le lien généré pointe vers la page V1 /lecteur/?t=<teamToken>&p=<playerId>
+   qui affiche : prochain match, statut convoc du joueur, et les boutons
+   RSVP "Je viens / Absent / ?".
+
+   Le teamToken est partagé avec ScreenSharePartage (clé localStorage
+   `cdd_share_token`).
+   ============================================================ */
+function ConvocPersoActions({ player, go }) {
+  const teamToken = (() => {
+    try {
+      let t = localStorage.getItem('cdd_share_token');
+      if (!t) {
+        t = Math.random().toString(36).slice(2, 9).toUpperCase();
+        localStorage.setItem('cdd_share_token', t);
+      }
+      return t;
+    } catch (e) { return 'PROTO123'; }
+  })();
+
+  const persoUrl = `https://coach-du-dimanche.vercel.app/lecteur/?t=${teamToken}&p=${encodeURIComponent(player.id)}`;
+
+  const normalizePhone = (raw) => {
+    if (!raw) return '';
+    const d = String(raw).replace(/[^\d+]/g, '');
+    if (d.startsWith('+')) return d.slice(1);
+    if (d.startsWith('33')) return d;
+    if (d.startsWith('0') && d.length === 10) return '33' + d.slice(1);
+    return d;
+  };
+
+  const buildShareMsg = () => {
+    const club = window.CDD_CLUB || {};
+    const teamLabel = club.team ? ` (${club.team})` : '';
+    const next = window.CDD_NEXT_MATCH || {};
+    const matchInfo = next.date
+      ? `\n📅 ${next.date}${next.venue ? `\n🏟️ ${next.venue}` : ''}${next.away ? `\n⚽ vs ${next.away}` : ''}`
+      : '';
+    return `Salut ! 📋\n\n`
+      + `Convocation pour ${player.first || 'votre enfant'}${teamLabel}${matchInfo}\n\n`
+      + `${player.first || 'Votre enfant'} (ou vous) peut voir s'il est convoqué et répondre en 1 tap :\n${persoUrl}\n\n`
+      + `Coach`;
+  };
+
+  const sendWhatsApp = () => {
+    const phone = normalizePhone(player.parentPhone);
+    const txt = encodeURIComponent(buildShareMsg());
+    const url = phone ? `https://wa.me/${phone}?text=${txt}` : `https://wa.me/?text=${txt}`;
+    window.open(url, '_blank');
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(persoUrl);
+      const el = document.getElementById('convoc-copy-feedback');
+      if (el) {
+        el.style.opacity = '1';
+        setTimeout(() => { el.style.opacity = '0'; }, 1600);
+      }
+    } catch (e) {
+      window.prompt('Copier le lien :', persoUrl);
+    }
+  };
+
+  const openPreview = () => { window.open(persoUrl, '_blank'); };
+
+  const hasPhone = !!normalizePhone(player.parentPhone);
+
+  return (
+    <div style={{
+      marginTop: 10, padding: '12px 14px', borderRadius: 12,
+      background: 'linear-gradient(135deg, rgba(59,130,246,0.10), rgba(59,130,246,0.04))',
+      border: '1px solid rgba(59,130,246,0.30)',
+      display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      <div style={{display:'flex', alignItems:'center', gap:8}}>
+        <span style={{fontSize:18}}>📋</span>
+        <div style={{flex:1, minWidth:0}}>
+          <div style={{fontSize:11, fontWeight:800, letterSpacing:'.08em', color:'#3b82f6', textTransform:'uppercase'}}>
+            Convocation perso
+          </div>
+          <div style={{fontSize:11, color:'rgba(255,255,255,0.65)', marginTop:2, lineHeight:1.35}}>
+            Lien ciblé sur {player.first || 'ce joueur'} — statut convoc + RSVP (Je viens / Absent)
+          </div>
+        </div>
+      </div>
+      <div style={{display:'flex', gap:6}}>
+        <button
+          onClick={openPreview}
+          title="Voir le lien comme un parent (nouvel onglet)"
+          style={{
+            flex: 1, padding:'10px 8px', borderRadius:9,
+            background:'rgba(255,255,255,0.06)', color:'#fff',
+            border:'1px solid rgba(255,255,255,0.14)', cursor:'pointer',
+            fontSize:12, fontWeight:700,
+            display:'inline-flex', alignItems:'center', justifyContent:'center', gap:5,
+          }}>
+          👁 Aperçu
+        </button>
+        <button
+          onClick={sendWhatsApp}
+          title={hasPhone ? `Envoyer la convoc au numéro parent enregistré` : "Aucun numéro parent — choisir le contact dans WhatsApp"}
+          style={{
+            flex: 2, padding:'10px 12px', borderRadius:9,
+            background:'linear-gradient(135deg, #25D366, #128C7E)',
+            color:'#fff', border:'none', cursor:'pointer',
+            fontSize:12, fontWeight:800,
+            display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
+            boxShadow:'0 2px 8px rgba(37,211,102,.25)',
+          }}>
+          💬 {hasPhone ? `Envoyer convoc parent` : `Envoyer (choisir contact)`}
+        </button>
+        <button
+          onClick={copyLink}
+          title="Copier le lien convoc perso"
+          style={{
+            flex: 0, padding:'10px 12px', borderRadius:9,
+            background:'rgba(255,255,255,0.06)', color:'#fff',
+            border:'1px solid rgba(255,255,255,0.14)', cursor:'pointer',
+            fontSize:13, fontWeight:700, flexShrink:0,
+          }}>
+          🔗
+        </button>
+      </div>
+      <div id="convoc-copy-feedback" style={{
+        fontSize:11, color:'#3b82f6', fontWeight:700, textAlign:'center',
+        opacity:0, transition:'opacity .2s',
+      }}>
+        ✓ Lien convoc copié
+      </div>
     </div>
   );
 }
