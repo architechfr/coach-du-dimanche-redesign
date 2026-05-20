@@ -449,11 +449,11 @@ function App() {
         </TweakSection>
         <TweakSection label="Cartes joueurs (à venir)">
           <TweakSelect
-            label="Style FUT"
+            label="Style de carte"
             value={t.cardStyle}
             onChange={v => setTweak("cardStyle", v)}
             options={[
-              { value:"fut-classic", label:"Classique (FUT)" },
+              { value:"fut-classic", label:"Classique" },
               { value:"fut-icon",    label:"Icon — premium" },
               { value:"fut-totw",    label:"Team of the Week" },
               { value:"fut-hero",    label:"Hero (arc-en-ciel)" },

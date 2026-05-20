@@ -505,7 +505,7 @@ function CarnetActions({ player, go }) {
             Carnet du joueur
           </div>
           <div style={{fontSize:11, color:'rgba(255,255,255,0.65)', marginTop:2, lineHeight:1.35}}>
-            Carte FUT + progression + badges, visible par {player.first || 'le joueur'} via lien magique
+            Carte joueur + progression + badges, visible par {player.first || 'le joueur'} via lien magique
           </div>
         </div>
       </div>

@@ -131,7 +131,7 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
         <div style={{
           fontSize:28, fontWeight:900, lineHeight:1.1, marginBottom:12,
           letterSpacing:'-.01em',
-        }}>L'app FIFA<br/>pour les coachs<br/>de foot amateur.</div>
+        }}>Tes joueurs amateurs<br/>en cartes<br/>de légende.</div>
         <div style={{fontSize:13, opacity:0.65, lineHeight:1.5, padding:'0 8px'}}>
           Compo, convocation, match live, carte joueur évolutive.<br/>
           Vraies données FFF. Sans pub. Hors-ligne.

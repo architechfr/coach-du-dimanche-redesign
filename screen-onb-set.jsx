@@ -186,7 +186,7 @@ function ScreenSettings({ go, tweaks, setTweak }) {
 
   const accentOptions = [
     { id:"#c8f169", label:"Néon lime",  ink:"#062012" },
-    { id:"#f5c451", label:"Or FUT",     ink:"#1f1404" },
+    { id:"#f5c451", label:"Or",         ink:"#1f1404" },
     { id:"#06b6d4", label:"Cyan ice",   ink:"#022027" },
     { id:"#ef4444", label:"Rouge feu",  ink:"#fff" },
     { id:"#a78bfa", label:"Violet pro", ink:"#1a0f33" },
