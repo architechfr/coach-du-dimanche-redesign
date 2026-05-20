@@ -146,6 +146,42 @@ function ScreenSettings({ go, tweaks, setTweak }) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  // #59 — Sauvegarde cloud : déclenche la migration Firestore (C2) avec un
+  // résultat VISIBLE (compteur de docs envoyés, ou message d'erreur exact).
+  const cloudBackup = async () => {
+    if (!window.cddData || !window.cddData.ready) {
+      alert("Le service cloud n'est pas prêt.\nVérifie ta connexion internet et réessaie dans un instant.");
+      return;
+    }
+    if (!window.cddAuth || !window.cddAuth.currentUser || !window.cddAuth.currentUser()) {
+      alert("Tu dois être connecté pour sauvegarder dans le cloud.");
+      return;
+    }
+    if (!confirm("Envoyer tes clubs, équipes et joueurs vers le cloud (Firestore) ?\n\nCela ne supprime rien en local.")) return;
+    try {
+      const res = await window.cddData.migrateLocalToCloud({ force: true });
+      if (res && res.ok && res.counts) {
+        const c = res.counts;
+        alert("✓ Sauvegarde cloud réussie\n\n"
+          + "Clubs : " + (c.clubs || 0) + "\n"
+          + "Équipes : " + (c.teams || 0) + "\n"
+          + "Joueurs : " + (c.players || 0) + "\n"
+          + "Rattachements : " + (c.memberships || 0)
+          + (c.errors ? "\n\n⚠ " + c.errors + " erreur(s) — détail dans la console (F12)" : ""));
+      } else if (res && res.ok) {
+        alert("Sauvegarde : " + (res.reason || 'rien à faire') + ".");
+      } else {
+        const reason = res ? res.reason : 'inconnue';
+        let msg = "✗ Sauvegarde non effectuée.\nRaison : " + reason;
+        if (reason === 'not-admin')     msg += "\n\nSeul le compte admin peut lancer la sauvegarde cloud.";
+        if (reason === 'not-signed-in') msg += "\n\nTu n'es pas connecté.";
+        if (reason === 'no-db')         msg += "\n\nFirestore n'est pas initialisé.";
+        alert(msg);
+      }
+    } catch (err) {
+      alert("✗ Erreur pendant la sauvegarde cloud :\n\n" + (err && err.message ? err.message : err));
+    }
+  };
   const clearCache = () => {
     if (!confirm("Vider le cache local ? Tu perdras toutes les données non synchronisées.")) return;
     const keys = [];
@@ -519,7 +555,7 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         <div className="set-sec">
           <div className="set-sec-k">DONNÉES</div>
           <div className="set-rows">
-            <SetRow ic="☁️" t="Sauvegarde cloud" d="Disponible avec auth Google (V2.x)" go={() => alert("Sync cloud — Sprint 7 (auth Google)")}/>
+            <SetRow ic="☁️" t="Sauvegarde cloud" d="Envoyer mes données vers le cloud" go={cloudBackup}/>
             <SetRow ic="📤" t="Exporter mes données" d="Télécharger toutes mes données (JSON)" go={exportData}/>
             {isAdmin && (
               <SetRow ic="🗑️" t="Vider le cache local" d="Efface toutes les données locales" go={clearCache} warn/>
