@@ -593,13 +593,14 @@ function _lsJSON(key, fallback) {
 }
 
 // ─── Écriture ──────────────────────────────────────────────
+// #60 — NON-LOSSY : on sauvegarde l'OBJET COMPLET (tous les champs), pas un
+// sous-ensemble. Indispensable pour que la lecture cloud (C3) restitue des
+// données intactes (statuts, titulaires, compo, numéros…).
 async function saveClub(club) {
   if (!db || !club || !club.id) throw new Error('db/club.id requis');
   await setDoc(doc(db, 'clubs', club.id), {
-    name: club.name || '',
+    ...club,
     logoUrl: club.logoUrl || club.logoDataUrl || null,
-    primaryColor: club.primaryColor || null,
-    secondaryColor: club.secondaryColor || null,
     createdBy: _uid(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
@@ -608,12 +609,13 @@ async function saveClub(club) {
 
 async function saveTeam(team) {
   if (!db || !team || !team.id) throw new Error('db/team.id requis');
+  // On exclut le tableau `players` (sauvegardé séparément en documents).
+  const teamCopy = { ...team };
+  delete teamCopy.players;
   await setDoc(doc(db, 'teams', team.id), {
+    ...teamCopy,
     clubId: team.clubId || null,
-    name: team.name || '',
-    category: team.category || null,
     fffConfig: team.fff || team.fffConfig || null,
-    lineupTemplate: team.lineupTemplate || null,
     createdBy: _uid(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
@@ -623,14 +625,9 @@ async function saveTeam(team) {
 async function savePlayer(player, teamId, clubId) {
   if (!db || !player || !player.id) throw new Error('db/player.id requis');
   await setDoc(doc(db, 'players', String(player.id)), {
+    ...player,
     teamId: teamId || player.teamId || null,
     clubId: clubId || player.clubId || null,
-    first: player.first || player.firstName || '',
-    last:  player.last  || player.lastName  || '',
-    num:   player.num   || player.number    || null,
-    pos:   player.pos   || null,
-    photoUrl: player.photoUrl || player.photoDataUrl || null,
-    licence: player.licence || player.license || null,
     updatedBy: _uid(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
@@ -739,11 +736,92 @@ async function migrateLocalToCloud(opts) {
   return { ok: true, counts };
 }
 
+// ─── Lecture cloud → cache local (Phase C — C3) ────────────
+// Lit les memberships de l'utilisateur, récupère SES clubs/équipes/joueurs
+// autorisés depuis Firestore, et réécrit le cache local (arb_clubs /
+// arb_teams) que l'adaptateur synchrone consomme. Un compte sans membership
+// n'obtient rien. Si la lecture échoue (hors-ligne), le cache local est
+// laissé intact (pas de perte).
+async function pullCloudData() {
+  if (!db) return { ok: false, reason: 'no-db' };
+  const uid = _uid();
+  if (!uid) return { ok: false, reason: 'not-signed-in' };
+
+  let memberships;
+  try { memberships = await fetchMemberships(uid); }
+  catch (e) { return { ok: false, reason: 'fetch-failed', error: e.message }; }
+
+  const clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
+  if (clubIds.length === 0) {
+    return { ok: true, empty: true, counts: { clubs: 0, teams: 0, players: 0 } };
+  }
+
+  // Retire les métadonnées Firestore (timestamps non sérialisables proprement).
+  const stripMeta = (o) => {
+    const c = { ...o };
+    delete c.updatedAt; delete c.createdAt; delete c.updatedBy; delete c.createdBy;
+    return c;
+  };
+
+  const clubs = [];
+  const teamsAll = [];
+  let playerCount = 0;
+  for (const cid of clubIds) {
+    try {
+      const club = await fetchClub(cid);
+      if (club) clubs.push(stripMeta(club));
+      const teams = await fetchTeams(cid);
+      const players = await fetchPlayers(cid);
+      for (const t of teams) {
+        const tc = stripMeta(t);
+        tc.players = players.filter(p => p.teamId === t.id).map(stripMeta);
+        playerCount += tc.players.length;
+        teamsAll.push(tc);
+      }
+    } catch (e) { console.warn('[cddData] pull club', cid, e.message); }
+  }
+
+  // Écriture du cache local (source que lit l'adaptateur synchrone).
+  try {
+    localStorage.setItem('arb_clubs', JSON.stringify(clubs));
+    localStorage.setItem('arb_teams', JSON.stringify(teamsAll));
+    localStorage.setItem('cdd_memberships', JSON.stringify(
+      (memberships || []).map(m => ({
+        email: (m.email || '').toLowerCase(), clubId: m.clubId, role: m.role,
+        playerId: m.playerId || null, createdBy: m.createdBy || 'cloud',
+        createdAt: Date.now(),
+      }))
+    ));
+    const cur = localStorage.getItem('arb_current_club');
+    if ((!cur || !clubs.some(c => c.id === cur)) && clubs[0]) {
+      localStorage.setItem('arb_current_club', clubs[0].id);
+    }
+    // Si l'adaptateur tourne en mode override (seed), on le met à jour aussi.
+    if (window.__CDD_OVERRIDE) {
+      window.__CDD_OVERRIDE['arb_clubs'] = clubs;
+      window.__CDD_OVERRIDE['arb_teams'] = teamsAll;
+      window.__CDD_OVERRIDE['arb_current_club'] = localStorage.getItem('arb_current_club');
+    }
+  } catch (e) {
+    return { ok: false, reason: 'localstorage', error: e.message };
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+  } catch (e) {}
+
+  console.info('%c[cddData] lecture cloud → local terminée', 'color:#c8f169;font-weight:900',
+    { clubs: clubs.length, teams: teamsAll.length, players: playerCount });
+  return { ok: true, counts: { clubs: clubs.length, teams: teamsAll.length, players: playerCount } };
+}
+
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, saveMembership,
   fetchMemberships, fetchClub, fetchTeams, fetchPlayers,
-  migrateLocalToCloud,
+  migrateLocalToCloud, pullCloudData,
 };
 
 // Migration auto, une seule fois, quand l'ADMIN est authentifié.

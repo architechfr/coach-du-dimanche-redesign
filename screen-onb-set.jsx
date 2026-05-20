@@ -182,6 +182,40 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       alert("✗ Erreur pendant la sauvegarde cloud :\n\n" + (err && err.message ? err.message : err));
     }
   };
+  // #60 — Chargement cloud : récupère les données autorisées depuis Firestore
+  // et remplace le cache local. Résultat affiché.
+  const cloudRestore = async () => {
+    if (!window.cddData || !window.cddData.ready) {
+      alert("Le service cloud n'est pas prêt.\nVérifie ta connexion internet et réessaie.");
+      return;
+    }
+    if (!window.cddAuth || !window.cddAuth.currentUser || !window.cddAuth.currentUser()) {
+      alert("Tu dois être connecté pour charger depuis le cloud.");
+      return;
+    }
+    if (!confirm("Charger tes données depuis le cloud ?\n\nLe contenu local (clubs, équipes, joueurs) sera remplacé par la version du cloud.")) return;
+    try {
+      const res = await window.cddData.pullCloudData();
+      if (res && res.ok && res.empty) {
+        alert("Aucun club autorisé pour ce compte dans le cloud.\nRien n'a été chargé.");
+      } else if (res && res.ok && res.counts) {
+        const c = res.counts;
+        alert("✓ Données chargées depuis le cloud\n\n"
+          + "Clubs : " + (c.clubs || 0) + "\n"
+          + "Équipes : " + (c.teams || 0) + "\n"
+          + "Joueurs : " + (c.players || 0)
+          + "\n\nRecharge l'app (Ctrl+Maj+R) si l'affichage ne s'actualise pas.");
+      } else {
+        const reason = res ? res.reason : 'inconnue';
+        let msg = "✗ Chargement non effectué.\nRaison : " + reason;
+        if (reason === 'fetch-failed')  msg += "\n\nImpossible de lire le cloud (connexion ?).";
+        if (reason === 'not-signed-in') msg += "\n\nTu n'es pas connecté.";
+        alert(msg);
+      }
+    } catch (err) {
+      alert("✗ Erreur pendant le chargement cloud :\n\n" + (err && err.message ? err.message : err));
+    }
+  };
   const clearCache = () => {
     if (!confirm("Vider le cache local ? Tu perdras toutes les données non synchronisées.")) return;
     const keys = [];
@@ -556,6 +590,7 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           <div className="set-sec-k">DONNÉES</div>
           <div className="set-rows">
             <SetRow ic="☁️" t="Sauvegarde cloud" d="Envoyer mes données vers le cloud" go={cloudBackup}/>
+            <SetRow ic="📥" t="Charger depuis le cloud" d="Récupérer mes données du cloud" go={cloudRestore}/>
             <SetRow ic="📤" t="Exporter mes données" d="Télécharger toutes mes données (JSON)" go={exportData}/>
             {isAdmin && (
               <SetRow ic="🗑️" t="Vider le cache local" d="Efface toutes les données locales" go={clearCache} warn/>
