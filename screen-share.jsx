@@ -63,11 +63,28 @@ function ScreenSharePartage({ go, tweaks }) {
   const message = tab === 'match' ? matchMsg : tab === 'team' ? teamMsg :
     `📊 Bilan saison ${teamLabel}\n${fullUrl}`;
 
-  const copy = () => {
+  // v43.79 : publie le payload dans Firestore shared_teams/<token> avant
+  // d'envoyer un lien. Sans ça, le destinataire tombe sur "Lien introuvable".
+  // Throttle interne 30s pour éviter les push inutiles.
+  const ensurePushed = async () => {
+    try {
+      if (window.cddSync && window.cddSync.ensureSharedTeamPushed) {
+        await window.cddSync.ensureSharedTeamPushed(token);
+      }
+    } catch (e) {
+      console.warn('[ScreenSharePartage] push payload failed', e);
+    }
+  };
+  // Push automatique au montage (best-effort).
+  useSPe(() => { ensurePushed(); /* eslint-disable-next-line */ }, []);
+
+  const copy = async () => {
+    await ensurePushed();
     try { navigator.clipboard?.writeText(message); setCopied(true); setTimeout(()=>setCopied(false), 1800); }
     catch (e) {}
   };
-  const shareNative = () => {
+  const shareNative = async () => {
+    await ensurePushed();
     if (navigator.share) {
       navigator.share({ title:'Coach du Dimanche', text: message, url: fullUrl }).catch(()=>{});
     } else { copy(); }
@@ -176,7 +193,8 @@ function ScreenSharePartage({ go, tweaks }) {
       {/* Channels */}
       <div className="sp-channels-k">PARTAGER VIA</div>
       <div className="sp-channels">
-        <button className="sp-channel sp-ch-wa" onClick={()=>{
+        <button className="sp-channel sp-ch-wa" onClick={async ()=>{
+          await ensurePushed();
           const txt = encodeURIComponent(message);
           window.open(`https://wa.me/?text=${txt}`, '_blank');
         }}>
@@ -184,7 +202,8 @@ function ScreenSharePartage({ go, tweaks }) {
           <span className="sp-ch-l">WhatsApp</span>
           <span className="sp-ch-s">Groupe parents</span>
         </button>
-        <button className="sp-channel sp-ch-sms" onClick={()=>{
+        <button className="sp-channel sp-ch-sms" onClick={async ()=>{
+          await ensurePushed();
           const txt = encodeURIComponent(message);
           window.open(`sms:?body=${txt}`, '_blank');
         }}>
@@ -192,7 +211,8 @@ function ScreenSharePartage({ go, tweaks }) {
           <span className="sp-ch-l">SMS</span>
           <span className="sp-ch-s">Direct</span>
         </button>
-        <button className="sp-channel sp-ch-mail" onClick={()=>{
+        <button className="sp-channel sp-ch-mail" onClick={async ()=>{
+          await ensurePushed();
           const subject = encodeURIComponent(`Convocation ${teamLabel}`);
           const body = encodeURIComponent(message);
           window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');

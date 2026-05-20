@@ -596,6 +596,21 @@ function ConvocPersoActions({ player, go }) {
 
   const persoUrl = `https://coach-du-dimanche.vercel.app/lecteur/?t=${teamToken}&p=${encodeURIComponent(player.id)}`;
 
+  // v43.79 : avant chaque action, s'assurer que le payload est publié dans
+  // shared_teams/<token>. Sans ça, le lien lecteur tombe sur "Lien
+  // introuvable". On throttle à 30s pour ne pas spammer Firestore.
+  const ensurePushed = async () => {
+    try {
+      if (window.cddSync && window.cddSync.ensureSharedTeamPushed) {
+        await window.cddSync.ensureSharedTeamPushed(teamToken);
+      }
+    } catch (e) {
+      console.warn('[ConvocPersoActions] push payload failed', e);
+    }
+  };
+  // Push automatique en background au premier rendu (best-effort).
+  React.useEffect(() => { ensurePushed(); /* eslint-disable-next-line */ }, []);
+
   const normalizePhone = (raw) => {
     if (!raw) return '';
     const d = String(raw).replace(/[^\d+]/g, '');
@@ -618,7 +633,8 @@ function ConvocPersoActions({ player, go }) {
       + `Coach`;
   };
 
-  const sendWhatsApp = () => {
+  const sendWhatsApp = async () => {
+    await ensurePushed();
     const phone = normalizePhone(player.parentPhone);
     const txt = encodeURIComponent(buildShareMsg());
     const url = phone ? `https://wa.me/${phone}?text=${txt}` : `https://wa.me/?text=${txt}`;
@@ -626,6 +642,7 @@ function ConvocPersoActions({ player, go }) {
   };
 
   const copyLink = async () => {
+    await ensurePushed();
     try {
       await navigator.clipboard.writeText(persoUrl);
       const el = document.getElementById('convoc-copy-feedback');
@@ -638,7 +655,10 @@ function ConvocPersoActions({ player, go }) {
     }
   };
 
-  const openPreview = () => { window.open(persoUrl, '_blank'); };
+  const openPreview = async () => {
+    await ensurePushed();
+    window.open(persoUrl, '_blank');
+  };
 
   const hasPhone = !!normalizePhone(player.parentPhone);
 

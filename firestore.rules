@@ -82,6 +82,25 @@ service cloud.firestore {
         && request.resource.data.size() <= 50;
     }
 
+    // ─── /shared_teams/{token} ─────────────────────────────────────
+    // v43.79 : payload d'équipe partagée, consommé par la page autonome
+    // V1 lecteur/index.html (?t=<token>). Le V2 push lui-même son payload
+    // depuis firebase-sync.js -> pushSharedTeamPayload(), afin que le V2
+    // soit autonome (pas de dépendance V1 pour créer le doc).
+    // Lecture publique (lien de partage par token, pas d'auth) ; écriture
+    // bornée au schéma + taille pour éviter l'abus.
+    match /shared_teams/{token} {
+      allow read: if true;
+      allow write: if
+        // Doit contenir un payload avec au minimum un nom d'équipe
+        request.resource.data.keys().hasAny(['payload'])
+        && isMap(request.resource.data.payload)
+        && isMap(request.resource.data.payload.team)
+        && strLen(request.resource.data.payload.team.name, 200)
+        // Taille raisonnable (équipe + matches list)
+        && request.resource.data.size() <= 30;
+    }
+
     // ─── Bloque tout le reste par défaut ───────────────────────────
     match /{document=**} {
       allow read, write: if false;

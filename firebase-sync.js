@@ -277,6 +277,111 @@ function watchPlayerStatuses(teamId, callback) {
   );
 }
 
+/* ---------- Partage équipe (payload pour /lecteur/?t=<token>) ---------- */
+/* v43.79. Permet au V2 de publier dans `shared_teams/{token}` un payload
+   au format attendu par la page autonome V1 `lecteur/index.html`, sans
+   dépendre du V1 pour la création initiale.
+
+   Le format payload (héritage V1) :
+     { team:    { name, players[], fffConfig:{myTeamName}, short, season },
+       matches: [ { st:'prepared', kickoffAt, ca, kickoffTime, meetingTime,
+                    location, coachNote, tA:{n,lineup,bench}, tB:{n,...} } ],
+       builtAt: Date.now(), source: 'v2' }
+
+   Le V2 a ses propres structures (CDD_PLAYERS avec first/last/num, …), on
+   les convertit ici en firstName/lastName/number attendus par V1.
+*/
+
+function buildSharedPayloadFromGlobals() {
+  const club = (typeof window !== 'undefined' && window.CDD_CLUB) || {};
+  const next = (typeof window !== 'undefined' && window.CDD_NEXT_MATCH) || {};
+  const convo = (typeof window !== 'undefined' && window.CDD_CONVO) || {};
+  const PLAYERS = (typeof window !== 'undefined' && window.CDD_PLAYERS) || [];
+
+  const myTeamName = club.team || club.short || club.name || 'Mon équipe';
+
+  // Joueurs au format V1 (firstName/lastName/number/isSub)
+  const players = PLAYERS.map(p => ({
+    id: p.id,
+    firstName: p.first || '',
+    lastName: p.last || '',
+    number: p.num || '',
+    isSub: !!p.isSub,
+    pos: p.pos || '',
+  }));
+
+  // Convertit un joueur (objet ou string) en objet V1
+  const toV1Player = (p) => {
+    if (!p) return null;
+    if (typeof p === 'string') return p;
+    return {
+      id: p.id || null,
+      firstName: p.first || p.firstName || '',
+      lastName: p.last || p.lastName || '',
+      number: p.num || p.number || '',
+    };
+  };
+
+  const lineup = (convo.starters || []).map(toV1Player).filter(Boolean);
+  const bench = (convo.bench || []).map(toV1Player).filter(Boolean);
+
+  const opp = (next.away && next.away !== 'À déterminer') ? next.away : 'À venir';
+
+  const matchObj = {
+    st: 'prepared',
+    kickoffAt: next.date || null,
+    ca: next.date || null,
+    kickoffTime: next.time || next.kickoff || '',
+    meetingTime: next.meeting || '09h45',
+    location: next.venue || '',
+    coachNote: next.coachNote || '',
+    tA: { n: myTeamName, lineup, bench },
+    tB: { n: opp, lineup: [], bench: [] },
+  };
+
+  return {
+    team: {
+      name: myTeamName,
+      players,
+      fffConfig: { myTeamName },
+      short: club.short || '',
+      season: club.season || '',
+    },
+    matches: [matchObj],
+    builtAt: Date.now(),
+    source: 'v2',
+  };
+}
+
+async function pushSharedTeamPayload(token, payload) {
+  if (!db) throw new Error('Firestore non initialisé');
+  if (!token) throw new Error('token requis');
+  const p = payload || buildSharedPayloadFromGlobals();
+  if (!p || !p.team) throw new Error('payload.team requis');
+
+  await setDoc(doc(db, 'shared_teams', token), {
+    payload: p,
+    updatedAt: serverTimestamp(),
+    source: 'v2',
+  }, { merge: true });
+
+  try {
+    localStorage.setItem(`cdd_v2_shared_${token}_pushed_at`, String(Date.now()));
+  } catch (e) {}
+  return p;
+}
+
+// Throttle : ne re-push pas si on l'a déjà fait il y a moins de TTL ms.
+async function ensureSharedTeamPushed(token, opts) {
+  const ttl = (opts && opts.ttlMs) || 30000; // 30s par défaut
+  try {
+    const last = parseInt(localStorage.getItem(`cdd_v2_shared_${token}_pushed_at`) || '0', 10);
+    if (last && (Date.now() - last) < ttl) return { skipped: true, reason: 'recent' };
+  } catch (e) {}
+  await pushSharedTeamPayload(token);
+  return { skipped: false };
+}
+
 /* ---------- Expose globally ---------- */
 
 // matchId est un GETTER dynamique : ré-évalué à chaque lecture.
@@ -298,6 +403,10 @@ window.cddSync = {
   getMatchId,
   getLastFinishedMatchId,
   getVoterId,
+  // v43.79 : autonomie du V2 pour publier le payload partagé
+  buildSharedPayloadFromGlobals,
+  pushSharedTeamPayload,
+  ensureSharedTeamPushed,
 };
 
 window.dispatchEvent(new Event('cdd-sync-ready'));
