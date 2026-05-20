@@ -56,17 +56,41 @@
     },
     getAllClubs() {
       stats.reads++;
-      return getRaw('arb_clubs', []);
+      const all = getRaw('arb_clubs', []);
+      // #58 — CLOISONNEMENT PAR UTILISATEUR : on ne retourne que les clubs
+      // dont l'utilisateur courant possède une membership. L'admin voit
+      // tout. Mode visiteur ou aucune membership → aucun club.
+      try {
+        const R = window.CDD_ROLES;
+        if (!R) return all; // roles.js pas encore chargé : ne pas bloquer le boot
+        if (R.isAdmin && R.isAdmin()) return all;
+        if (R.isVisitorMode && R.isVisitorMode()) return [];
+        const mine = (R.myClubIds && R.myClubIds()) || [];
+        return all.filter(c => c && mine.indexOf(c.id) !== -1);
+      } catch (e) { return all; }
     },
     getActiveClub() {
       const id = this.getCurrentClubId();
       return this.getAllClubs().find(c => c.id === id) || null;
     },
 
-    // ★ CLOISONNEMENT — toutes les équipes filtrées par club actif
+    // ★ CLOISONNEMENT — équipes filtrées par club actif ET par autorisation
     getTeams() {
       stats.reads++;
       const clubId = this.getCurrentClubId();
+      // #58 — Si le club actif n'est pas un club autorisé pour l'utilisateur
+      // courant, on ne retourne AUCUNE équipe (anti-fuite). L'admin n'est
+      // jamais bloqué.
+      const R = window.CDD_ROLES;
+      const isAdminUser = !!(R && R.isAdmin && R.isAdmin());
+      if (!isAdminUser && clubId) {
+        const allowed = this.getAllClubs().map(c => c.id);
+        if (allowed.indexOf(clubId) === -1) {
+          stats.lastClubFilter = clubId;
+          stats.lastTeamCount = 0;
+          return [];
+        }
+      }
       const allTeams = getRaw('arb_teams', []);
       stats.lastClubFilter = clubId;
       const filtered = clubId

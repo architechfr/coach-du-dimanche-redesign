@@ -39,6 +39,11 @@
   // Firestore). Tant que Auth n'est pas la, tout le monde est juste 'coach'.
   const OWNER_EMAIL = null;
 
+  // #58 — Admin / super-utilisateur. Fiable depuis qu'une vraie auth existe
+  // (Phase B) : impossible de se faire passer pour cet email sans posséder
+  // la boîte Gmail correspondante.
+  const ADMIN_EMAIL = 'archi.tech.fr@gmail.com';
+
   function currentRole() {
     try {
       const stored = localStorage.getItem('cdd_user_role');
@@ -160,6 +165,11 @@
       const raw = (localStorage.getItem('cdd_user_email') || '').trim();
       return raw ? raw.toLowerCase() : null;
     } catch (e) { return null; }
+  }
+
+  // #58 — Vrai depuis le compte authentifié = admin.
+  function isAdmin() {
+    return getCurrentEmail() === ADMIN_EMAIL;
   }
 
   function listMemberships(email) {
@@ -328,6 +338,13 @@
       if (!email) {
         console.info('[roles] migration skipped : no email configured (mode visiteur)');
         return { ran: false, reason: 'no-email' };
+      }
+      // #58 — SÉCURITÉ : la migration auto crée des memberships 'coach'.
+      // Elle est désormais RÉSERVÉE à l'admin. Sans ce garde-fou, n'importe
+      // quel email connecté devenait coach de tous les clubs de l'appareil.
+      if (email !== ADMIN_EMAIL) {
+        console.info('[roles] migration skipped : compte non-admin (' + email + ') — aucun rattachement automatique');
+        return { ran: false, reason: 'not-admin' };
       }
       const existingMemberships = listMemberships(email);
       if (existingMemberships.length > 0) {
@@ -518,7 +535,29 @@
     return dump;
   }
 
-  // Execute la migration au boot — avant que data-bridge build CDD_PLAYERS etc.
+  // #58 — Nettoie les memberships créées par l'ANCIENNE migration auto pour
+  // des comptes non-admin (faille : tout email connecté devenait coach de
+  // tous les clubs de l'appareil). On ne garde une membership 'migration'
+  // QUE si elle appartient à l'admin. À exécuter au boot, avant la migration.
+  function purgeBadAutoMemberships() {
+    try {
+      const all = listAllMemberships();
+      const cleaned = all.filter(m => {
+        if (!m || m.createdBy !== 'migration') return true; // garder
+        return (m.email || '').toLowerCase() === ADMIN_EMAIL;  // auto = admin only
+      });
+      if (cleaned.length !== all.length) {
+        localStorage.setItem('cdd_memberships', JSON.stringify(cleaned));
+        console.info('[roles] purge : ' + (all.length - cleaned.length)
+          + ' membership(s) auto non-admin supprimée(s)');
+        window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
+      }
+    } catch (e) { console.warn('[roles] purge failed', e); }
+  }
+
+  // Boot : on purge d'abord les rattachements illégitimes, puis on exécute
+  // la migration (qui ne fera plus rien hors admin).
+  purgeBadAutoMemberships();
   runMigrationIfNeeded();
 
   // Re-tente la migration au prochain build de CDD_CLUB (data-bridge prend
@@ -537,15 +576,15 @@
 
   // Expose
   window.CDD_ROLES = {
-    ROLES, OWNER_EMAIL,
+    ROLES, OWNER_EMAIL, ADMIN_EMAIL,
     currentRole, roleLabel, roleWeight, hasRole, atLeast,
     getScope, canEditClub, canEditTeam, canViewPlayer,
     canInviteRole, canDeleteClub,
     createInvitationDraft, listInvitations,
     // Memberships
-    getCurrentEmail, listMemberships, listAllMemberships, hasMembership,
+    getCurrentEmail, isAdmin, listMemberships, listAllMemberships, hasMembership,
     membershipRole, addMembership, removeMembership, deleteClubAndData,
-    myClubIds, isVisitorMode, runMigrationIfNeeded,
+    myClubIds, isVisitorMode, runMigrationIfNeeded, purgeBadAutoMemberships,
     // Diagnostic
     diagnose,
   };
