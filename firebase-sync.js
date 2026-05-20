@@ -19,7 +19,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
-  getFirestore, doc, setDoc, onSnapshot, serverTimestamp,
+  getFirestore, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp,
   collection, query, where
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
@@ -564,6 +564,196 @@ window.cddAuth = {
 };
 window.dispatchEvent(new Event('cdd-auth-ready'));
 console.info('[cddAuth] ready=' + (!!auth));
+
+/* ============================================================
+   DATA — Lecture / écriture Firestore des clubs, équipes,
+   joueurs et memberships (Phase C — C2).
+   ============================================================
+   window.cddData :
+     saveClub / saveTeam / savePlayer / saveMembership  → écriture
+     fetchMemberships / fetchClub / fetchTeams / fetchPlayers → lecture
+     migrateLocalToCloud()  → migration unique des données locales
+
+   Collections : clauses gouvernées par firestore.rules (C1).
+   Convention : id d'une membership = `{uid}_{clubId}`.
+   Tant que C3 n'est pas fait, l'app LIT encore en local — ce module
+   ne fait qu'ALIMENTER Firestore (additif, ne casse rien).
+============================================================ */
+
+const ADMIN_EMAIL_DATA = 'archi.tech.fr@gmail.com';
+
+function _uid()   { return auth && auth.currentUser ? auth.currentUser.uid : null; }
+function _email() {
+  return (auth && auth.currentUser && auth.currentUser.email)
+    ? auth.currentUser.email.toLowerCase() : '';
+}
+function _lsJSON(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+  catch (e) { return fallback; }
+}
+
+// ─── Écriture ──────────────────────────────────────────────
+async function saveClub(club) {
+  if (!db || !club || !club.id) throw new Error('db/club.id requis');
+  await setDoc(doc(db, 'clubs', club.id), {
+    name: club.name || '',
+    logoUrl: club.logoUrl || club.logoDataUrl || null,
+    primaryColor: club.primaryColor || null,
+    secondaryColor: club.secondaryColor || null,
+    createdBy: _uid(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true, id: club.id };
+}
+
+async function saveTeam(team) {
+  if (!db || !team || !team.id) throw new Error('db/team.id requis');
+  await setDoc(doc(db, 'teams', team.id), {
+    clubId: team.clubId || null,
+    name: team.name || '',
+    category: team.category || null,
+    fffConfig: team.fff || team.fffConfig || null,
+    lineupTemplate: team.lineupTemplate || null,
+    createdBy: _uid(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true, id: team.id };
+}
+
+async function savePlayer(player, teamId, clubId) {
+  if (!db || !player || !player.id) throw new Error('db/player.id requis');
+  await setDoc(doc(db, 'players', String(player.id)), {
+    teamId: teamId || player.teamId || null,
+    clubId: clubId || player.clubId || null,
+    first: player.first || player.firstName || '',
+    last:  player.last  || player.lastName  || '',
+    num:   player.num   || player.number    || null,
+    pos:   player.pos   || null,
+    photoUrl: player.photoUrl || player.photoDataUrl || null,
+    licence: player.licence || player.license || null,
+    updatedBy: _uid(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true, id: player.id };
+}
+
+// Membership — id imposé = {uid}_{clubId} (cf firestore.rules).
+async function saveMembership(m) {
+  if (!db || !m || !m.uid || !m.clubId) throw new Error('db/uid/clubId requis');
+  const id = m.uid + '_' + m.clubId;
+  await setDoc(doc(db, 'memberships', id), {
+    uid: m.uid,
+    email: (m.email || '').toLowerCase(),
+    clubId: m.clubId,
+    teamId: m.teamId || null,
+    role: m.role || 'lecteur',
+    playerId: m.playerId || null,
+    createdBy: m.createdBy || _uid(),
+    createdAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true, id };
+}
+
+// ─── Lecture ───────────────────────────────────────────────
+async function fetchMemberships(uid) {
+  if (!db) return [];
+  const targetUid = uid || _uid();
+  if (!targetUid) return [];
+  const q = query(collection(db, 'memberships'), where('uid', '==', targetUid));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+
+async function fetchClub(clubId) {
+  if (!db || !clubId) return null;
+  const d = await getDoc(doc(db, 'clubs', clubId));
+  return d.exists() ? { id: d.id, ...d.data() } : null;
+}
+
+async function fetchTeams(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'teams'), where('clubId', '==', clubId));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+
+async function fetchPlayers(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'players'), where('clubId', '==', clubId));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+
+// ─── Migration unique : données locales → Firestore ────────
+// Réservée à l'admin. Pousse arb_clubs / arb_teams (+ joueurs imbriqués)
+// vers Firestore et crée la membership 'owner' de l'admin sur chaque club.
+// Idempotente (setDoc merge) ; pose un drapeau cdd_cloud_migrated.
+async function migrateLocalToCloud(opts) {
+  if (!db) return { ok: false, reason: 'no-db' };
+  const uid = _uid();
+  const email = _email();
+  if (!uid) return { ok: false, reason: 'not-signed-in' };
+  if (email !== ADMIN_EMAIL_DATA) return { ok: false, reason: 'not-admin' };
+  const force = opts && opts.force;
+  if (!force) {
+    try { if (localStorage.getItem('cdd_cloud_migrated') === '1') return { ok: true, reason: 'already-done' }; }
+    catch (e) {}
+  }
+
+  const counts = { clubs: 0, teams: 0, players: 0, memberships: 0, errors: 0 };
+  const clubs = _lsJSON('arb_clubs', []);
+  const teams = _lsJSON('arb_teams', []);
+  const logos = _lsJSON('cdd_club_logos', {});
+
+  for (const club of (Array.isArray(clubs) ? clubs : [])) {
+    if (!club || !club.id) continue;
+    try {
+      await saveClub({ ...club, logoUrl: logos[club.id] || club.logoDataUrl || null });
+      counts.clubs++;
+      await saveMembership({ uid, email, clubId: club.id, role: 'owner', createdBy: 'migration' });
+      counts.memberships++;
+    } catch (e) { counts.errors++; console.warn('[cddData] migrate club', club.id, e.message); }
+  }
+
+  for (const team of (Array.isArray(teams) ? teams : [])) {
+    if (!team || !team.id) continue;
+    try {
+      await saveTeam(team);
+      counts.teams++;
+      for (const p of (team.players || [])) {
+        if (!p || !p.id) continue;
+        try { await savePlayer(p, team.id, team.clubId); counts.players++; }
+        catch (e) { counts.errors++; console.warn('[cddData] migrate player', p.id, e.message); }
+      }
+    } catch (e) { counts.errors++; console.warn('[cddData] migrate team', team.id, e.message); }
+  }
+
+  try { localStorage.setItem('cdd_cloud_migrated', '1'); } catch (e) {}
+  console.info('%c[cddData] migration → Firestore terminée', 'color:#c8f169;font-weight:900', counts);
+  return { ok: true, counts };
+}
+
+window.cddData = {
+  get ready() { return !!db; },
+  saveClub, saveTeam, savePlayer, saveMembership,
+  fetchMemberships, fetchClub, fetchTeams, fetchPlayers,
+  migrateLocalToCloud,
+};
+
+// Migration auto, une seule fois, quand l'ADMIN est authentifié.
+window.addEventListener('cdd-auth-changed', () => {
+  try {
+    if (_email() === ADMIN_EMAIL_DATA && localStorage.getItem('cdd_cloud_migrated') !== '1') {
+      migrateLocalToCloud().catch(e => console.warn('[cddData] auto-migration', e));
+    }
+  } catch (e) {}
+});
 
 /* ---------- Expose globally ---------- */
 

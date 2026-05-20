@@ -90,6 +90,13 @@ durcissement possible plus tard avec une Cloud Function (plan Blaze).
   `localStorage` devient un cache offline. Le `seed-inline.js` est vidé de
   ses vraies données (sujet RGPD : plus de données de mineurs dans le bundle
   public ni le dépôt GitHub).
+  **Images uploadées** : le logo du club et les photos de joueurs doivent
+  AUSSI quitter le `localStorage`/les fichiers statiques du dépôt. Cible :
+  Firebase Storage, référencés par `clubs/{clubId}.logoUrl` et
+  `players/{playerId}.photoUrl`, accessibles à tout membre du club.
+  Aujourd'hui le logo n'a aucun fallback partagé (d'où le carré "F" pour les
+  autres comptes) et les photos U15 sont des fichiers statiques publics
+  (`assets/photos_U15_2025-2026/`) — les deux sont à corriger ici.
 - **C4 — Invitations** : le coach génère un lien d'invitation → doc
   `invites` → le destinataire le consomme → sa membership est créée. Couvre
   l'accès club sur lien uniquement, le rattachement parent↔joueur
