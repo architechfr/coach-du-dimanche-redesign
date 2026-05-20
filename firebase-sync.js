@@ -24,7 +24,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
   getAuth, sendSignInLinkToEmail, isSignInWithEmailLink,
-  signInWithEmailLink, onAuthStateChanged, signOut as fbSignOut
+  signInWithEmailLink, onAuthStateChanged, signOut as fbSignOut,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
 const firebaseConfig = {
@@ -467,6 +468,35 @@ async function completeSignIn() {
   }
 }
 
+// #55 — Connexion Google : un tap, aucun email envoyé (zéro spam).
+// opts = { name?, role? } — mis en attente et appliqués par onAuthStateChanged.
+async function signInWithGoogle(opts) {
+  if (!auth) throw new Error('Firebase Auth non initialisé');
+  try {
+    if (opts && opts.role) localStorage.setItem(AUTH_PENDING_ROLE, opts.role);
+    if (opts && opts.name) localStorage.setItem(AUTH_PENDING_NAME, opts.name);
+  } catch (e) {}
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  } catch (err) {
+    const code = err && err.code;
+    // L'utilisateur a fermé la fenêtre volontairement → ne rien faire.
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return null;
+    }
+    // Popup bloquée / non supportée (certains navigateurs mobiles) → bascule
+    // sur un redirect plein écran (la page rechargera après connexion).
+    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+    throw err;
+  }
+}
+
 async function signOutUser() {
   try { if (auth) await fbSignOut(auth); } catch (e) { console.warn('[cddAuth] signOut', e); }
   try {
@@ -490,10 +520,16 @@ if (auth) {
       if (user && user.email) {
         // Miroir de compat : le code existant route sur cdd_user_email.
         localStorage.setItem('cdd_user_email', user.email.toLowerCase());
-        // Applique le profil saisi avant l'envoi du lien (nom + rôle).
+        // Applique le profil saisi avant connexion (nom + rôle en attente).
         const pendName = localStorage.getItem(AUTH_PENDING_NAME);
         const pendRole = localStorage.getItem(AUTH_PENDING_ROLE);
-        if (pendName) { localStorage.setItem('cdd_coach_name', pendName); localStorage.removeItem(AUTH_PENDING_NAME); }
+        if (pendName) {
+          localStorage.setItem('cdd_coach_name', pendName);
+          localStorage.removeItem(AUTH_PENDING_NAME);
+        } else if (user.displayName && !localStorage.getItem('cdd_coach_name')) {
+          // Connexion Google : on récupère le nom directement du profil Google.
+          localStorage.setItem('cdd_coach_name', user.displayName);
+        }
         if (pendRole) { localStorage.setItem('cdd_user_role', pendRole); localStorage.removeItem(AUTH_PENDING_ROLE); }
       } else {
         // Pas de session authentifiée → on retire le miroir.
@@ -502,6 +538,11 @@ if (auth) {
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-auth-changed', { detail: { user: user || null } }));
     authSubscribers.forEach(cb => { try { cb(user || null); } catch (e) {} });
+  });
+
+  // Récupère le résultat d'une connexion Google par redirect (mobile).
+  getRedirectResult(auth).catch(err => {
+    if (err && err.code) console.warn('[cddAuth] getRedirectResult', err.code);
   });
 
   // Auto-complète la connexion si on arrive via un lien magique.
@@ -515,6 +556,7 @@ window.cddAuth = {
   get resolved() { return authResolved; },
   currentUser() { return auth ? auth.currentUser : null; },
   sendLoginLink,
+  signInWithGoogle,
   hasPendingLink,
   completeSignIn,
   onChange: onAuthChange,

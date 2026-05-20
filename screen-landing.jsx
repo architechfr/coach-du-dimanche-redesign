@@ -75,6 +75,23 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
     sendMagicLink(eClean, nClean, 'parent');
   };
 
+  // #55 — Connexion Google : un tap, aucun email envoyé (zéro spam).
+  const googleSignIn = async (role) => {
+    if (!window.cddAuth || !window.cddAuth.ready) {
+      alert("Service d'authentification indisponible. Vérifie ta connexion internet et réessaie.");
+      return;
+    }
+    setSending(true);
+    try {
+      await window.cddAuth.signInWithGoogle({ role });
+      // onAuthStateChanged → cdd-auth-changed → app.jsx bascule sur l'accueil.
+    } catch (err) {
+      alert("Connexion Google échouée : " + (err && err.message ? err.message : err));
+    } finally {
+      setSending(false);
+    }
+  };
+
   const submitLink = () => {
     const raw = (linkInput || '').trim();
     if (!raw) return;
@@ -116,6 +133,32 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
     color:'#fff', fontFamily:'inherit',
     transition:'transform .15s, border-color .15s',
   };
+
+  // #55 — Bouton "Continuer avec Google" (méthode principale, zéro spam)
+  const googleButton = (role) => (
+    <button onClick={() => googleSignIn(role)} disabled={sending} style={{
+      display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+      width:'100%', padding:'13px 16px', borderRadius:12,
+      background:'#fff', color:'#1f1f1f', border:'none',
+      fontFamily:'inherit', fontSize:14, fontWeight:700,
+      cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1,
+    }}>
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+        <path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.05l3.01-2.33z"/>
+        <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+      </svg>
+      {sending ? 'Connexion…' : 'Continuer avec Google'}
+    </button>
+  );
+  const orSep = (
+    <div style={{display:'flex', alignItems:'center', gap:10, margin:'2px 0'}}>
+      <div style={{flex:1, height:1, background:'rgba(255,255,255,0.12)'}}/>
+      <span style={{fontSize:10.5, opacity:0.5, fontWeight:700, letterSpacing:'.04em'}}>OU PAR EMAIL</span>
+      <div style={{flex:1, height:1, background:'rgba(255,255,255,0.12)'}}/>
+    </div>
+  );
 
   return (
     <div style={wrap}>
@@ -250,8 +293,11 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
 
           <div style={{fontSize:22, fontWeight:900, marginBottom:4}}>Crée ton compte coach</div>
           <div style={{fontSize:12, opacity:0.65, lineHeight:1.5, marginBottom:8}}>
-            Ton email te rattache à tes clubs. Tu pourras créer ton premier club juste après.
+            Connecte-toi pour créer ton club. Le plus rapide et sans spam : Google.
           </div>
+
+          {googleButton('coach')}
+          {orSep}
 
           <label style={{display:'flex', flexDirection:'column', gap:6}}>
             <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
@@ -341,6 +387,9 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
           <div style={{fontSize:12, opacity:0.65, lineHeight:1.5, marginBottom:8}}>
             Ton coach validera ensuite ton rattachement à ton enfant. Une fois validé, tu auras accès à ses convocations, sa fiche et son carnet.
           </div>
+
+          {googleButton('parent')}
+          {orSep}
 
           <label style={{display:'flex', flexDirection:'column', gap:6}}>
             <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
