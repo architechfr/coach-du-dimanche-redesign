@@ -283,7 +283,25 @@ function App() {
   // ── LANDING PUBLIQUE : prend tout l'écran si pas d'email + pas de token.
   // Aucune donnée club n'est exposée tant que l'user n'est pas authentifié
   // ou n'a pas utilisé un lien magique.
-  if (screen === 'landing' && window.ScreenLanding) {
+  //
+  // #57 — GARDE DE SÉCURITÉ (défense en profondeur) : sans authentification
+  // ET sans lien magique, on ne rend QUE la landing — quel que soit l'écran
+  // demandé. Empêche tout accès aux écrans applicatifs (effectif, compo…)
+  // en mode visiteur. Seuls 'onb' (accueil onboarding) et un lien magique
+  // (?t= ?carnet= ?p= ?invite=) échappent à cette garde.
+  const _authedNow = (() => {
+    try { return !!(localStorage.getItem('cdd_user_email') || '').trim(); }
+    catch (e) { return false; }
+  })();
+  const _hasMagicToken = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search || '');
+      return !!(p.get('t') || p.get('carnet') || p.get('joueur') || p.get('p') || p.get('invite'));
+    } catch (e) { return false; }
+  })();
+  const _forceLanding = !_authedNow && !_hasMagicToken && screen !== 'onb';
+
+  if ((screen === 'landing' || _forceLanding) && window.ScreenLanding) {
     return (
       <div className="app-stage" data-screen-label="Phone — landing">
         <div className="phone">

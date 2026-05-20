@@ -66,8 +66,10 @@ function ScreenOnboarding({ go, tweaks }) {
                 <div className="onb-role-d">Bascule entre les modes à la volée</div>
               </button>
             </div>
-            <button className="btn-cta" disabled={!role} onClick={() => go("home")}>
-              <span>ENTRER DANS L'APP</span><span className="arr">→</span>
+            {/* #57 — SÉCURITÉ : l'onboarding ne donne PAS accès à l'app.
+                Il mène à l'écran de connexion. Aucune entrée sans auth réelle. */}
+            <button className="btn-cta" disabled={!role} onClick={() => go("landing")}>
+              <span>CONTINUER</span><span className="arr">→</span>
             </button>
           </div>
         )}
@@ -169,7 +171,9 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       localStorage.removeItem("cdd_user_email");
       window.dispatchEvent(new CustomEvent('cdd-auth-changed'));
     }
-    go("onb");
+    // #57 — Retour à l'écran de CONNEXION, pas à l'onboarding (qui laissait
+    // ré-entrer dans l'app sans s'authentifier).
+    go("landing");
   };
   const installApp = () => {
     if (window.deferredInstallPrompt) {
