@@ -109,7 +109,8 @@ function ScreenTransfert({ go, tweaks }) {
               { ic:"📤", l:"Plus...",   c:"#9ca3af" },
               { ic:"🔗", l:"Lien",      c:"#06b6d4" },
             ].map((s,i) => {
-              const url = `https://coach-du-dimanche-redesign.vercel.app/?import=${code}`;
+              // #56 — Domaine courant, jamais codé en dur.
+              const url = `${window.location.origin}/?import=${code}`;
               const msg = `Rejoins mon équipe sur Coach du Dimanche ! Code: ${code}`;
               const handlers = {
                 "WhatsApp": () => window.open(`https://wa.me/?text=${encodeURIComponent(msg + " · " + url)}`, "_blank"),
@@ -130,7 +131,7 @@ function ScreenTransfert({ go, tweaks }) {
 
           <div className="tr-share-link">
             <div className="tr-share-link-k">Lien direct</div>
-            <div className="tr-share-link-v mono">coach-du-dimanche.app/?import={code}</div>
+            <div className="tr-share-link-v mono">{window.location.host}/?import={code}</div>
           </div>
 
           <div className="tr-cta">

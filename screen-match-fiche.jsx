@@ -594,7 +594,8 @@ function ConvocPersoActions({ player, go }) {
     } catch (e) { return 'PROTO123'; }
   })();
 
-  const persoUrl = `https://coach-du-dimanche.vercel.app/lecteur/?t=${teamToken}&p=${encodeURIComponent(player.id)}`;
+  // #56 — Domaine courant, jamais codé en dur (lien lecteur = app, route ?t=).
+  const persoUrl = `${window.location.origin}/?t=${teamToken}&p=${encodeURIComponent(player.id)}`;
 
   // v43.79 : avant chaque action, s'assurer que le payload est publié dans
   // shared_teams/<token>. Sans ça, le lien lecteur tombe sur "Lien

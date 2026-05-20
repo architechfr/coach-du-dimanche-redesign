@@ -383,7 +383,8 @@ function ScreenConvocations({ go, tweaks }) {
       return t;
     } catch (e) { return 'PROTO123'; }
   })();
-  const lecteurUrl = `https://coach-du-dimanche.app/lecteur/?t=${shareToken}`;
+  // #56 — Domaine courant, jamais codé en dur (lien lecteur = app, route ?t=).
+  const lecteurUrl = `${window.location.origin}/?t=${shareToken}`;
   // Normalise un numéro français vers le format E.164 pour wa.me.
   // '06 12 34 56 78' → '33612345678'. Si déjà international ou non-FR, laisse tel quel.
   const normalizePhone = (raw) => {

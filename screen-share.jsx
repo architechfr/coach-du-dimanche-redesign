@@ -26,12 +26,14 @@ function ScreenSharePartage({ go, tweaks }) {
     } catch (e) { return 'PROTO123'; }
   }, []);
 
-  // v43.79 : le domaine coach-du-dimanche.app a expiré et le redesign V2
-  // n'embarque pas la page autonome /lecteur/. On pointe explicitement
-  // vers le projet V1 qui héberge la page lecteur (page autonome légère
-  // ~30 Ko, fetch payload Firestore via shared_teams/<token>).
-  const baseUrl = 'https://coach-du-dimanche.vercel.app/lecteur';
-  const url = `${baseUrl}/?t=${token}`;
+  // #56 — Le lien lecteur EST l'app elle-même : route ?t=<token> (app.jsx
+  // bascule sur l'écran lecteur quand ?t= est présent). On utilise le
+  // domaine COURANT (window.location.origin) pour ne jamais dépendre d'un
+  // domaine codé en dur — l'ancien coach-du-dimanche.app a expiré et
+  // coach-du-dimanche.vercel.app n'existe pas (vrai domaine : …-redesign).
+  const shareOrigin = window.location.origin;
+  const shareHost = shareOrigin.replace(/^https?:\/\//, '');
+  const url = `${shareOrigin}/?t=${token}`;
   const fullUrl = url;
 
   const [tab, setTab] = useSP('match'); // match | team | season
@@ -156,7 +158,7 @@ function ScreenSharePartage({ go, tweaks }) {
         <div className="sp-qr-wrap">
           {/* Vrai QR genere via qr-helper.jsx (lazy CDN) */}
           {window.QRCode ? (
-            <window.QRCode value={`https://${baseUrl}/?t=${token}`} size={160}/>
+            <window.QRCode value={url} size={160}/>
           ) : (
             <div className="sp-qr" style={{
               width:160, height:160, background:'#fff',
@@ -167,7 +169,7 @@ function ScreenSharePartage({ go, tweaks }) {
         </div>
         <div className="sp-url">
           <span className="sp-url-prefix">https://</span>
-          <span className="sp-url-host">{baseUrl}</span>
+          <span className="sp-url-host">{shareHost}</span>
           <span className="sp-url-token">/?t={token}</span>
         </div>
         <div className="sp-meta">
