@@ -1,20 +1,33 @@
 // ╔═══════════════════════════════════════════════════════════════════╗
 // ║  COACH DU DIMANCHE V2 — Firestore Security Rules                  ║
 // ║  Projet Firebase : arbitre-sport                                  ║
-// ║  À déployer via la console Firebase ou `firebase deploy --only firestore:rules` ║
+// ║  À déployer : console Firebase → Firestore → Règles → Publier     ║
+// ║  ou  firebase deploy --only firestore:rules                       ║
 // ╚═══════════════════════════════════════════════════════════════════╝
 //
-// Stratégie : pas d'authentification Firebase pour l'instant (l'app utilise
-// un voterId UUID local). On valide donc le SCHÉMA des écritures pour éviter
-// les corruptions, et on borne la taille des documents pour limiter l'abus.
-// À durcir plus tard avec Firebase Auth (signature des règles "isCoach" en bas).
+// PHASE C — C1 (socle). Deux zones :
+//
+//  1. Modèle AUTORISÉ (clubs / teams / players / memberships / invites) :
+//     accès imposé côté serveur. Un utilisateur ne lit/écrit un club que
+//     s'il possède une `membership` pour ce club. Infranchissable, même
+//     via les outils développeur du navigateur.
+//
+//  2. Collections existantes (cdd_v2_*, shared_teams) : conservées TELLES
+//     QUELLES. La synchro convoc/vote/statuts tourne avec un voterId
+//     anonyme — on n'y touche pas en C1 pour ne rien casser. Leur
+//     durcissement viendra en C3/C4 quand les écrans seront branchés sur
+//     les memberships.
+//
+// CONVENTION CLÉ : l'ID d'un document `memberships` est `{uid}_{clubId}`.
+// Cela permet aux règles de retrouver une membership par `get()` direct
+// (Firestore ne permet pas de requêter une collection depuis une règle).
 
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── Helpers ───────────────────────────────────────────────────
+    // ═══ Helpers — schéma (existants) ═══════════════════════════════
     function isString(v)  { return v is string;  }
     function isNumber(v)  { return v is number;  }
     function isBool(v)    { return v is bool;    }
@@ -24,37 +37,154 @@ service cloud.firestore {
       return s in ['active', 'rest', 'injured', 'suspended', 'reserve'];
     }
 
+    // ═══ Helpers — authentification & autorisation (Phase C) ════════
+    function isSignedIn() { return request.auth != null; }
+    function myUid()      { return request.auth.uid; }
+    function myEmail() {
+      return (isSignedIn() && request.auth.token.email != null)
+        ? request.auth.token.email.lower() : '';
+    }
+    // Admin = super-utilisateur. Fiable depuis qu'une vraie auth existe
+    // (impossible de "se faire passer" pour cet email sans la boîte Gmail).
+    function isAdmin() {
+      return isSignedIn() && myEmail() == 'archi.tech.fr@gmail.com';
+    }
+
+    // Membership de l'utilisateur courant pour un club (id = {uid}_{clubId}).
+    function membershipPath(clubId) {
+      return /databases/$(database)/documents/memberships/$(myUid() + '_' + clubId);
+    }
+    function hasMembership(clubId) {
+      return isSignedIn() && exists(membershipPath(clubId));
+    }
+    function membershipRole(clubId) {
+      return get(membershipPath(clubId)).data.role;
+    }
+    // Lecture d'un club : admin, ou membership quelconque sur ce club.
+    function canReadClub(clubId) {
+      return isAdmin() || hasMembership(clubId);
+    }
+    // Écriture des données d'un club : admin, ou membership coach/owner.
+    // Les rôles adjoint/parent/joueur/lecteur sont en LECTURE SEULE.
+    function canEditClub(clubId) {
+      return isAdmin() ||
+        (hasMembership(clubId) &&
+         membershipRole(clubId) in ['owner', 'coach']);
+    }
+
+    // ═══ /clubs/{clubId} ════════════════════════════════════════════
+    match /clubs/{clubId} {
+      allow read:   if canReadClub(clubId);
+      // Création d'un club = création d'un compte coach → réservé à l'admin
+      // (exigence : "seul l'admin donne accès à un compte coach").
+      allow create: if isAdmin()
+        && request.resource.data.createdBy == myUid()
+        && request.resource.data.size() <= 20;
+      allow update: if canEditClub(clubId) && request.resource.data.size() <= 20;
+      allow delete: if isAdmin();
+    }
+
+    // ═══ /teams/{teamId} ════════════════════════════════════════════
+    match /teams/{teamId} {
+      allow read:   if canReadClub(resource.data.clubId);
+      allow create: if canEditClub(request.resource.data.clubId)
+        && isString(request.resource.data.clubId)
+        && request.resource.data.size() <= 40;
+      // clubId immuable après création.
+      allow update: if canEditClub(resource.data.clubId)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.size() <= 40;
+      allow delete: if canEditClub(resource.data.clubId);
+    }
+
+    // ═══ /players/{playerId} ════════════════════════════════════════
+    match /players/{playerId} {
+      allow read:   if canReadClub(resource.data.clubId);
+      allow create: if canEditClub(request.resource.data.clubId)
+        && isString(request.resource.data.clubId)
+        && request.resource.data.size() <= 80;
+      allow update: if canEditClub(resource.data.clubId)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.size() <= 80;
+      allow delete: if canEditClub(resource.data.clubId);
+    }
+
+    // ═══ /memberships/{membershipId}  (id = {uid}_{clubId}) ═════════
+    // Table d'autorisation — cœur du système.
+    match /memberships/{membershipId} {
+      // Lecture : la sienne, ou celles de son club si on est coach, ou admin.
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.uid == myUid() ||
+        canEditClub(resource.data.clubId)
+      );
+      // Création :
+      //  - l'id DOIT être {uid}_{clubId} (cohérence + unicité),
+      //  - un rôle coach/owner/admin ne peut être attribué QUE par l'admin,
+      //  - un coach peut rattacher des rôles non-coach à SON club,
+      //  - une membership 'parent' DOIT porter un playerId (lien obligatoire).
+      allow create: if isSignedIn()
+        && membershipId == request.resource.data.uid + '_' + request.resource.data.clubId
+        && request.resource.data.size() <= 15
+        && (
+          isAdmin() ||
+          ( canEditClub(request.resource.data.clubId)
+            && !(request.resource.data.role in ['owner', 'admin', 'coach']) )
+        )
+        && ( request.resource.data.role != 'parent'
+             || request.resource.data.playerId is string );
+      allow update: if isAdmin() || canEditClub(resource.data.clubId);
+      allow delete: if isAdmin() || canEditClub(resource.data.clubId);
+    }
+
+    // ═══ /invites/{token} ═══════════════════════════════════════════
+    // Liens d'invitation. Le token (id du doc) est un secret partagé.
+    match /invites/{token} {
+      // Lecture : tout utilisateur signé (nécessaire pour consommer le lien).
+      allow read: if isSignedIn();
+      // Création : coach/owner du club. Un coach NE PEUT PAS inviter un
+      // coach (réservé à l'admin) — exigence produit.
+      allow create: if isSignedIn()
+        && canEditClub(request.resource.data.clubId)
+        && request.resource.data.size() <= 15
+        && ( isAdmin() ||
+             !(request.resource.data.role in ['owner', 'admin', 'coach']) );
+      // Mise à jour : le coach du club, OU l'invité qui consomme le lien
+      // (passage consumed false→true en s'attribuant consumedBy).
+      allow update: if isSignedIn() && (
+        canEditClub(resource.data.clubId) ||
+        ( resource.data.consumed == false
+          && request.resource.data.consumed == true
+          && request.resource.data.consumedBy == myUid() )
+      );
+      allow delete: if isAdmin() || canEditClub(resource.data.clubId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  COLLECTIONS EXISTANTES — conservées telles quelles (ne pas casser)
+    // ═══════════════════════════════════════════════════════════════
+
     // ─── /cdd_v2_players/{playerId} ────────────────────────────────
     // Statuts joueurs + métadonnées (blessure, suspension, indispo, etc.)
     match /cdd_v2_players/{playerId} {
       allow read: if true;
 
       allow create, update: if
-        // Champs obligatoires
         request.resource.data.keys().hasAll(['playerId','teamId','status'])
-        // Validation des types
         && isString(request.resource.data.playerId)
         && isString(request.resource.data.teamId)
         && validStatus(request.resource.data.status)
-        // Tailles bornées (anti-abus)
         && strLen(request.resource.data.playerId, 80)
         && strLen(request.resource.data.teamId,   80)
-        // playerId cohérent avec l'ID du doc
         && request.resource.data.playerId == playerId
-        // statusMeta optionnel mais doit être un objet si présent
         && (!('statusMeta' in request.resource.data) || isMap(request.resource.data.statusMeta))
-        // statusUpdatedBy = voterId, optionnel
         && (!('statusUpdatedBy' in request.resource.data) || strLen(request.resource.data.statusUpdatedBy, 60));
 
-      // teamId immuable après création
       allow update: if request.resource.data.teamId == resource.data.teamId;
-
-      // Pas de delete par les clients
       allow delete: if false;
     }
 
     // ─── /cdd_v2_convoc/{matchId} ──────────────────────────────────
-    // Réponses parents (yes/no/may). Pattern existant — règles permissives.
     match /cdd_v2_convoc/{matchId} {
       allow read: if true;
       allow write: if
@@ -63,7 +193,6 @@ service cloud.firestore {
     }
 
     // ─── /cdd_v2_votes/{matchId} ───────────────────────────────────
-    // Votes post-match anonymes par voterId.
     match /cdd_v2_votes/{matchId} {
       allow read: if true;
       allow write: if
@@ -72,32 +201,21 @@ service cloud.firestore {
     }
 
     // ─── /cdd_v2_matches/{matchId} ─────────────────────────────────
-    // Sauvegarde du match en cours (feuille de match cloud).
     match /cdd_v2_matches/{matchId} {
       allow read: if true;
       allow write: if
-        // Champs attendus selon le payload côté firebase-sync.js saveMatchToCloud
         request.resource.data.keys().hasAny(['id','teamA','teamB','status','events'])
-        // Pas de doc démesuré (events array peut grossir vite)
         && request.resource.data.size() <= 50;
     }
 
     // ─── /shared_teams/{token} ─────────────────────────────────────
-    // v43.79 : payload d'équipe partagée, consommé par la page autonome
-    // V1 lecteur/index.html (?t=<token>). Le V2 push lui-même son payload
-    // depuis firebase-sync.js -> pushSharedTeamPayload(), afin que le V2
-    // soit autonome (pas de dépendance V1 pour créer le doc).
-    // Lecture publique (lien de partage par token, pas d'auth) ; écriture
-    // bornée au schéma + taille pour éviter l'abus.
     match /shared_teams/{token} {
       allow read: if true;
       allow write: if
-        // Doit contenir un payload avec au minimum un nom d'équipe
         request.resource.data.keys().hasAny(['payload'])
         && isMap(request.resource.data.payload)
         && isMap(request.resource.data.payload.team)
         && strLen(request.resource.data.payload.team.name, 200)
-        // Taille raisonnable (équipe + matches list)
         && request.resource.data.size() <= 30;
     }
 
@@ -107,24 +225,3 @@ service cloud.firestore {
     }
   }
 }
-
-// ╔═══════════════════════════════════════════════════════════════════╗
-// ║  ÉVOLUTION FUTURE — Quand Firebase Auth sera branché              ║
-// ╚═══════════════════════════════════════════════════════════════════╝
-//
-// Remplacer les `allow write: if ...` permissifs par des règles auth-based :
-//
-//   function isOwner() {
-//     return request.auth != null
-//         && request.auth.token.email == 'archi.tech.fr@gmail.com';
-//   }
-//   function isCoach(teamId) {
-//     return request.auth != null && (
-//       isOwner()
-//       || exists(/databases/$(database)/documents/cdd_v2_teams/$(teamId)/staff/$(request.auth.uid))
-//     );
-//   }
-//
-// Puis sur /cdd_v2_players/{playerId} :
-//   allow create, update: if isCoach(request.resource.data.teamId) && [validations schéma...]
-//   allow delete: if isOwner();
