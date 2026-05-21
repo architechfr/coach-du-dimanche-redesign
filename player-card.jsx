@@ -205,14 +205,16 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
 
       <div className="pc-divider" style={{ background: r.ink, opacity:.35 }} />
 
-      {/* STATS GRID 3×2 */}
+      {/* STATS GRID 3×2 — libellés selon le poste (gardien = stats dédiées) */}
       <div className="pc-stats" style={{ color: r.ink }}>
-        <span><b>{stats.PAC}</b> VIT</span>
-        <span><b>{stats.SHO}</b> TIR</span>
-        <span><b>{stats.PAS}</b> PAS</span>
-        <span><b>{stats.DRI}</b> DRI</span>
-        <span><b>{stats.DEF}</b> DEF</span>
-        <span><b>{stats.PHY}</b> PHY</span>
+        {(() => {
+          const lbl = (window.CDD_RATING
+            ? window.CDD_RATING.labelsFor(player.pos).short
+            : { PAC:'VIT', SHO:'TIR', PAS:'PAS', DRI:'DRI', DEF:'DEF', PHY:'PHY' });
+          return ['PAC','SHO','PAS','DRI','DEF','PHY'].map(k => (
+            <span key={k}><b>{stats[k]}</b> {lbl[k]}</span>
+          ));
+        })()}
       </div>
 
       {/* Rarity ribbon */}

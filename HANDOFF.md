@@ -7,11 +7,15 @@
 
 ## 1. Comment reprendre
 
-Deux sujets ouverts, au choix :
-- **« on fait la notation joueurs »** → construire la feature décrite en §5 (priorité demandée par Florian).
-- **« C4 »** → continuer le chantier sécurité (invitations).
+La **notation des joueurs pondérée par poste** est livrée (détail en §5).
+Shahine est passé à un OVR de **83** (objectif « 82 minimum » atteint).
 
-Action concrète attendue tout de suite : **améliorer le joueur Shahine — niveau 82 minimum.** C'est l'exemple qui motive la feature notation joueurs (§5).
+Sujet suivant au choix :
+- **« C4 »** → continuer le chantier sécurité (invitations).
+- **« notation v2 »** → suite de la notation : stats gardien stockées sous
+  des clés dédiées (aujourd'hui réutilise les 6 emplacements PAC..PHY
+  relibellés), persistance Firestore des stats, recalage de la progression
+  auto par match (`applyMatchPerformanceDeltas`) sur l'OVR pondéré.
 
 ---
 
@@ -35,6 +39,7 @@ Action concrète attendue tout de suite : **améliorer le joueur Shahine — niv
 - Faille « entrer sans s'authentifier » fermée ; migration auto abusive coupée.
 - **Chantier sécurité — Phase C** : voir §4.
 - Nettoyage : bundles `push-*` supprimés à la racine.
+- **Notation des joueurs pondérée par poste** : livrée — voir §5.
 
 ---
 
@@ -53,31 +58,47 @@ Objectif : un compte non autorisé ne doit voir AUCUNE donnée d'un club. Plan c
 
 ---
 
-## 5. PROCHAINE FEATURE — Notation des joueurs pondérée par poste
+## 5. FEATURE LIVRÉE — Notation des joueurs pondérée par poste
 
-> Demande explicite de Florian. À construire en priorité.
+> Livrée le 2026-05-21. La note moyenne (OVR) n'est plus une moyenne plate
+> des 6 stats : elle est pondérée selon le poste. Une faible stat hors-poste
+> (la DEF d'un attaquant, la finition d'un défenseur) ne pénalise plus.
 
-**Le besoin.** Le coach doit pouvoir modifier les caractéristiques de ses joueurs.
+**Ce qui a été construit :**
 
-**Le principe central — la note moyenne est PONDÉRÉE selon le poste.** Ce n'est pas une moyenne plate des 6 stats. Un défenseur ne doit pas être mal noté parce qu'il a une mauvaise finition ; un attaquant ne doit pas être pénalisé parce qu'il n'a pas les caractéristiques défensives. Chaque poste est évalué différemment — mais un joueur, quel que soit son poste, peut avoir une très bonne ou une mauvaise note moyenne, selon qu'il est bon ou mauvais **à son poste**.
+- **`position-rating.js`** (nouveau module, `window.CDD_RATING`) — source de
+  vérité unique. 7 profils de notation, chacun avec sa table de pondération
+  sur les 6 stats (somme = 100) :
+  Gardien · Défenseur central · Latéral · Milieu récupérateur ·
+  Milieu offensif · Ailier · Attaquant de pointe.
+  Les 12 codes de poste de l'UI (`CDD_COACH.POSITION_CHOICES`) sont rabattus
+  sur ces 7 profils via `POSITION_TO_PROFILE`.
+- **Gardien** : 6 stats dédiées (DÉTENTE, PLONGEON, JEU AU PIED, PLACEMENT,
+  DUEL 1v1, RÉFLEXES). Ce sont les mêmes 6 emplacements numériques
+  (PAC..PHY) relibellés selon le poste — radar, carte FUT et fiche affichent
+  les bons libellés. *Limite assumée* : les stats gardien ne sont pas encore
+  stockées sous des clés distinctes (voir « notation v2 » en §1).
+- **OVR pondéré** : `data-bridge.js` → `deriveStats()` calcule `stats.ovr`
+  via `CDD_RATING.weightedOverall(stats, poste)` (fallback moyenne plate si
+  le module n'est pas chargé).
+- **Deux modes d'édition** dans l'onglet *Stats* de la fiche joueur
+  (`screen-match-fiche.jsx`) :
+  - *Rapide* : poste + note globale → `CDD_RATING.quickProfile()` génère un
+    profil de 6 stats typé dont la moyenne pondérée vaut la note visée.
+    Aperçu en direct, puis « Générer ». Écrit aussi le poste.
+  - *Détaillé* : 6 curseurs, le poids de chaque stat au poste affiché,
+    l'OVR pondéré se recalcule en direct.
+- `coach-overrides.js` : nouvelle API `setStatsBulk()` (écrit les 6 stats
+  d'un coup pour le mode Rapide). Persistance : `cdd_player_stats_override`
+  en localStorage, comme les autres overrides coach.
+- **Shahine** (`pl_moydtri8_vjlwq`) : noté comme milieu offensif, son profil
+  passeur/dribbleur est désormais correctement valorisé → **OVR 83**
+  (la moyenne plate le bloquait à ~80-81). Les `STAR_BONUSES` planchent
+  désormais au niveau titulaire (`base = max(base, 78)`).
 
-**Design retenu (Florian a délégué les choix) :**
-
-1. **Postes détaillés — 7 profils**, chacun avec sa table de pondération sur les 6 stats (VIT/TIR/PAS/DRI/DEF/PHY) :
-   Gardien · Défenseur central · Latéral · Milieu récupérateur · Milieu offensif · Ailier · Attaquant de pointe.
-   Exemples de pondération (sur 100) :
-   - Défenseur central : DEF 30, PHY 25, VIT 15, PAS 15, DRI 10, TIR 5
-   - Attaquant de pointe : TIR 33, VIT 22, DRI 20, PHY 12, PAS 9, DEF 4
-
-2. **Le gardien a ses 6 stats dédiées** : plongeon, réflexes, jeu au pied, détente, placement, duel (1v1). Les stats de champ ne décrivent pas un gardien.
-
-3. **Deux modes d'édition** :
-   - *Rapide* : le coach choisit le poste + donne une note globale → l'app génère un profil de stats réaliste et typé pour ce poste (s'appuyer sur le helper `deriveStats` existant).
-   - *Détaillé* : le coach règle les 6 stats une par une → la note moyenne se recalcule en direct, en pondéré.
-
-4. Source de vérité unique : la note moyenne est **toujours** dérivée des 6 stats + du poste. Le mode rapide pré-remplit, le mode détaillé affine.
-
-Stats joueurs : vivent dans les documents `players` de Firestore. Pas de marque déposée dans les libellés.
+**Pistes de suite (« notation v2 ») :** stats gardien sous clés dédiées,
+persistance Firestore des stats dans les docs `players`, recalage de
+`applyMatchPerformanceDeltas` (progression auto par match) sur l'OVR pondéré.
 
 ---
 
@@ -96,3 +117,4 @@ Stats joueurs : vivent dans les documents `players` de Firestore. Pas de marque 
 - `roles.js` expose `window.CDD_ROLES` (rôles, memberships localStorage, `isAdmin`, `ADMIN_EMAIL`).
 - `data-adapter.js` (`window.CDD`) : seul accès au stockage ; filtre les clubs par membership de l'utilisateur.
 - `data-bridge.js` : construit les globaux `CDD_CLUB`, `CDD_PLAYERS`, `CDD_CONVO`… consommés par les écrans React.
+- `position-rating.js` expose `window.CDD_RATING` (7 profils de notation, `weightedOverall`, `quickProfile`, `labelsFor`) — chargé avant `data-bridge.js` dans `app.html`.

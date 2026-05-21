@@ -120,6 +120,17 @@ window.CDD_COACH = {
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
+  // Écrit les 6 stats d'un coup (mode Rapide — profil généré par poste).
+  setStatsBulk(playerId, statsObj) {
+    const all = this.getStatsOverrides();
+    all[playerId] = { ...(all[playerId] || {}) };
+    ['PAC','SHO','PAS','DRI','DEF','PHY'].forEach(k => {
+      if (typeof statsObj[k] === 'number') all[playerId][k] = statsObj[k];
+    });
+    try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
+    window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  },
   resetStats(playerId) {
     const all = this.getStatsOverrides();
     delete all[playerId];

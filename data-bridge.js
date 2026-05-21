@@ -66,7 +66,7 @@ const STAR_BONUSES = {
   // EULOGA Darell (#7) — RAPIDE, ailier droit
   'pl_moydtri8_fs89g': { base: 9, profile: 'AD', speedster: true },
   // AID Shahine (#16) — technique cœur du jeu, belles passes, petit périmètre
-  'pl_moydtri8_vjlwq': { base: 3, profile: 'MC', technician: true },
+  'pl_moydtri8_vjlwq': { base: 4, profile: 'MC', technician: true },
 };
 
 function deriveStats(player) {
@@ -86,8 +86,14 @@ function deriveStats(player) {
   if (player.isStarter && player.preferredNumber === 10) base += 4;
   if (player.isStarter && player.preferredNumber === 9)  base += 3;
 
-  // Coach-identified stars get extra boost
-  if (star) base += star.base;
+  // Coach-identified stars : plancher au niveau titulaire (un joueur
+  // identifié comme star n'est jamais noté comme un réserviste), puis
+  // bonus spécifique. Garantit une note cohérente quel que soit le flag
+  // isStarter de la donnée FFF/cloud.
+  if (star) {
+    base = Math.max(base, 78);
+    base += star.base;
+  }
 
   // Variation pour différencier les joueurs (-5 à +5)
   const seed = (player.preferredNumber || 1) * 11 + (player.firstName?.length || 0) * 5 + (player.lastName?.length || 0) * 3;
@@ -135,6 +141,12 @@ function deriveStats(player) {
   }
 
   const clamp = v => Math.max(40, Math.min(95, v));
+  // OVR pondéré selon le poste (voir position-rating.js). Une faible stat
+  // hors-poste (ex: DEF d'un attaquant) ne tire plus la note vers le bas.
+  // Fallback : moyenne plate si le module n'est pas encore chargé.
+  const ovrFor = (s) => (window.CDD_RATING
+    ? window.CDD_RATING.weightedOverall(s, pos)
+    : Math.round((s.PAC + s.SHO + s.PAS + s.DRI + s.DEF + s.PHY) / 6));
   const stats = {
     PAC: clamp(base + p.PAC + variation(0)),
     SHO: clamp(base + p.SHO + variation(1)),
@@ -143,7 +155,7 @@ function deriveStats(player) {
     DEF: clamp(base + p.DEF + variation(4)),
     PHY: clamp(base + p.PHY + variation(5)),
   };
-  stats.ovr = Math.round((stats.PAC + stats.SHO + stats.PAS + stats.DRI + stats.DEF + stats.PHY) / 6);
+  stats.ovr = ovrFor(stats);
 
   // Coach overrides
   try {
@@ -153,7 +165,7 @@ function deriveStats(player) {
       Object.keys(stats).forEach(k => {
         if (typeof ov[k] === 'number') stats[k] = ov[k];
       });
-      stats.ovr = Math.round((stats.PAC + stats.SHO + stats.PAS + stats.DRI + stats.DEF + stats.PHY) / 6);
+      stats.ovr = ovrFor(stats);
     }
   } catch (e) {}
 
@@ -170,7 +182,7 @@ function deriveStats(player) {
       }
     });
     if (mutated) {
-      stats.ovr = Math.round((stats.PAC + stats.SHO + stats.PAS + stats.DRI + stats.DEF + stats.PHY) / 6);
+      stats.ovr = ovrFor(stats);
     }
   }
 

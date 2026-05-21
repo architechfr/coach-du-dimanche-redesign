@@ -54,14 +54,24 @@ function ScreenFiche({ go, tweaks, player }) {
   const [editFirst, setEditFirst] = useState(p.first || '');
   const [editLast,  setEditLast]  = useState(p.last  || '');
 
-  // ----- Stats edit -----
+  // ----- Notation joueur (édition pondérée par poste) -----
+  const RATING = window.CDD_RATING;
   const [editingStats, setEditingStats] = useState(false);
+  const [statMode, setStatMode] = useState('detail'); // 'quick' | 'detail'
+  const [quickPos, setQuickPos] = useState(p.pos || 'MC');
+  const [quickNote, setQuickNote] = useState(p.stats.ovr || 75);
+  // Réaligner les contrôles du mode Rapide quand on change de joueur
+  useEffect(() => {
+    setQuickPos(p.pos || 'MC');
+    setQuickNote(p.stats.ovr || 75);
+    setEditingStats(false);
+  }, [p.id]);
+
   const updateStat = (key, val) => {
     if (window.CDD_COACH && window.CDD_COACH.setStatOverride) {
       window.CDD_COACH.setStatOverride(p.id, key, val);
     } else {
-      // Fallback : mute en mémoire
-      p.stats[key] = val;
+      p.stats[key] = val; // fallback : mute en mémoire
     }
     triggerRefresh();
   };
@@ -70,6 +80,23 @@ function ScreenFiche({ go, tweaks, player }) {
       window.CDD_COACH.resetStats(p.id);
     }
     setEditingStats(false);
+    triggerRefresh();
+  };
+  // Mode Rapide : poste + note globale → l'app génère un profil de stats typé
+  const applyQuick = () => {
+    if (!RATING) return;
+    const gen = RATING.quickProfile(quickPos, quickNote);
+    if (window.CDD_COACH) {
+      if (window.CDD_COACH.setProfile) {
+        window.CDD_COACH.setProfile(p.id, { position: quickPos });
+      }
+      if (window.CDD_COACH.setStatsBulk) {
+        window.CDD_COACH.setStatsBulk(p.id, gen);
+      } else {
+        Object.keys(gen).forEach(k => window.CDD_COACH.setStatOverride(p.id, k, gen[k]));
+      }
+    }
+    setStatMode('detail');
     triggerRefresh();
   };
 
@@ -87,7 +114,11 @@ function ScreenFiche({ go, tweaks, player }) {
   }, [stats]);
 
   const radarPath = radarPts.map((p,i)=>(i?"L":"M")+p.x+","+p.y).join(" ") + "Z";
-  const axisLabels = ["VIT","TIR","PAS","DRI","DEF","PHY"];
+  // Libellés du radar : gardien = stats dédiées, joueur de champ = VIT/TIR/…
+  const ratingLabels = RATING ? RATING.labelsFor(p.pos) : null;
+  const axisLabels = ratingLabels
+    ? ['PAC','SHO','PAS','DRI','DEF','PHY'].map(k => ratingLabels.short[k])
+    : ["VIT","TIR","PAS","DRI","DEF","PHY"];
 
   return (
     <div className="scr scr-fiche fade-in" data-screen-label="05 Fiche Joueur">
@@ -309,7 +340,7 @@ function ScreenFiche({ go, tweaks, player }) {
 
           <div className="fi-attrs">
             <div className="fi-attrs-h">
-              <span className="fi-attrs-k">ÉVALUATION COACH</span>
+              <span className="fi-attrs-k">NOTATION COACH</span>
               <div className="fi-attrs-actions">
                 {editingStats ? (
                   <>
@@ -321,31 +352,110 @@ function ScreenFiche({ go, tweaks, player }) {
                 )}
               </div>
             </div>
-            {[
-              ["VITESSE", "PAC"],
-              ["TIR",     "SHO"],
-              ["PASSE",   "PAS"],
-              ["DRIBBLE", "DRI"],
-              ["DÉFENSE", "DEF"],
-              ["PHYSIQUE","PHY"],
-            ].map(([lbl, k]) => {
-              const v = stats[k];
-              return (
-                <div className="fi-attr" key={k}>
-                  <span className="fi-attr-lbl">{lbl}</span>
-                  {editingStats ? (
-                    <input type="range" min="40" max="95" value={v}
-                      className="fi-attr-range"
-                      onChange={e => updateStat(k, parseInt(e.target.value))} />
-                  ) : (
-                    <div className="fi-attr-bar">
-                      <div className="fi-attr-fill" style={{width:v+"%"}}/>
+
+            {/* OVR pondéré + profil de poste sur lequel il est calculé */}
+            <div className="fi-rate-head">
+              <div className="fi-rate-ovr">
+                <b className="num">{p.stats.ovr}</b>
+                <em>OVR</em>
+              </div>
+              <div className="fi-rate-prof">
+                <span className="fi-rate-prof-l">Noté comme</span>
+                <span className="fi-rate-prof-v">
+                  {RATING ? RATING.profileFor(p.pos).label : (p.posLabel || p.pos)}
+                </span>
+              </div>
+            </div>
+
+            {/* Sélecteur de mode d'édition */}
+            {editingStats && RATING && (
+              <div className="fi-rate-modes">
+                <button className={`fi-rate-mode ${statMode==='quick'?'on':''}`}
+                        onClick={() => setStatMode('quick')}>⚡ Rapide</button>
+                <button className={`fi-rate-mode ${statMode==='detail'?'on':''}`}
+                        onClick={() => setStatMode('detail')}>⚙ Détaillé</button>
+              </div>
+            )}
+
+            {/* MODE RAPIDE — poste + note globale → profil typé généré */}
+            {editingStats && statMode==='quick' && RATING && (
+              <div className="fi-rate-quick">
+                <label className="fi-rate-field">
+                  <span className="fi-rate-field-l">Poste</span>
+                  <select className="fi-rate-select" value={quickPos}
+                          onChange={e => setQuickPos(e.target.value)}>
+                    {(window.CDD_COACH?.POSITION_CHOICES || []).map(o => (
+                      <option key={o.id} value={o.id}>{o.l}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="fi-rate-field">
+                  <span className="fi-rate-field-l">
+                    Note globale visée · <b className="num">{quickNote}</b>
+                  </span>
+                  <input type="range" className="fi-rate-range"
+                         min={RATING.STAT_MIN} max={RATING.STAT_MAX} value={quickNote}
+                         onChange={e => setQuickNote(parseInt(e.target.value))}/>
+                </label>
+                {(() => {
+                  const prev = RATING.quickProfile(quickPos, quickNote);
+                  const sh = RATING.labelsFor(quickPos).short;
+                  return (
+                    <div className="fi-rate-preview">
+                      {['PAC','SHO','PAS','DRI','DEF','PHY'].map(k => (
+                        <span key={k} className="fi-rate-chip">
+                          <b className="num">{prev[k]}</b><em>{sh[k]}</em>
+                        </span>
+                      ))}
                     </div>
-                  )}
-                  <span className="fi-attr-v num">{v}</span>
+                  );
+                })()}
+                <button className="fi-rate-apply" onClick={applyQuick}>
+                  Générer le profil {RATING.profileFor(quickPos).label}
+                </button>
+                <p className="fi-rate-hint">
+                  L'app génère 6 stats réalistes typées pour ce poste — leur moyenne
+                  pondérée vaut la note visée. Affinez ensuite en mode Détaillé.
+                </p>
+              </div>
+            )}
+
+            {/* MODE DÉTAILLÉ + lecture seule — 6 stats avec le poids du poste */}
+            {(!editingStats || statMode==='detail') && (() => {
+              const labels  = RATING ? RATING.labelsFor(p.pos).long
+                : {PAC:'VITESSE',SHO:'TIR',PAS:'PASSE',DRI:'DRIBBLE',DEF:'DÉFENSE',PHY:'PHYSIQUE'};
+              const weights = RATING ? RATING.profileFor(p.pos).weights : null;
+              return (
+                <div className="fi-rate-rows">
+                  {['PAC','SHO','PAS','DRI','DEF','PHY'].map(k => {
+                    const v = stats[k];
+                    return (
+                      <div className="fi-rate-row" key={k}>
+                        <span className="fi-rate-row-l">{labels[k]}</span>
+                        {weights && (
+                          <span className="fi-rate-row-w"
+                                title="Poids de cette stat dans la note de ce poste">
+                            {weights[k]}%
+                          </span>
+                        )}
+                        {editingStats ? (
+                          <input type="range" className="fi-rate-range"
+                                 min={RATING ? RATING.STAT_MIN : 40}
+                                 max={RATING ? RATING.STAT_MAX : 95}
+                                 value={v}
+                                 onChange={e => updateStat(k, parseInt(e.target.value))}/>
+                        ) : (
+                          <div className="fi-rate-track">
+                            <div className="fi-rate-fill" style={{width:v+'%'}}/>
+                          </div>
+                        )}
+                        <span className="fi-rate-row-v num">{v}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               );
-            })}
+            })()}
           </div>
         </div>
       )}
