@@ -22,13 +22,35 @@
   const ROLES = {
     OWNER:    { id: 'owner',    label: 'Owner',           weight: 100 },
     ADMIN:    { id: 'admin',    label: 'Admin club',      weight: 80  },
-    COACH:    { id: 'coach',    label: 'Coach',           weight: 60  },
+    COACH:    { id: 'coach',    label: 'Coach principal', weight: 60  },
     ADJOINT:  { id: 'adjoint',  label: 'Coach adjoint',   weight: 55  },
     DIRIGEANT:{ id: 'dirigeant',label: 'Dirigeant',       weight: 50  },
     ECOLE:    { id: 'ecole',    label: 'École de foot',   weight: 45  },
     PARENT:   { id: 'parent',   label: 'Parent',          weight: 20  },
     JOUEUR:   { id: 'joueur',   label: 'Joueur',          weight: 20  },
     LECTEUR:  { id: 'lecteur',  label: 'Lecteur',         weight: 10  },
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  MATRICE D'INVITATION — qui peut générer un lien vers quel rôle
+  // ═══════════════════════════════════════════════════════════════════
+  // Règle produit (confirmée 2026-05-21). Le rôle « coach » ne s'obtient
+  // JAMAIS par lien : un compte coach principal est créé par l'admin.
+  //   coach principal / owner / admin → adjoint, parent, joueur, lecteur
+  //   coach adjoint                   → parent, joueur, lecteur
+  //   joueur                          → parent, joueur, lecteur
+  //   parent                          → parent, joueur, lecteur
+  //   lecteur                         → personne
+  // Cette matrice est dupliquée (volontairement) dans firestore.rules :
+  // l'UI s'appuie dessus pour l'ergonomie, le serveur pour la sécurité.
+  const INVITE_MATRIX = {
+    admin:   ['adjoint', 'parent', 'joueur', 'lecteur'],
+    owner:   ['adjoint', 'parent', 'joueur', 'lecteur'],
+    coach:   ['adjoint', 'parent', 'joueur', 'lecteur'],
+    adjoint: ['parent', 'joueur', 'lecteur'],
+    joueur:  ['parent', 'joueur', 'lecteur'],
+    parent:  ['parent', 'joueur', 'lecteur'],
+    lecteur: [],
   };
 
   // ⚠️ La notion d'« owner par email » a été retirée pour cause de
@@ -110,12 +132,28 @@
     return hasRole(['parent', 'joueur', 'dirigeant', 'lecteur']);
   }
 
+  // Rôle EFFECTIF de l'utilisateur courant. Source de vérité pour l'UI :
+  //  1. l'email admin → toujours 'admin' (gating super-utilisateur) ;
+  //  2. sinon cdd_user_role — posé à l'onboarding pour un coach qui crée
+  //     son club, et écrasé par le rôle de l'invitation à sa consommation
+  //     (firebase-sync.js → processPendingInvite). Le rôle est donc bien
+  //     « une conséquence du lien reçu », jamais saisi à la main.
+  function effectiveRole() {
+    if (isAdmin()) return 'admin';
+    try {
+      const r = localStorage.getItem('cdd_user_role');
+      if (r && ROLES[r.toUpperCase()]) return r;
+    } catch (e) {}
+    return 'coach';
+  }
+
+  // Liste des rôles qu'un rôle donné (ou le rôle courant) peut inviter.
+  function invitableRoles(role) {
+    return INVITE_MATRIX[role || effectiveRole()] || [];
+  }
+
   function canInviteRole(targetRole) {
-    // Owner peut tout inviter. Admin peut tout sauf owner. Coach invite parents/joueurs/lecteurs.
-    if (hasRole('owner')) return true;
-    if (hasRole('admin')) return targetRole !== 'owner';
-    if (atLeast('coach')) return ['parent', 'joueur', 'lecteur'].includes(targetRole);
-    return false;
+    return invitableRoles(effectiveRole()).includes(targetRole);
   }
 
   function canDeleteClub() {
@@ -576,10 +614,10 @@
 
   // Expose
   window.CDD_ROLES = {
-    ROLES, OWNER_EMAIL, ADMIN_EMAIL,
-    currentRole, roleLabel, roleWeight, hasRole, atLeast,
+    ROLES, OWNER_EMAIL, ADMIN_EMAIL, INVITE_MATRIX,
+    currentRole, effectiveRole, roleLabel, roleWeight, hasRole, atLeast,
     getScope, canEditClub, canEditTeam, canViewPlayer,
-    canInviteRole, canDeleteClub,
+    canInviteRole, invitableRoles, canDeleteClub,
     createInvitationDraft, listInvitations,
     // Memberships
     getCurrentEmail, isAdmin, listMemberships, listAllMemberships, hasMembership,

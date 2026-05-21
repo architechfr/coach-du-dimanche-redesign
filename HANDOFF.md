@@ -7,18 +7,22 @@
 
 ## 1. Comment reprendre
 
-Deux gros chantiers livrés le 2026-05-21 : la **notation pondérée par poste**
-(§5) et **C4 — les invitations** (§4). Shahine est à un OVR de **83**.
+Chantiers livrés le 2026-05-21 : la **notation pondérée par poste** (§5),
+**C4 — les invitations** (§4) et le **début de C5 — matrice d'invitation +
+rôle non modifiable** (§4). Shahine est à un OVR de **83**.
 
-> ⚠️ **Action requise après le push C4** : redéployer `firestore.rules` dans
-> la console Firebase (`arbitre-sport` → Firestore → Règles → Publier). La
-> règle `memberships` a une nouvelle branche « auto-création depuis
-> invitation » — sans ce redéploiement, la consommation d'un lien échoue.
+> ⚠️ **Action requise** : redéployer `firestore.rules` dans la console
+> Firebase (`arbitre-sport` → Firestore → Règles → Publier). Deux ajouts
+> pas encore en prod : (a) la branche « auto-création depuis invitation »
+> de `memberships` (C4) ; (b) les helpers `myRoleOnClub` / `canInviteRole`
+> + la règle `invites/create` par matrice (C5). Sans ce redéploiement, la
+> consommation des liens ET la génération par un non-coach échouent.
 
 Sujet suivant au choix :
-- **« C5 »** → dernier volet sécurité : application des droits par rôle dans
-  l'UI, écran coach « qui est connecté en quelle qualité », `pullCloudData`
-  automatique au login, images (logos/photos) vers Firebase Storage.
+- **« C5 »** → suite du dernier volet sécurité : droits par rôle dans le
+  reste de l'UI (boutons d'édition masqués aux lecteurs/parents), écran
+  coach « qui est connecté en quelle qualité », `pullCloudData` automatique
+  au login, images (logos/photos) vers Firebase Storage.
 - **« notation v2 »** → suite de la notation : stats gardien sous clés
   dédiées, persistance Firestore des stats, recalage de la progression auto.
 
@@ -46,6 +50,7 @@ Sujet suivant au choix :
 - Nettoyage : bundles `push-*` supprimés à la racine.
 - **Notation des joueurs pondérée par poste** : livrée — voir §5.
 - **C4 — Invitations** : livré — voir §4.
+- **C5 (début) — Matrice d'invitation + rôle non modifiable** : livré — voir §4.
 
 ---
 
@@ -70,8 +75,32 @@ Objectif : un compte non autorisé ne doit voir AUCUNE donnée d'un club. Plan c
   memberships). `firestore.rules` : nouvelle branche « auto-création depuis
   invitation » de `memberships` → **à redéployer dans la console Firebase**.
 
-**Reste à faire :**
-- **C5 — Rôles & tableau de bord** : application des droits par rôle dans l'UI ; écran coach « qui est connecté en quelle qualité » ; nettoyer le fallback `currentRole()→'coach'` de `roles.js` ; rendre `pullCloudData` automatique au login ; images (logo club + photos joueurs) → Firebase Storage.
+- **C5 (début) ✓** (2026-05-21) — **matrice d'invitation** + **rôle non
+  modifiable**. Qui peut inviter qui est désormais cadré par une matrice,
+  source de vérité unique `roles.js → INVITE_MATRIX`, dupliquée volontairement
+  dans `firestore.rules → canInviteRole` (UI = ergonomie, règles = sécurité) :
+  coach principal/owner/admin → adjoint, parent, joueur, lecteur ;
+  adjoint/joueur/parent → parent, joueur, lecteur ; lecteur → personne.
+  `roles.js` expose `effectiveRole()` (rôle effectif : email admin → 'admin',
+  sinon `cdd_user_role`) et `invitableRoles(role)`. `invite-manager.jsx`
+  filtre les choix de rôle selon la matrice et affiche un rappel. La section
+  « Inviter quelqu'un » des Réglages est visible dès que le rôle a au moins
+  un rôle invitable (plus seulement `isCoach`). « Mon rôle » devient une
+  **carte en lecture seule** en haut des Réglages (icône + libellé + « défini
+  automatiquement ») : le `prompt()` éditable est supprimé — le rôle est une
+  conséquence du lien reçu, plus une saisie libre. `isAdmin` des Réglages est
+  recablé sur l'email (`CDD_ROLES.isAdmin()`), plus sur un rôle localStorage.
+  `firestore.rules` modifiées (helpers `myRoleOnClub`/`canInviteRole`, règle
+  `invites/create`, `invites/delete` étendue à l'auteur) → **à redéployer**.
+  Cache buster `firebase-sync.js` : v52 → **v53**.
+
+**Reste à faire (suite de C5) :**
+- Appliquer les droits par rôle dans le RESTE de l'UI : un lecteur / parent
+  ne doit pas voir les boutons d'édition (compo, stats, statuts, logo…).
+- Écran coach « qui est connecté en quelle qualité » (liste des memberships).
+- Nettoyer le fallback `currentRole()→'coach'` de `roles.js`.
+- Rendre `pullCloudData` automatique au login.
+- Images (logo club + photos joueurs) → Firebase Storage.
 - Ménage non urgent : collections Firestore legacy (`matches`, `club_matches`, `transfers`, `users`, `cdd_v2_*`).
 
 ---
@@ -124,7 +153,7 @@ persistance Firestore des stats dans les docs `players`, recalage de
 
 - **Mount OneDrive du sandbox** : sert souvent des fichiers tronqués/stale → la validation de syntaxe par script échoue à tort. La vérité = relecture par l'outil fichier. Validation fiable uniquement côté Git Bash Windows.
 - **OneDrive ressuscite `.git/index.lock`** — connu de longue date sur ce projet.
-- Cache buster : `firebase-sync.js` est chargé avec `?v=NN` dans `app.html` — l'incrémenter à chaque modif de ce fichier (actuellement v52).
+- Cache buster : `firebase-sync.js` est chargé avec `?v=NN` dans `app.html` — l'incrémenter à chaque modif de ce fichier (actuellement v53). `roles.js`, `invite-manager.jsx`, `screen-onb-set.jsx` ne sont PAS versionnés : à un changement de ces fichiers, recharger en vidant le cache (Ctrl+Maj+R).
 - Méthode de travail : Florian pousse lui-même via Git Bash dans `Version/V2/`. Éditeur git configuré sur `notepad`.
 
 ---
@@ -132,8 +161,8 @@ persistance Firestore des stats dans les docs `players`, recalage de
 ## 7. Repères techniques
 
 - `firebase-sync.js` expose `window.cddSync` (convoc/vote), `window.cddAuth` (auth email-link + Google), `window.cddData` (clubs/teams/players/memberships + migration + pullCloudData + invitations C4).
-- `invite-manager.jsx` expose `window.InviteManager` — UI coach de génération de liens, montée dans les Réglages (`screen-onb-set.jsx`, section gatée `isCoach`).
-- `roles.js` expose `window.CDD_ROLES` (rôles, memberships localStorage, `isAdmin`, `ADMIN_EMAIL`).
+- `invite-manager.jsx` expose `window.InviteManager` — UI de génération de liens, montée dans les Réglages (`screen-onb-set.jsx`, section visible dès que `invitableRoles(role)` n'est pas vide). Les choix de rôle sont filtrés par la matrice.
+- `roles.js` expose `window.CDD_ROLES` (rôles, memberships localStorage, `isAdmin`, `ADMIN_EMAIL`, `INVITE_MATRIX`, `effectiveRole()`, `invitableRoles(role)`, `canInviteRole(target)`). `INVITE_MATRIX` = source de vérité de « qui peut inviter qui », miroir de `firestore.rules → canInviteRole`.
 - `data-adapter.js` (`window.CDD`) : seul accès au stockage ; filtre les clubs par membership de l'utilisateur.
 - `data-bridge.js` : construit les globaux `CDD_CLUB`, `CDD_PLAYERS`, `CDD_CONVO`… consommés par les écrans React.
 - `position-rating.js` expose `window.CDD_RATING` (7 profils de notation, `weightedOverall`, `quickProfile`, `labelsFor`) — chargé avant `data-bridge.js` dans `app.html`.

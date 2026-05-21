@@ -10,7 +10,27 @@
    ============================================================ */
 
 function InviteManager() {
-  const [role, setRole]       = React.useState('parent');
+  // ── Matrice d'invitation : ce que MON rôle a le droit de générer ──────
+  // Source de vérité : roles.js → INVITE_MATRIX (et firestore.rules côté
+  // serveur). On n'affiche QUE les rôles autorisés pour le rôle courant.
+  const myRole = (window.CDD_ROLES && window.CDD_ROLES.effectiveRole)
+    ? window.CDD_ROLES.effectiveRole() : 'coach';
+  const myRoleLabel = (window.CDD_ROLES && window.CDD_ROLES.roleLabel)
+    ? window.CDD_ROLES.roleLabel(myRole) : myRole;
+  const allowedRoles = (window.CDD_ROLES && window.CDD_ROLES.invitableRoles)
+    ? window.CDD_ROLES.invitableRoles(myRole) : ['parent', 'joueur', 'lecteur'];
+
+  // Catalogue complet. Le rôle « coach principal » n'y figure jamais : un
+  // compte coach est créé par l'administrateur, pas via un lien.
+  const ALL_ROLE_CHOICES = [
+    { id: 'adjoint', l: 'Coach adjoint', d: 'Peut éditer le club · max 5' },
+    { id: 'parent',  l: 'Parent',  d: 'Suit un joueur · lecture seule' },
+    { id: 'joueur',  l: 'Joueur',  d: 'Voit sa fiche · lecture seule' },
+    { id: 'lecteur', l: 'Lecteur', d: 'Lecture seule du club' },
+  ];
+  const ROLE_CHOICES = ALL_ROLE_CHOICES.filter(r => allowedRoles.includes(r.id));
+
+  const [role, setRole]       = React.useState(() => (ROLE_CHOICES[0] || {}).id || 'lecteur');
   const [playerId, setPlayerId] = React.useState('');
   const [label, setLabel]     = React.useState('');
   const [busy, setBusy]       = React.useState(false);
@@ -26,17 +46,8 @@ function InviteManager() {
   const players = window.CDD_PLAYERS || [];
   const signedIn = !!(window.cddAuth && window.cddAuth.currentUser && window.cddAuth.currentUser());
 
-  // Rôles invitables via lien. Le rôle « coach » n'y figure pas : un compte
-  // coach est créé par l'administrateur, jamais via un lien d'invitation.
-  const ROLE_CHOICES = [
-    { id: 'parent',  l: 'Parent',  d: "Suit un joueur · lecture seule" },
-    { id: 'joueur',  l: 'Joueur',  d: 'Voit sa fiche · lecture seule' },
-    { id: 'adjoint', l: 'Adjoint', d: 'Coach adjoint · peut éditer (max 5)' },
-    { id: 'lecteur', l: 'Lecteur', d: 'Lecture seule du club' },
-  ];
-
   const needsPlayer = role === 'parent' || role === 'joueur';
-  const roleLabel = (id) => (ROLE_CHOICES.find(r => r.id === id) || {}).l || id;
+  const roleLabel = (id) => (ALL_ROLE_CHOICES.find(r => r.id === id) || {}).l || id;
 
   const loadInvites = React.useCallback(async () => {
     if (!window.cddData || !window.cddData.ready || !club.id) { setInvites([]); return; }
@@ -127,8 +138,27 @@ function InviteManager() {
     );
   }
 
+  // Un lecteur (ou tout rôle sans droit d'invitation) ne voit pas le module.
+  if (ROLE_CHOICES.length === 0) {
+    return (
+      <div className="inv-box inv-box-empty">
+        Ton rôle ({myRoleLabel}) ne permet pas de générer des liens d'invitation.
+      </div>
+    );
+  }
+
   return (
     <div className="inv-box">
+      {/* Rappel : ce que mon rôle peut inviter */}
+      <div style={{
+        fontSize: 11.5, lineHeight: 1.5, color: 'var(--tx-3, rgba(255,255,255,0.6))',
+        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 8, padding: '8px 10px', marginBottom: 12,
+      }}>
+        En tant que <b style={{ color: 'var(--ac, #c8f169)' }}>{myRoleLabel}</b>,
+        tu peux inviter : {ROLE_CHOICES.map(r => r.l.toLowerCase()).join(', ')}.
+      </div>
+
       {/* Choix du rôle */}
       <div className="inv-field-l">Rôle de la personne invitée</div>
       <div className="inv-roles">

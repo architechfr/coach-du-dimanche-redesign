@@ -90,6 +90,25 @@ service cloud.firestore {
             || request.time.toMillis() < inv.expiresAt);
     }
 
+    // Rôle de l'utilisateur courant sur un club ('' si aucune membership).
+    function myRoleOnClub(clubId) {
+      return hasMembership(clubId) ? membershipRole(clubId) : '';
+    }
+    // Matrice d'invitation — MIROIR de roles.js → INVITE_MATRIX. L'UI s'en
+    // sert pour l'ergonomie, cette règle pour la sécurité (infranchissable).
+    //  owner / coach / admin     → adjoint, parent, joueur, lecteur
+    //  adjoint / joueur / parent → parent, joueur, lecteur
+    //  lecteur                   → personne
+    // Le rôle 'coach' ne s'obtient jamais par lien (compte créé par l'admin).
+    function canInviteRole(clubId, target) {
+      let r = myRoleOnClub(clubId);
+      return isAdmin()
+        || (r in ['owner', 'coach']
+            && target in ['adjoint', 'parent', 'joueur', 'lecteur'])
+        || (r in ['adjoint', 'joueur', 'parent']
+            && target in ['parent', 'joueur', 'lecteur']);
+    }
+
     // ═══ /clubs/{clubId} ════════════════════════════════════════════
     match /clubs/{clubId} {
       allow read:   if canReadClub(clubId);
@@ -167,13 +186,14 @@ service cloud.firestore {
     match /invites/{token} {
       // Lecture : tout utilisateur signé (nécessaire pour consommer le lien).
       allow read: if isSignedIn();
-      // Création : coach/owner du club. Un coach NE PEUT PAS inviter un
-      // coach (réservé à l'admin) — exigence produit.
+      // Création : selon la matrice d'invitation (canInviteRole). Un membre
+      // ne peut générer un lien que vers un rôle autorisé pour SON rôle sur
+      // ce club. Un lien 'coach' reste impossible (réservé à l'admin, hors
+      // lien). canInviteRole exige une membership sur le club → pas de lien
+      // possible sans rattachement.
       allow create: if isSignedIn()
-        && canEditClub(request.resource.data.clubId)
         && request.resource.data.size() <= 15
-        && ( isAdmin() ||
-             !(request.resource.data.role in ['owner', 'admin', 'coach']) );
+        && canInviteRole(request.resource.data.clubId, request.resource.data.role);
       // Mise à jour : le coach du club, OU l'invité qui consomme le lien
       // (passage consumed false→true en s'attribuant consumedBy).
       allow update: if isSignedIn() && (
@@ -182,7 +202,11 @@ service cloud.firestore {
           && request.resource.data.consumed == true
           && request.resource.data.consumedBy == myUid() )
       );
-      allow delete: if isAdmin() || canEditClub(resource.data.clubId);
+      // Suppression (révocation) : admin, coach/owner du club, ou l'auteur
+      // du lien lui-même (un parent/joueur peut révoquer ce qu'il a généré).
+      allow delete: if isAdmin()
+        || canEditClub(resource.data.clubId)
+        || resource.data.createdBy == myUid();
     }
 
     // ═══════════════════════════════════════════════════════════════

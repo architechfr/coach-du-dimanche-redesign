@@ -834,7 +834,6 @@ async function pullCloudData() {
 const INVITE_TTL_DAYS       = 14;     // durée de validité d'un lien
 const ADJOINT_CAP           = 5;      // plafond d'adjoints par club
 const PENDING_INVITE_KEY    = 'cdd_pending_invite';
-const INVITE_RESTRICTED     = ['owner', 'admin', 'coach'];
 
 function _inviteToken() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -879,8 +878,17 @@ async function createInvite(opts) {
   const o = opts || {};
   if (!o.clubId) throw new Error('Aucun club actif');
   const role = o.role || 'lecteur';
-  if (INVITE_RESTRICTED.includes(role) && _email() !== ADMIN_EMAIL_DATA) {
-    throw new Error("Seul l'administrateur peut inviter un coach.");
+  // Matrice d'invitation (cf. roles.js → INVITE_MATRIX et firestore.rules).
+  // Contrôle ergonomique : message clair AVANT l'appel réseau. La sécurité
+  // réelle est imposée côté serveur par la règle invites/create.
+  const myRole = (window.CDD_ROLES && window.CDD_ROLES.effectiveRole)
+    ? window.CDD_ROLES.effectiveRole() : 'coach';
+  const allowed = (window.CDD_ROLES && window.CDD_ROLES.invitableRoles)
+    ? window.CDD_ROLES.invitableRoles(myRole) : ['parent', 'joueur', 'lecteur'];
+  if (!allowed.includes(role)) {
+    const lbl = (window.CDD_ROLES && window.CDD_ROLES.roleLabel)
+      ? window.CDD_ROLES.roleLabel(myRole) : myRole;
+    throw new Error('Ton rôle (' + lbl + ') ne permet pas de générer un lien vers un « ' + role + ' ».');
   }
   if (role === 'parent' && !o.playerId) {
     throw new Error('Une invitation parent doit être rattachée à un joueur.');

@@ -99,12 +99,22 @@ function ScreenSettings({ go, tweaks, setTweak }) {
   // Roles possibles : parent | joueur | coach | adjoint | dirigeant | ecole | admin
   // ⚠️ La notion d'owner-par-email a ete retiree (repo public + faille).
   // Le super-admin reviendra Sprint 3 via Firebase Auth custom claims.
-  const role = localStorage.getItem('cdd_user_role') || 'coach';
+  // #C5 — Le rôle n'est plus librement éditable. effectiveRole() le dérive :
+  // email admin → 'admin' ; sinon cdd_user_role, posé à l'onboarding pour un
+  // coach créateur et écrasé par le rôle de l'invitation à sa consommation.
+  const role = (window.CDD_ROLES && window.CDD_ROLES.effectiveRole)
+    ? window.CDD_ROLES.effectiveRole()
+    : (localStorage.getItem('cdd_user_role') || 'coach');
   const userEmail = localStorage.getItem('cdd_user_email') || '';
-  const isOwner   = false;
-  const isAdmin   = role === 'admin';
-  const isCoach   = isAdmin || ['coach', 'adjoint', 'dirigeant', 'ecole'].includes(role);
+  const isOwner   = role === 'owner';
+  // Admin = compte authentifié archi.tech.fr@gmail.com (gating super-user),
+  // jamais un rôle saisi en localStorage.
+  const isAdmin   = !!(window.CDD_ROLES && window.CDD_ROLES.isAdmin && window.CDD_ROLES.isAdmin());
+  const isCoach   = isAdmin || ['owner', 'coach', 'adjoint', 'dirigeant', 'ecole'].includes(role);
   const isParent  = role === 'parent' || role === 'joueur';
+  // Rôles que le rôle courant peut inviter (matrice). Vide → module masqué.
+  const myInvitable = (window.CDD_ROLES && window.CDD_ROLES.invitableRoles)
+    ? window.CDD_ROLES.invitableRoles(role) : [];
 
   // ----- Persistent toggles (cdd_settings.*) -----
   const getToggle = (k, def=false) => {
@@ -310,6 +320,61 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         );
       })()}
 
+      {/* #C5 — Carte rôle : non modifiable. Le rôle est une conséquence de la
+          façon dont l'utilisateur a rejoint (création de club ou lien reçu). */}
+      {(() => {
+        const META = {
+          admin:   { ic: '🛡️', label: 'Administrateur', why: "Super-utilisateur de l'application." },
+          owner:   { ic: '👑', label: 'Propriétaire',    why: 'Tu es propriétaire de ce club.' },
+          coach:   { ic: '📋', label: 'Coach principal', why: 'Tu gères ce club, son équipe et ses matchs.' },
+          adjoint: { ic: '🎽', label: 'Coach adjoint',   why: "Tu as rejoint via un lien d'invitation de coach adjoint." },
+          parent:  { ic: '👪', label: 'Parent',          why: "Tu suis un joueur via un lien d'invitation parent." },
+          joueur:  { ic: '⚽', label: 'Joueur',          why: "Tu accèdes à ta fiche via un lien d'invitation joueur." },
+          lecteur: { ic: '👁️', label: 'Lecteur',         why: 'Tu consultes le club en lecture seule.' },
+        };
+        const m = META[role] || META.coach;
+        const canInvite = myInvitable.length
+          ? 'Tu peux inviter : ' + myInvitable.join(', ') + '.'
+          : 'Ton rôle ne permet pas de générer de liens d\'invitation.';
+        return (
+          <div style={{
+            margin: '0 14px 14px', padding: '14px 16px', borderRadius: 12,
+            background: 'rgba(200,241,105,0.06)',
+            border: '1px solid rgba(200,241,105,0.22)',
+            display: 'flex', gap: 13, alignItems: 'flex-start',
+          }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 11, flexShrink: 0,
+              background: 'rgba(200,241,105,0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 22,
+            }}>{m.ic}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: '.12em',
+                color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase',
+              }}>Mon rôle</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', marginTop: 1 }}>
+                {m.label}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginTop: 4 }}>
+                {m.why}
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginTop: 4 }}>
+                {canInvite}
+              </div>
+              <div style={{
+                fontSize: 10.5, color: '#c8f169', marginTop: 8,
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <span>🔒</span>
+                <span>Défini automatiquement — non modifiable manuellement.</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showProfileEdit && (
         <ProfileEditModal
           initialName={localStorage.getItem("cdd_coach_name") || ""}
@@ -340,15 +405,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           {isCoach && (
             <SetRow ic="📡" t="Synchronisation" d="Firestore · à jour" status="ok" go={() => go("sync")}/>
           )}
-          <SetRow ic="🪪" t="Mon rôle" d={role + (isOwner ? ' (Owner)' : '')}
-                  go={() => {
-                    const choice = prompt('Changer de rôle ? Options : parent, joueur, coach, adjoint, dirigeant, ecole, admin', role);
-                    if (choice && choice !== role) {
-                      localStorage.setItem('cdd_user_role', choice.trim());
-                      window.dispatchEvent(new Event('cdd-auth-changed'));
-                      alert('Rôle changé en ' + choice + '. Recharge si nécessaire.');
-                    }
-                  }}/>
+          {/* #C5 — « Mon rôle » n'est plus une ligne éditable : voir la
+              carte rôle en haut des Réglages (rôle dérivé, non modifiable). */}
           {userEmail && (
             <SetRow ic="🚪" t="Se déconnecter"
                     d="Couper la session (données conservées)"
@@ -378,8 +436,9 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         </div>
       </div>
 
-      {/* INVITER — génération de liens d'invitation (C4). Réservé au coach. */}
-      {isCoach && (
+      {/* INVITER — génération de liens d'invitation (C4/C5). Visible dès que
+          le rôle courant a au moins un rôle invitable (matrice). Lecteur exclu. */}
+      {myInvitable.length > 0 && (
         <div className="set-sec">
           <div className="set-sec-k">INVITER QUELQU'UN</div>
           <div style={{ padding: '0 14px' }}>
