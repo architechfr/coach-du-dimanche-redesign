@@ -878,6 +878,7 @@ function ProfilTab({ player, onChange }) {
     const ov = (CO && CO.getProfile) ? CO.getProfile(player.id) : {};
     return {
       position:    ov.position    || player.posLabel || player.pos || '',
+      altPositions: Array.isArray(ov.altPositions) ? ov.altPositions.slice() : [],
       licence:     ov.licence     || player.license || '',
       num:         ov.num         != null ? ov.num   : (player.num || ''),
       height:      ov.height      || player.height   || '',
@@ -962,6 +963,90 @@ function ProfilTab({ player, onChange }) {
                 {POSITION_CHOICES.filter(o=>o.grp==='att').map(o => <option key={o.id} value={o.id}>{o.l}</option>)}
               </optgroup>
             </select>
+          </label>
+
+          {/* Phase E — Postes secondaires. Le poste principal pilote les
+              caractéristiques ; les postes secondaires donnent un bonus
+              polyvalence borné (+1 si 1 poste solide, +2 si 2+, jamais
+              plus). Un poste « solide » = OVR sur ce profil ≥ OVR_principal
+              − 4 ET ≥ 75 (cf. position-rating.js → versatilityReport). */}
+          <label className="fi-pf-l">
+            <span>
+              Postes secondaires
+              <em style={{ fontStyle:'normal', fontWeight:500, opacity:0.6,
+                            marginLeft:6, fontSize:11 }}>
+                — polyvalence (bonus jusqu'à +2)
+              </em>
+            </span>
+            <div style={{
+              display:'flex', flexWrap:'wrap', gap:6,
+              padding: form.altPositions.length ? '6px 0 4px' : '0',
+            }}>
+              {form.altPositions.map(code => {
+                const opt = POSITION_CHOICES.find(o => o.id === code);
+                return (
+                  <span key={code} style={{
+                    display:'inline-flex', alignItems:'center', gap:6,
+                    background:'rgba(200,241,105,0.14)',
+                    border:'1px solid rgba(200,241,105,0.4)',
+                    color:'#c8f169', borderRadius:999,
+                    padding:'3px 4px 3px 10px', fontSize:12, fontWeight:700,
+                  }}>
+                    {opt ? opt.l : code}
+                    {canEdit && (
+                      <button type="button" aria-label={'Retirer ' + (opt ? opt.l : code)}
+                              onClick={() => setForm(f => ({
+                                ...f,
+                                altPositions: (f.altPositions || []).filter(x => x !== code),
+                              }))}
+                              style={{
+                                background:'transparent', border:'none', cursor:'pointer',
+                                color:'#c8f169', fontSize:14, lineHeight:1,
+                                padding:'0 6px', opacity:0.85,
+                              }}>×</button>
+                    )}
+                  </span>
+                );
+              })}
+              {form.altPositions.length === 0 && (
+                <span style={{ fontSize:11.5, opacity:0.5, fontStyle:'italic' }}>
+                  Aucun pour l'instant.
+                </span>
+              )}
+            </div>
+            {canEdit && (() => {
+              const used = new Set([form.position, ...form.altPositions]);
+              const renderOpt = (o) => (
+                <option key={o.id} value={o.id} disabled={used.has(o.id)}>
+                  {o.l}{used.has(o.id) ? ' (déjà sélectionné)' : ''}
+                </option>
+              );
+              return (
+                <select className="fi-pf-i" value=""
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (!v || used.has(v)) return;
+                          setForm(f => ({
+                            ...f,
+                            altPositions: [...(f.altPositions || []), v],
+                          }));
+                        }}>
+                  <option value="">+ Ajouter un poste secondaire…</option>
+                  <optgroup label="Gardien">
+                    {POSITION_CHOICES.filter(o=>o.grp==='gk').map(renderOpt)}
+                  </optgroup>
+                  <optgroup label="Défense">
+                    {POSITION_CHOICES.filter(o=>o.grp==='def').map(renderOpt)}
+                  </optgroup>
+                  <optgroup label="Milieu">
+                    {POSITION_CHOICES.filter(o=>o.grp==='mid').map(renderOpt)}
+                  </optgroup>
+                  <optgroup label="Attaque">
+                    {POSITION_CHOICES.filter(o=>o.grp==='att').map(renderOpt)}
+                  </optgroup>
+                </select>
+              );
+            })()}
           </label>
           <label className="fi-pf-l">
             <span>N° maillot préféré</span>

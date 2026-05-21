@@ -99,10 +99,12 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
 
   // ----- Compact / list variant -----
   if (variant === "row") {
+    const rowVersBonus = (stats && stats.versatilityBonus) || 0;
     return (
       <button
         className="pc-row"
         onClick={onClick}
+        title={rowVersBonus > 0 ? 'Polyvalent (+' + rowVersBonus + ' OVR)' : undefined}
         style={{
           ...style,
           "--rar-bg": r.bg, "--rar-ink": r.ink, "--rar-stroke": r.stroke, "--rar-glow": r.glow,
@@ -110,7 +112,12 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
       >
         <span className="pc-row-rating" style={{ background: r.bg, color: r.ink }}>
           <b>{ovr}</b>
-          <em>{POSITION_LABEL[player.pos] || player.pos}</em>
+          <em>
+            {POSITION_LABEL[player.pos] || player.pos}
+            {rowVersBonus > 0 && (
+              <span style={{ marginLeft: 3, opacity: 0.85 }}>✦</span>
+            )}
+          </em>
         </span>
         <span className="pc-row-num">#{player.num}</span>
         <span className="pc-row-name">
@@ -169,10 +176,26 @@ function FutCard({ player, variant = "fut", size = "md", onClick, style }) {
         } : {
           background: r.ink, opacity: .5,
         };
+        // Phase E — badge polyvalence (+1/+2). Discret, sous le POS,
+        // visible uniquement quand bonus > 0 (au moins 1 poste secondaire
+        // solide, cf. position-rating.js → versatilityReport).
+        const versBonus = (stats && stats.versatilityBonus) || 0;
+        const versFs = Math.max(8, dims.pos - 2);
         return (
           <div className="pc-tl">
             <div className="pc-ovr" style={{ color: r.ink }}>{ovr}</div>
             <div className="pc-pos" style={{ color: r.ink }}>{POSITION_LABEL[player.pos] || player.pos}</div>
+            {versBonus > 0 && (
+              <div title={'Polyvalent (+' + versBonus + ' OVR)'}
+                   style={{
+                     fontSize: versFs + 'px',
+                     fontWeight: 900, letterSpacing: '0.04em',
+                     color: r.ink, opacity: 0.85,
+                     lineHeight: 1, marginTop: 2,
+                   }}>
+                ✦+{versBonus}
+              </div>
+            )}
             <div className="pc-flag" style={{ background: r.ink, opacity:.5 }} />
             <div className="pc-club" style={clubStyle}>
               {clubLogo && (

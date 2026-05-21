@@ -140,6 +140,55 @@
     return Math.round(weightedRaw(stats, posCode));
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  //  POLYVALENCE — bonus borné, anti-sur-boost (Phase E)
+  // ──────────────────────────────────────────────────────────────────
+  // Un joueur peut maîtriser plusieurs postes. Règles :
+  //  - L'OVR de référence est calculé sur le POSTE PRINCIPAL (jamais un
+  //    mélange de pondérations — décision produit 2026-05-21).
+  //  - Pour chaque poste secondaire, on calcule l'OVR pondéré sur ce
+  //    profil. Le poste est jugé « solide » si :
+  //        ovr_alt >= ovr_main - VERSATILITY_TOLERANCE  (le joueur n'est
+  //        pas perdu à ce poste — pondération adaptée à ses points forts)
+  //      ET ovr_alt >= VERSATILITY_FLOOR                 (niveau minimal
+  //        absolu — un joueur médiocre ne se voit pas récompenser parce
+  //        qu'il est « médiocre partout »)
+  //  - Bonus = min(VERSATILITY_CAP, nb_postes_solides). Cap dur.
+  //
+  // Conséquence : étiqueter 10 postes secondaires sans qualité réelle ne
+  // donne RIEN. Maîtriser 1 poste alternatif vraiment donne +1, 2 → +2.
+  var VERSATILITY_TOLERANCE = 4;
+  var VERSATILITY_FLOOR     = 75;
+  var VERSATILITY_CAP       = 2;
+
+  // Détail polyvalence pour UI (badge + diagnostic mode Détaillé).
+  // Renvoie { main: ovrMain, bonus, cap, alts: [{pos, ovr, solid}] }.
+  function versatilityReport(stats, mainPos, altPositions) {
+    var ovrMain = weightedOverall(stats, mainPos);
+    var alts = [];
+    var solidCount = 0;
+    (altPositions || []).forEach(function (p) {
+      if (!p || p === mainPos) return;
+      var ovrAlt = weightedOverall(stats, p);
+      var solid = (ovrAlt >= ovrMain - VERSATILITY_TOLERANCE)
+               && (ovrAlt >= VERSATILITY_FLOOR);
+      if (solid) solidCount++;
+      alts.push({ pos: p, ovr: ovrAlt, solid: solid });
+    });
+    return {
+      main: ovrMain,
+      bonus: Math.min(VERSATILITY_CAP, solidCount),
+      cap: VERSATILITY_CAP,
+      alts: alts,
+    };
+  }
+
+  // OVR final, polyvalence comprise. Capé à STAT_MAX.
+  function overallWithVersatility(stats, mainPos, altPositions) {
+    var r = versatilityReport(stats, mainPos, altPositions);
+    return Math.min(STAT_MAX, r.main + r.bonus);
+  }
+
   // Génère un profil de 6 stats TYPÉ pour un poste, dont la moyenne
   // pondérée vaut (à ±1 près) la note globale visée. Sert au mode Rapide :
   // le coach donne poste + note, l'app produit des stats réalistes.
@@ -180,6 +229,11 @@
     labelsFor: labelsFor,
     weightedRaw: weightedRaw,
     weightedOverall: weightedOverall,
+    overallWithVersatility: overallWithVersatility,
+    versatilityReport: versatilityReport,
+    VERSATILITY_TOLERANCE: VERSATILITY_TOLERANCE,
+    VERSATILITY_FLOOR: VERSATILITY_FLOOR,
+    VERSATILITY_CAP: VERSATILITY_CAP,
     quickProfile: quickProfile,
   };
 

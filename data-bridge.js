@@ -141,12 +141,32 @@ function deriveStats(player) {
   }
 
   const clamp = v => Math.max(40, Math.min(95, v));
-  // OVR pondéré selon le poste (voir position-rating.js). Une faible stat
-  // hors-poste (ex: DEF d'un attaquant) ne tire plus la note vers le bas.
-  // Fallback : moyenne plate si le module n'est pas encore chargé.
-  const ovrFor = (s) => (window.CDD_RATING
-    ? window.CDD_RATING.weightedOverall(s, pos)
-    : Math.round((s.PAC + s.SHO + s.PAS + s.DRI + s.DEF + s.PHY) / 6));
+  // Postes secondaires (Phase E) — le coach déclare les postes où le joueur
+  // est polyvalent. Lus depuis le profil override coach. Stockés en tableau
+  // de codes ('DM', 'MC'…). Le poste principal `pos` n'est jamais inclus.
+  let altPositions = [];
+  try {
+    const profiles = JSON.parse(localStorage.getItem('cdd_player_profile') || '{}');
+    const prof = profiles[player.id];
+    if (prof && Array.isArray(prof.altPositions)) {
+      altPositions = prof.altPositions.filter(p => p && p !== pos);
+    }
+  } catch (e) {}
+
+  // OVR pondéré selon le poste principal + bonus polyvalence borné
+  // (voir position-rating.js → overallWithVersatility, cap à +2).
+  // Une faible stat hors-poste (ex: DEF d'un attaquant) ne tire plus
+  // la note vers le bas. Fallback : moyenne plate si le module n'est
+  // pas encore chargé.
+  const ovrFor = (s) => {
+    if (!window.CDD_RATING) {
+      return Math.round((s.PAC + s.SHO + s.PAS + s.DRI + s.DEF + s.PHY) / 6);
+    }
+    if (window.CDD_RATING.overallWithVersatility) {
+      return window.CDD_RATING.overallWithVersatility(s, pos, altPositions);
+    }
+    return window.CDD_RATING.weightedOverall(s, pos);
+  };
   const stats = {
     PAC: clamp(base + p.PAC + variation(0)),
     SHO: clamp(base + p.SHO + variation(1)),
@@ -184,6 +204,19 @@ function deriveStats(player) {
     if (mutated) {
       stats.ovr = ovrFor(stats);
     }
+  }
+
+  // Phase E — détail polyvalence pour l'UI (badge carte FUT, diagnostic
+  // Mode Détaillé). Exposé sur le résultat sans réécrire stats.ovr (qui
+  // contient déjà le bonus via overallWithVersatility).
+  stats.altPositions = altPositions;
+  if (window.CDD_RATING && window.CDD_RATING.versatilityReport) {
+    const vr = window.CDD_RATING.versatilityReport(stats, pos, altPositions);
+    stats.versatilityBonus = vr.bonus;
+    stats.versatilityAlts = vr.alts;
+  } else {
+    stats.versatilityBonus = 0;
+    stats.versatilityAlts = [];
   }
 
   return stats;
