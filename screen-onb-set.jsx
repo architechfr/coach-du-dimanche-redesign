@@ -115,6 +115,11 @@ function ScreenSettings({ go, tweaks, setTweak }) {
   // Rôles que le rôle courant peut inviter (matrice). Vide → module masqué.
   const myInvitable = (window.CDD_ROLES && window.CDD_ROLES.invitableRoles)
     ? window.CDD_ROLES.invitableRoles(role) : [];
+  // #C5 — capacités d'édition du rôle courant (cf. roles.js → ROLE_CAPS).
+  const cdo = (cap) => !!(window.CDD_ROLES && window.CDD_ROLES.canDo && window.CDD_ROLES.canDo(cap));
+  // Gestion du club (logo, infos, liste des membres) : coach principal /
+  // owner / admin uniquement — PAS l'adjoint.
+  const canManageClub = cdo('club');
 
   // ----- Persistent toggles (cdd_settings.*) -----
   const getToggle = (k, def=false) => {
@@ -127,6 +132,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
   };
   const [, setRefresh] = useState(0);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showMembersPanel, setShowMembersPanel] = useState(false);
+  const [showAdminClubsPanel, setShowAdminClubsPanel] = useState(false);
   const dark      = getToggle("dark", true);
   const sons      = getToggle("sons", true);
   const vibrate   = getToggle("vibrate", false);
@@ -320,56 +327,130 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         );
       })()}
 
-      {/* #C5 — Carte rôle : non modifiable. Le rôle est une conséquence de la
-          façon dont l'utilisateur a rejoint (création de club ou lien reçu). */}
+      {/* Phase D — Carte « Mes rôles » : liste COMPLÈTE, un rôle par équipe.
+          Le rôle est une conséquence de la façon dont l'utilisateur a rejoint
+          chaque équipe (création de club / lien d'invitation / attribution
+          admin). Jamais saisi à la main. */}
       {(() => {
         const META = {
-          admin:   { ic: '🛡️', label: 'Administrateur', why: "Super-utilisateur de l'application." },
-          owner:   { ic: '👑', label: 'Propriétaire',    why: 'Tu es propriétaire de ce club.' },
-          coach:   { ic: '📋', label: 'Coach principal', why: 'Tu gères ce club, son équipe et ses matchs.' },
-          adjoint: { ic: '🎽', label: 'Coach adjoint',   why: "Tu as rejoint via un lien d'invitation de coach adjoint." },
-          parent:  { ic: '👪', label: 'Parent',          why: "Tu suis un joueur via un lien d'invitation parent." },
-          joueur:  { ic: '⚽', label: 'Joueur',          why: "Tu accèdes à ta fiche via un lien d'invitation joueur." },
-          lecteur: { ic: '👁️', label: 'Lecteur',         why: 'Tu consultes le club en lecture seule.' },
+          admin:   { ic: '🛡️', label: 'Administrateur' },
+          owner:   { ic: '👑', label: 'Propriétaire' },
+          coach:   { ic: '📋', label: 'Coach principal' },
+          adjoint: { ic: '🎽', label: 'Coach adjoint' },
+          parent:  { ic: '👪', label: 'Parent' },
+          joueur:  { ic: '⚽', label: 'Joueur' },
+          lecteur: { ic: '👁️', label: 'Lecteur' },
         };
-        const m = META[role] || META.coach;
+        const R = window.CDD_ROLES;
+        const myRoles = (R && R.listMyTeamRoles) ? R.listMyTeamRoles() : [];
+        const isAdminUser = !!(R && R.isAdmin && R.isAdmin());
         const canInvite = myInvitable.length
           ? 'Tu peux inviter : ' + myInvitable.join(', ') + '.'
           : 'Ton rôle ne permet pas de générer de liens d\'invitation.';
+        // Pas de membership ET pas admin → message vide explicite.
+        const isEmpty = !isAdminUser && myRoles.length === 0;
+        // Cas admin : on synthétise une ligne « partout » plutôt que de
+        // lister tous les clubs (qui peuvent être nombreux).
+        const lines = isAdminUser && myRoles.length === 0
+          ? [{ clubId: null, clubName: 'Toute l\'application',
+               teamId: null, teamName: 'Tous les clubs et équipes',
+               role: 'admin', isActive: true, legacy: false }]
+          : myRoles;
         return (
           <div style={{
             margin: '0 14px 14px', padding: '14px 16px', borderRadius: 12,
             background: 'rgba(200,241,105,0.06)',
             border: '1px solid rgba(200,241,105,0.22)',
-            display: 'flex', gap: 13, alignItems: 'flex-start',
           }}>
-            <div style={{
-              width: 44, height: 44, borderRadius: 11, flexShrink: 0,
-              background: 'rgba(200,241,105,0.12)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 22,
-            }}>{m.ic}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display:'flex', justifyContent:'space-between',
+                          alignItems:'baseline', marginBottom: 8 }}>
               <div style={{
                 fontSize: 10, fontWeight: 800, letterSpacing: '.12em',
                 color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase',
-              }}>Mon rôle</div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', marginTop: 1 }}>
-                {m.label}
+              }}>{lines.length > 1 ? 'Mes rôles' : 'Mon rôle'}</div>
+              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.45)' }}>
+                {lines.length > 0 && (lines.length === 1
+                  ? '1 attribution'
+                  : lines.length + ' attributions')}
               </div>
-              <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginTop: 4 }}>
-                {m.why}
+            </div>
+
+            {isEmpty && (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)',
+                            lineHeight: 1.55 }}>
+                Aucun rôle attribué pour le moment.<br/>
+                Demande à l'admin de te rattacher à une équipe, ou utilise
+                un lien d'invitation reçu.
               </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginTop: 4 }}>
-                {canInvite}
-              </div>
-              <div style={{
-                fontSize: 10.5, color: '#c8f169', marginTop: 8,
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}>
-                <span>🔒</span>
-                <span>Défini automatiquement — non modifiable manuellement.</span>
-              </div>
+            )}
+
+            {lines.map((r, i) => {
+              const meta = META[r.role] || { ic: '•', label: r.role || '?' };
+              return (
+                <div key={(r.clubId || '_') + '/' + (r.teamId || '_') + '/' + i}
+                     style={{
+                       display: 'flex', gap: 11, alignItems: 'flex-start',
+                       padding: '8px 0',
+                       borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                     }}>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                    background: r.isActive
+                      ? 'rgba(200,241,105,0.18)'
+                      : 'rgba(255,255,255,0.05)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 18,
+                  }}>{meta.ic}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      flexWrap: 'wrap',
+                    }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 800, color: '#fff' }}>
+                        {meta.label}
+                      </div>
+                      {r.isActive && (
+                        <span style={{
+                          fontSize: 9.5, fontWeight: 800, letterSpacing: '.08em',
+                          padding: '2px 6px', borderRadius: 999,
+                          background: 'rgba(200,241,105,0.18)',
+                          color: '#c8f169', textTransform: 'uppercase',
+                        }}>Actif</span>
+                      )}
+                      {r.legacy && (
+                        <span title="Membership au format pré-migration (Phase D5 à venir)"
+                              style={{
+                          fontSize: 9.5, fontWeight: 700,
+                          padding: '2px 6px', borderRadius: 999,
+                          background: 'rgba(251,191,36,0.12)',
+                          color: '#fbbf24',
+                        }}>à migrer</span>
+                      )}
+                    </div>
+                    <div style={{
+                      fontSize: 11.5, color: 'rgba(255,255,255,0.6)',
+                      lineHeight: 1.45, marginTop: 2,
+                    }}>
+                      {r.clubName}{r.teamId || r.legacy ? ' · ' + r.teamName : ''}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{
+              fontSize: 11, color: 'rgba(255,255,255,0.55)',
+              lineHeight: 1.5, marginTop: 10,
+              paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              {canInvite}
+            </div>
+            <div style={{
+              fontSize: 10.5, color: '#c8f169', marginTop: 6,
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}>
+              <span>🔒</span>
+              <span>Défini automatiquement — non modifiable manuellement.</span>
             </div>
           </div>
         );
@@ -404,6 +485,13 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                     : "Tu n'es pas connecté. Reviens à l'accueil pour recevoir un lien de connexion.")}/>
           {isCoach && (
             <SetRow ic="📡" t="Synchronisation" d="Firestore · à jour" status="ok" go={() => go("sync")}/>
+          )}
+          {/* #C5 — Membres du club : roster + rôle de chacun. Réservé au
+              coach principal / owner / admin (canManageClub), pas l'adjoint. */}
+          {canManageClub && userEmail && (
+            <SetRow ic="👥" t="Membres du club"
+                    d="Qui a rejoint le club et en quelle qualité"
+                    go={() => setShowMembersPanel(true)}/>
           )}
           {/* #C5 — « Mon rôle » n'est plus une ligne éditable : voir la
               carte rôle en haut des Réglages (rôle dérivé, non modifiable). */}
@@ -637,7 +725,9 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         </div>
       </div>
 
-      {isCoach && (
+      {/* #C5 — Gestion du club (logo) : coach principal / owner / admin
+          uniquement. L'adjoint ne gère pas le club. */}
+      {canManageClub && (
         <div className="set-sec">
           <div className="set-sec-k">MON CLUB</div>
           <div className="set-rows">
@@ -676,6 +766,9 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         <div className="set-sec">
           <div className="set-sec-k">AVANCÉ · ADMIN</div>
           <div className="set-rows">
+            <SetRow ic="🏟️" t="Clubs & équipes"
+                    d="Créer un club, des équipes, assigner un coach principal"
+                    go={() => setShowAdminClubsPanel(true)}/>
             <SetRow ic="🗂" t="Inventaire & audit"
                     d="Tous mes clubs/équipes · qui a créé quoi · quand"
                     go={() => setShowAdminPanel(true)}/>
@@ -698,6 +791,16 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       )}
 
       {showAdminPanel && <AdminInventoryPanel onClose={() => setShowAdminPanel(false)}/>}
+
+      {showAdminClubsPanel && window.AdminClubsPanel && (
+        <window.AdminClubsPanel onClose={() => setShowAdminClubsPanel(false)}/>
+      )}
+
+      {showMembersPanel && (
+        <ClubMembersPanel
+          clubName={club.name}
+          onClose={() => setShowMembersPanel(false)}/>
+      )}
 
       <div className="set-sec">
         <div className="set-sec-k">À PROPOS</div>
@@ -1101,6 +1204,145 @@ function ProfileEditModal({ initialName, initialEmail, onClose, onSave }) {
             color:'#0B1320', border:'none', cursor:'pointer',
             fontWeight:800, fontSize:13,
           }}>💾 Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Panneau « Membres du club » (#C5) ───────────────────────────────
+// Liste les memberships du club actif : qui a rejoint, en quelle qualité,
+// et pour un parent quel joueur il suit. Réservé au coach principal / owner
+// / admin — firestore.rules → memberships read = canEditClub. Un adjoint ou
+// un autre rôle reçoit permission-denied, géré ici par un message clair.
+function ClubMembersPanel({ clubName, onClose }) {
+  const [state, setState] = React.useState({ phase: 'loading', members: [], error: '' });
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const activeClub = window.CDD?.getActiveClub?.() || null;
+      const clubId = activeClub?.id || null;
+      if (!window.cddData || !window.cddData.ready) {
+        if (alive) setState({ phase: 'error', members: [], error: 'Service cloud indisponible.' });
+        return;
+      }
+      if (!clubId) {
+        if (alive) setState({ phase: 'error', members: [], error: 'Aucun club actif détecté.' });
+        return;
+      }
+      try {
+        const list = await window.cddData.fetchClubMemberships(clubId);
+        list.sort((a, b) => (window.CDD_ROLES?.roleWeight?.(b.role) || 0)
+                          - (window.CDD_ROLES?.roleWeight?.(a.role) || 0));
+        if (alive) setState({ phase: 'ready', members: list, error: '' });
+      } catch (e) {
+        const msg = /permission|insufficient/i.test((e && e.message) || '')
+          ? 'Accès refusé : seul le coach principal du club peut voir la liste des membres.'
+          : 'Lecture impossible : ' + ((e && e.message) || e);
+        if (alive) setState({ phase: 'error', members: [], error: msg });
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const players = window.CDD_PLAYERS || [];
+  const playerName = (pid) => {
+    const p = players.find(x => x.id === pid);
+    return p ? ((p.first || '') + ' ' + (p.last || '')).trim() : null;
+  };
+  const fmtDate = (ts) => {
+    try {
+      if (ts && ts.toDate) return ts.toDate().toLocaleDateString('fr-FR');
+      if (typeof ts === 'number') return new Date(ts).toLocaleDateString('fr-FR');
+    } catch (e) {}
+    return '';
+  };
+  const roleColor = {
+    owner: '#f5c451', admin: '#f5c451', coach: '#c8f169', adjoint: '#7dd3fc',
+    parent: '#a78bfa', joueur: '#22c55e', lecteur: '#94a3b8',
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:500,
+      display:'flex', justifyContent:'center', alignItems:'flex-start', overflow:'auto', padding:20,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', maxWidth:520, background:'#0B1320', borderRadius:16,
+        border:'1px solid rgba(255,255,255,0.12)', padding:20, color:'#fff',
+      }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
+          <div>
+            <div style={{fontSize:11, fontWeight:800, letterSpacing:'.12em', color:'#c8f169', textTransform:'uppercase'}}>
+              Membres du club
+            </div>
+            <div style={{fontSize:18, fontWeight:900, marginTop:2}}>{clubName || 'Mon club'}</div>
+          </div>
+          <button onClick={onClose} style={{
+            background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.18)',
+            color:'#fff', width:32, height:32, borderRadius:16, cursor:'pointer', fontSize:16,
+          }}>✕</button>
+        </div>
+
+        {state.phase === 'loading' && (
+          <div style={{fontSize:13, opacity:0.6, padding:'14px 0'}}>Chargement…</div>
+        )}
+
+        {state.phase === 'error' && (
+          <div style={{
+            padding:'14px 16px', borderRadius:10,
+            background:'rgba(251,191,36,0.08)', border:'1px solid rgba(251,191,36,0.35)',
+            fontSize:12.5, color:'#fbbf24', lineHeight:1.5,
+          }}>{state.error}</div>
+        )}
+
+        {state.phase === 'ready' && state.members.length === 0 && (
+          <div style={{fontSize:12.5, opacity:0.6, padding:'14px 0', fontStyle:'italic'}}>
+            Aucun membre rattaché pour l'instant. Génère un lien d'invitation
+            depuis « Inviter quelqu'un » pour ajouter des membres.
+          </div>
+        )}
+
+        {state.phase === 'ready' && state.members.length > 0 && (
+          <div style={{display:'flex', flexDirection:'column', gap:8}}>
+            {state.members.map(m => {
+              const col = roleColor[m.role] || '#94a3b8';
+              const lbl = window.CDD_ROLES?.roleLabel?.(m.role) || m.role;
+              const pn = m.playerId ? playerName(m.playerId) : null;
+              const sub = [];
+              if (m.role === 'parent') sub.push(pn ? 'Suit ' + pn : 'Joueur lié manquant');
+              if (m.role === 'joueur' && pn) sub.push('Fiche : ' + pn);
+              if (fmtDate(m.createdAt)) sub.push('rattaché le ' + fmtDate(m.createdAt));
+              return (
+                <div key={m.id || m.uid} style={{
+                  padding:'11px 13px', borderRadius:10,
+                  background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+                }}>
+                  <div style={{display:'flex', alignItems:'center', gap:9}}>
+                    <span style={{
+                      fontSize:10, fontWeight:800, letterSpacing:'.04em', textTransform:'uppercase',
+                      color:'#0a0e14', background:col, padding:'3px 8px', borderRadius:6, flexShrink:0,
+                    }}>{lbl}</span>
+                    <span style={{
+                      flex:1, minWidth:0, fontSize:13, fontWeight:700,
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                    }}>{m.email || m.uid || '—'}</span>
+                  </div>
+                  {sub.length > 0 && (
+                    <div style={{fontSize:11, opacity:0.6, marginTop:5, lineHeight:1.5}}>
+                      {sub.join(' · ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{fontSize:10.5, opacity:0.45, marginTop:14, lineHeight:1.5}}>
+          Liste des rattachements réels (Firestore). La révocation d'un membre
+          depuis cet écran arrivera dans une prochaine version.
         </div>
       </div>
     </div>

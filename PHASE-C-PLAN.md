@@ -123,13 +123,17 @@ durcissement possible plus tard avec une Cloud Function (plan Blaze).
       consommation auto à la connexion, rattachement parent↔joueur, plafond
       5 adjoints. **`firestore.rules` modifiées → à redéployer dans la console
       Firebase** (branche « auto-création depuis invitation » de `memberships`).
-- [~] C5 — rôles & dashboard (2026-05-21, EN COURS) :
+- [~] C5 — rôles & dashboard (2026-05-21, GROS ŒUVRE FAIT) :
       ✓ matrice d'invitation `roles.js → INVITE_MATRIX` + miroir serveur
-        `firestore.rules → canInviteRole` (qui peut générer un lien vers
-        quel rôle) ; module d'invitation ouvert à tous les rôles sauf
-        lecteur, choix filtrés ; « Mon rôle » des Réglages = carte en
-        lecture seule (rôle dérivé via `effectiveRole()`, plus de `prompt()`).
-      ⏳ reste : droits par rôle dans le reste de l'UI (boutons d'édition
-        masqués aux lecteurs/parents), écran « qui est connecté en quelle
-        qualité », `pullCloudData` auto au login, images → Firebase Storage.
+        `firestore.rules → canInviteRole` ; module d'invitation ouvert à
+        tous les rôles sauf lecteur, choix filtrés ; « Mon rôle » des
+        Réglages = carte en lecture seule (rôle dérivé via `effectiveRole()`).
+      ✓ droits par rôle dans l'UI : `roles.js → ROLE_CAPS` + `canDo(cap)`
+        (capacités `compo`/`effectif`/`club`) ; boutons d'édition masqués
+        dans fiche joueur, compo/lineup, convocations, match live ; miroir
+        serveur `firestore.rules → canEditData` (l'adjoint édite teams/players,
+        pas le club). Écran « Membres du club » (roster + rôles) dans les
+        Réglages, réservé au coach principal (`fetchClubMemberships`).
+      ⏳ reste : nettoyer le fallback `currentRole()→'coach'`, `pullCloudData`
+        auto au login, images (logo/photos) → Firebase Storage.
       **`firestore.rules` modifiées → à redéployer dans la console Firebase.**

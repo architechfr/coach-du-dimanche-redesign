@@ -326,13 +326,19 @@ function ScreenConvocations({ go, tweaks }) {
     return () => window.removeEventListener('cdd-bench-full', handler);
   }, []);
 
+  // #C5 — modifier la convocation/compo = capacité 'compo' ; changer un
+  // statut = 'effectif'. Les deux couvrent le même périmètre de rôles
+  // (coach principal + adjoint), donc un seul booléen suffit ici.
+  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('compo');
+
   const addPlayer = (pid) => {
-    if (!teamId || !window.CDD_CONVOC) return;
+    if (!canEdit || !teamId || !window.CDD_CONVOC) return;
     // addToConvoc gère lui-même le cap bench=5 et étend convocCount au besoin
     window.CDD_CONVOC.addToConvoc(teamId, pid, 'bench');
   };
   const removePlayer = (pid) => {
-    if (!teamId || !window.CDD_CONVOC) return;
+    if (!canEdit || !teamId || !window.CDD_CONVOC) return;
     if (!confirm('Retirer ce joueur de la convocation ?')) return;
     window.CDD_CONVOC.removeFromConvoc(teamId, pid);
   };
@@ -579,7 +585,7 @@ function ScreenConvocations({ go, tweaks }) {
             <><b style={{opacity:0.85}}>Source : compo type</b> — toute modif ci-dessous créera une convoc spécifique à ce match.</>
           )}
         </span>
-        {conv.hasMatchOverlay && (
+        {canEdit && conv.hasMatchOverlay && (
           <button
             onClick={() => {
               if (!window.CDD_CONVOC || !teamId) return;
@@ -636,9 +642,11 @@ function ScreenConvocations({ go, tweaks }) {
                 {respBadge(p.id)}
               </span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-              <button className="cv-action"
-                      onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
-                      title="Retirer de la convocation">−</button>
+              {canEdit && (
+                <button className="cv-action"
+                        onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
+                        title="Retirer de la convocation">−</button>
+              )}
             </div>
           ))}
         </div>
@@ -660,9 +668,11 @@ function ScreenConvocations({ go, tweaks }) {
                 {respBadge(p.id)}
               </span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-              <button className="cv-action"
-                      onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
-                      title="Retirer de la convocation">−</button>
+              {canEdit && (
+                <button className="cv-action"
+                        onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
+                        title="Retirer de la convocation">−</button>
+              )}
             </div>
           ))}
         </div>
@@ -689,35 +699,45 @@ function ScreenConvocations({ go, tweaks }) {
                 {a.p.last && <span className="cv-last">{a.p.last.toUpperCase()}</span>}
                 {a.note && <em> — {a.note}</em>}
               </span>
-              {/* #44 — Badge statut CLIQUABLE pour changer rapidement */}
-              <button
-                onClick={(e) => { e.stopPropagation(); setStatusPickerPlayer(a.p); }}
-                title="Modifier le statut"
-                style={{
-                  background:'rgba(255,170,40,.14)',
-                  border:'1px solid rgba(255,170,40,.4)',
+              {/* #44 — Badge statut : cliquable seulement si le rôle peut éditer */}
+              {canEdit ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setStatusPickerPlayer(a.p); }}
+                  title="Modifier le statut"
+                  style={{
+                    background:'rgba(255,170,40,.14)',
+                    border:'1px solid rgba(255,170,40,.4)',
+                    color:'#ffc788', fontWeight:700, fontSize:11,
+                    padding:'4px 10px', borderRadius:6,
+                    cursor:'pointer', marginRight:6,
+                  }}>
+                  {a.reason} ✎
+                </button>
+              ) : (
+                <span style={{
+                  background:'rgba(255,170,40,.10)', border:'1px solid rgba(255,170,40,.3)',
                   color:'#ffc788', fontWeight:700, fontSize:11,
-                  padding:'4px 10px', borderRadius:6,
-                  cursor:'pointer', marginRight:6,
-                }}>
-                {a.reason} ✎
-              </button>
-              {/* Bouton + pour CONVOQUER quand meme malgre indispo */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (window.CDD_CONVOC && window.CDD_CONVOC.addToConvoc && teamId) {
-                    window.CDD_CONVOC.addToConvoc(teamId, a.p.id, 'bench');
-                  }
-                }}
-                title="Convoquer quand meme (indispo overridable)"
-                style={{
-                  background:'rgba(200,241,105,.14)',
-                  border:'1px solid rgba(200,241,105,.4)',
-                  color:'#c8f169', fontWeight:800, fontSize:12,
-                  width:28, height:28, borderRadius:7,
-                  cursor:'pointer',
-                }}>+</button>
+                  padding:'4px 10px', borderRadius:6, marginRight:6,
+                }}>{a.reason}</span>
+              )}
+              {/* Bouton + pour CONVOQUER quand meme malgre indispo — capacité 'compo' */}
+              {canEdit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.CDD_CONVOC && window.CDD_CONVOC.addToConvoc && teamId) {
+                      window.CDD_CONVOC.addToConvoc(teamId, a.p.id, 'bench');
+                    }
+                  }}
+                  title="Convoquer quand meme (indispo overridable)"
+                  style={{
+                    background:'rgba(200,241,105,.14)',
+                    border:'1px solid rgba(200,241,105,.4)',
+                    color:'#c8f169', fontWeight:800, fontSize:12,
+                    width:28, height:28, borderRadius:7,
+                    cursor:'pointer',
+                  }}>+</button>
+              )}
             </div>
           ))}
         </div>
@@ -744,10 +764,12 @@ function ScreenConvocations({ go, tweaks }) {
                   {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
                 </span>
                 <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-                <button className={`cv-action cv-action-add ${benchPlayers.length >= BENCH_MAX ? 'cv-action-disabled' : ''}`}
-                        disabled={benchPlayers.length >= BENCH_MAX}
-                        onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
-                        title={benchPlayers.length >= BENCH_MAX ? `Banc plein (${BENCH_MAX}/${BENCH_MAX})` : "Ajouter à la convocation"}>+</button>
+                {canEdit && (
+                  <button className={`cv-action cv-action-add ${benchPlayers.length >= BENCH_MAX ? 'cv-action-disabled' : ''}`}
+                          disabled={benchPlayers.length >= BENCH_MAX}
+                          onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
+                          title={benchPlayers.length >= BENCH_MAX ? `Banc plein (${BENCH_MAX}/${BENCH_MAX})` : "Ajouter à la convocation"}>+</button>
+                )}
               </div>
             ))}
           </div>

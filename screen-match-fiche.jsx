@@ -16,6 +16,12 @@ function ScreenFiche({ go, tweaks, player }) {
   const triggerRefresh = () => setRefresh(x => x + 1);
   const obs = CDD_OBSERVATIONS[p.id] || [];
 
+  // #C5 — édition de la fiche (statut, nom, notation, observations) = capacité
+  // 'effectif'. Parent / joueur / lecteur sont en lecture seule. Fallback :
+  // éditable si le module rôles n'est pas chargé (ne jamais bloquer le coach).
+  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('effectif');
+
   // ----- Status override -----
   // Fallback IDs alignés sur ceux exposés par CDD_COACH.STATUS_OPTIONS
   // (active / rest / injured / suspended / reserve) pour éviter les
@@ -68,6 +74,7 @@ function ScreenFiche({ go, tweaks, player }) {
   }, [p.id]);
 
   const updateStat = (key, val) => {
+    if (!canEdit) return;
     if (window.CDD_COACH && window.CDD_COACH.setStatOverride) {
       window.CDD_COACH.setStatOverride(p.id, key, val);
     } else {
@@ -76,6 +83,7 @@ function ScreenFiche({ go, tweaks, player }) {
     triggerRefresh();
   };
   const resetStats = () => {
+    if (!canEdit) return;
     if (window.CDD_COACH && window.CDD_COACH.resetStats) {
       window.CDD_COACH.resetStats(p.id);
     }
@@ -84,7 +92,7 @@ function ScreenFiche({ go, tweaks, player }) {
   };
   // Mode Rapide : poste + note globale → l'app génère un profil de stats typé
   const applyQuick = () => {
-    if (!RATING) return;
+    if (!canEdit || !RATING) return;
     const gen = RATING.quickProfile(quickPos, quickNote);
     if (window.CDD_COACH) {
       if (window.CDD_COACH.setProfile) {
@@ -141,9 +149,10 @@ function ScreenFiche({ go, tweaks, player }) {
             <span className="fi-id-pos">{p.posLabel || POSITION_LABEL[p.pos] || p.pos}</span>
             <span className="fi-id-ovr"><b className="num">{p.stats.ovr}</b><em>OVR</em></span>
           </div>
-          <div className="fi-id-name" onClick={() => setEditingName(true)} title="Cliquer pour modifier">
+          <div className="fi-id-name" onClick={() => { if (canEdit) setEditingName(true); }}
+               title={canEdit ? "Cliquer pour modifier" : undefined}>
             <span className="fi-id-first">{p.first}</span>
-            <h1 className="fi-id-last">{p.last} <span className="fi-id-edit-ic">✎</span></h1>
+            <h1 className="fi-id-last">{p.last}{canEdit && <span className="fi-id-edit-ic"> ✎</span>}</h1>
           </div>
           <div className="fi-id-meta">
             <span><b>{p.age}</b> ans</span>
@@ -153,13 +162,17 @@ function ScreenFiche({ go, tweaks, player }) {
             <span>Pied {p.foot}</span>
           </div>
 
-          {/* Status chips — clickable */}
+          {/* Status chips — cliquable seulement si le rôle peut éditer */}
           <div className="fi-chips">
-            <button className={`fi-chip ${statusObj.cls} fi-chip-btn`}
-                    onClick={() => setShowStatusPicker(true)}
-                    title="Changer le statut">
-              {statusObj.l} <span className="fi-chip-edit">✎</span>
-            </button>
+            {canEdit ? (
+              <button className={`fi-chip ${statusObj.cls} fi-chip-btn`}
+                      onClick={() => setShowStatusPicker(true)}
+                      title="Changer le statut">
+                {statusObj.l} <span className="fi-chip-edit">✎</span>
+              </button>
+            ) : (
+              <span className={`fi-chip ${statusObj.cls}`}>{statusObj.l}</span>
+            )}
             {p.license && <span className="fi-chip info">Licence FFF</span>}
             {p.isStarter && <span className="fi-chip ok">★ Titulaire</span>}
           </div>
@@ -341,16 +354,20 @@ function ScreenFiche({ go, tweaks, player }) {
           <div className="fi-attrs">
             <div className="fi-attrs-h">
               <span className="fi-attrs-k">NOTATION COACH</span>
-              <div className="fi-attrs-actions">
-                {editingStats ? (
-                  <>
-                    <button className="fi-attrs-btn-reset" onClick={resetStats}>Reset</button>
-                    <button className="fi-attrs-btn-done" onClick={() => setEditingStats(false)}>OK</button>
-                  </>
-                ) : (
-                  <button className="fi-attrs-btn-edit" onClick={() => setEditingStats(true)}>✎ Éditer</button>
-                )}
-              </div>
+              {/* #C5 — édition de la notation réservée à la capacité 'effectif'.
+                  Sans le bouton Éditer, editingStats reste false → lecture seule. */}
+              {canEdit && (
+                <div className="fi-attrs-actions">
+                  {editingStats ? (
+                    <>
+                      <button className="fi-attrs-btn-reset" onClick={resetStats}>Reset</button>
+                      <button className="fi-attrs-btn-done" onClick={() => setEditingStats(false)}>OK</button>
+                    </>
+                  ) : (
+                    <button className="fi-attrs-btn-edit" onClick={() => setEditingStats(true)}>✎ Éditer</button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* OVR pondéré + profil de poste sur lequel il est calculé */}
@@ -485,24 +502,27 @@ function ScreenFiche({ go, tweaks, player }) {
 
       {tab === "obs" && (
         <div className="fi-obs">
-          <div className="fi-obs-add">
-            <textarea
-              className="fi-obs-input"
-              placeholder="Note du coach… (entraînement, match, comportement…)"
-              value={newNote}
-              onChange={e => setNewNote(e.target.value)}/>
-            <button
-              className="fi-obs-add-btn"
-              disabled={!newNote.trim()}
-              onClick={() => {
-                if (!newNote.trim()) return;
-                window.CDD_COACH.addNote(p.id, { tag:'Coach', txt: newNote.trim() });
-                setNewNote("");
-                triggerRefresh();
-              }}>
-              + AJOUTER
-            </button>
-          </div>
+          {/* #C5 — ajout d'observation réservé à la capacité 'effectif'. */}
+          {canEdit && (
+            <div className="fi-obs-add">
+              <textarea
+                className="fi-obs-input"
+                placeholder="Note du coach… (entraînement, match, comportement…)"
+                value={newNote}
+                onChange={e => setNewNote(e.target.value)}/>
+              <button
+                className="fi-obs-add-btn"
+                disabled={!newNote.trim()}
+                onClick={() => {
+                  if (!newNote.trim()) return;
+                  window.CDD_COACH.addNote(p.id, { tag:'Coach', txt: newNote.trim() });
+                  setNewNote("");
+                  triggerRefresh();
+                }}>
+                + AJOUTER
+              </button>
+            </div>
+          )}
           {obs.length === 0 ? (
             <div className="fi-empty">Pas encore d'observation. Tape ta première note ci-dessus.</div>
           ) : obs.map((o,i) => (
@@ -510,12 +530,14 @@ function ScreenFiche({ go, tweaks, player }) {
               <div className="fi-obs-head">
                 <span className="chip">{o.tag}</span>
                 <span className="dim2 num">{o.date}</span>
-                <button className="fi-obs-del" onClick={() => {
-                  if (confirm('Supprimer cette note ?')) {
-                    window.CDD_COACH.removeNote(p.id, i);
-                    triggerRefresh();
-                  }
-                }}>×</button>
+                {canEdit && (
+                  <button className="fi-obs-del" onClick={() => {
+                    if (confirm('Supprimer cette note ?')) {
+                      window.CDD_COACH.removeNote(p.id, i);
+                      triggerRefresh();
+                    }
+                  }}>×</button>
+                )}
               </div>
               <div className="fi-obs-txt">{o.txt}</div>
             </div>
@@ -871,13 +893,18 @@ function ProfilTab({ player, onChange }) {
   const [form, setForm] = React.useState(init);
   const [saved, setSaved] = React.useState(false);
 
+  // #C5 — édition du profil joueur = capacité 'effectif'. Lecture seule pour
+  // parent / joueur / lecteur. Fallback éditable si rôles non chargés.
+  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('effectif');
+
   const set = (k) => (e) => {
     const v = e && e.target ? e.target.value : e;
     setForm(f => ({ ...f, [k]: v }));
   };
 
   const onSave = () => {
-    if (!CO || !CO.setProfile) return;
+    if (!canEdit || !CO || !CO.setProfile) return;
     const patch = { ...form };
     ['num', 'height', 'weight'].forEach(k => {
       if (patch[k] !== '' && patch[k] != null) {
@@ -892,7 +919,7 @@ function ProfilTab({ player, onChange }) {
   };
 
   const onReset = () => {
-    if (!CO || !CO.resetProfile) return;
+    if (!canEdit || !CO || !CO.resetProfile) return;
     if (!confirm('Effacer toutes tes modifs de profil et revenir aux données FFF/seed ?')) return;
     CO.resetProfile(player.id);
     setForm(init());
@@ -900,6 +927,7 @@ function ProfilTab({ player, onChange }) {
   };
 
   const onPhoto = (e) => {
+    if (!canEdit) return;
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     if (file.size > 1500000) {
@@ -1013,14 +1041,21 @@ function ProfilTab({ player, onChange }) {
         </div>
       </div>
 
-      <div className="fi-pf-actions">
-        <button className="fi-attrs-btn-reset" onClick={onReset} type="button">
-          ↺ Reset
-        </button>
-        <button className="fi-attrs-btn-done" onClick={onSave} type="button">
-          {saved ? '✓ Enregistré' : '💾 Enregistrer'}
-        </button>
-      </div>
+      {/* #C5 — actions d'enregistrement réservées à la capacité 'effectif'. */}
+      {canEdit ? (
+        <div className="fi-pf-actions">
+          <button className="fi-attrs-btn-reset" onClick={onReset} type="button">
+            ↺ Reset
+          </button>
+          <button className="fi-attrs-btn-done" onClick={onSave} type="button">
+            {saved ? '✓ Enregistré' : '💾 Enregistrer'}
+          </button>
+        </div>
+      ) : (
+        <div className="fi-pf-actions" style={{fontSize:11, opacity:0.6, padding:'8px 0'}}>
+          👁 Lecture seule — ton rôle ne permet pas de modifier ce profil.
+        </div>
+      )}
     </div>
   );
 }

@@ -2,32 +2,34 @@
 // ║  COACH DU DIMANCHE V2 — Firestore Security Rules                  ║
 // ║  Projet Firebase : arbitre-sport                                  ║
 // ║  À déployer : console Firebase → Firestore → Règles → Publier     ║
-// ║  ou  firebase deploy --only firestore:rules                       ║
 // ╚═══════════════════════════════════════════════════════════════════╝
 //
-// PHASE C — C1 (socle). Deux zones :
+// PHASE D — modèle d'autorisation PAR ÉQUIPE & multi-rôles.
+// Voir Version/V2/PHASE-D-PLAN.md pour la conception complète.
 //
-//  1. Modèle AUTORISÉ (clubs / teams / players / memberships / invites) :
-//     accès imposé côté serveur. Un utilisateur ne lit/écrit un club que
-//     s'il possède une `membership` pour ce club. Infranchissable, même
-//     via les outils développeur du navigateur.
-//
-//  2. Collections existantes (cdd_v2_*, shared_teams) : conservées TELLES
-//     QUELLES. La synchro convoc/vote/statuts tourne avec un voterId
-//     anonyme — on n'y touche pas en C1 pour ne rien casser. Leur
-//     durcissement viendra en C3/C4 quand les écrans seront branchés sur
-//     les memberships.
+// ⚠️ Ces règles supposent le NOUVEAU schéma de membership (map `teams`).
+// Elles vont de pair avec roles.js / firebase-sync.js D3-D6 et la migration
+// D5 — ne PAS déployer seules tant que l'app n'écrit pas le nouveau format.
 //
 // CONVENTION CLÉ : l'ID d'un document `memberships` est `{uid}_{clubId}`.
 // Cela permet aux règles de retrouver une membership par `get()` direct
 // (Firestore ne permet pas de requêter une collection depuis une règle).
+//
+// MODÈLE memberships/{uid}_{clubId} :
+//   { uid, email, clubId,
+//     clubRole,                       // standing club-level (dénormalisé)
+//     teams: { "{teamId}": { role, playerId } },   // un rôle PAR ÉQUIPE
+//     inviteToken?, createdBy, createdAt, updatedAt }
+//   role ∈ owner | admin | coach | adjoint | parent | joueur | lecteur
+//   Règle d'or : un rôle coach/owner/admin ne peut être posé QUE par l'admin
+//   (ou par un coach principal déjà en place sur SON club). Jamais par lien.
 
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ═══ Helpers — schéma (existants) ═══════════════════════════════
+    // ═══ Helpers — schéma (existants, collections cdd_v2_*) ═════════
     function isString(v)  { return v is string;  }
     function isNumber(v)  { return v is number;  }
     function isBool(v)    { return v is bool;    }
@@ -37,72 +39,109 @@ service cloud.firestore {
       return s in ['active', 'rest', 'injured', 'suspended', 'reserve'];
     }
 
-    // ═══ Helpers — authentification & autorisation (Phase C) ════════
+    // ═══ Helpers — authentification ═════════════════════════════════
     function isSignedIn() { return request.auth != null; }
     function myUid()      { return request.auth.uid; }
     function myEmail() {
       return (isSignedIn() && request.auth.token.email != null)
         ? request.auth.token.email.lower() : '';
     }
-    // Admin = super-utilisateur. Fiable depuis qu'une vraie auth existe
-    // (impossible de "se faire passer" pour cet email sans la boîte Gmail).
+    // Admin = super-utilisateur. Fiable : impossible d'usurper cet email
+    // sans posséder la boîte Gmail correspondante.
     function isAdmin() {
       return isSignedIn() && myEmail() == 'archi.tech.fr@gmail.com';
     }
 
-    // Membership de l'utilisateur courant pour un club (id = {uid}_{clubId}).
+    // ═══ Helpers — memberships (Phase D, modèle par équipe) ═════════
     function membershipPath(clubId) {
       return /databases/$(database)/documents/memberships/$(myUid() + '_' + clubId);
     }
     function hasMembership(clubId) {
       return isSignedIn() && exists(membershipPath(clubId));
     }
-    function membershipRole(clubId) {
-      return get(membershipPath(clubId)).data.role;
+    function membershipData(clubId) {
+      return get(membershipPath(clubId)).data;
     }
-    // Lecture d'un club : admin, ou membership quelconque sur ce club.
+    // Standing club-level de l'utilisateur ('' si aucune membership).
+    function clubRole(clubId) {
+      return hasMembership(clubId) ? membershipData(clubId).clubRole : '';
+    }
+    // Rôle de l'utilisateur sur UNE équipe précise ('' si rien).
+    function teamRole(clubId, teamId) {
+      return (hasMembership(clubId)
+              && ('teams' in membershipData(clubId))
+              && (teamId in membershipData(clubId).teams))
+        ? membershipData(clubId).teams[teamId].role : '';
+    }
+
+    // Lecture d'un club / d'une équipe : admin, ou membre du club.
     function canReadClub(clubId) {
       return isAdmin() || hasMembership(clubId);
     }
-    // Écriture des données d'un club : admin, ou membership coach/owner.
-    // Les rôles adjoint/parent/joueur/lecteur sont en LECTURE SEULE.
-    function canEditClub(clubId) {
-      return isAdmin() ||
-        (hasMembership(clubId) &&
-         membershipRole(clubId) in ['owner', 'coach']);
+    // Gérer le club : créer des équipes, éditer le doc club (logo, infos).
+    // Admin ou coach principal/owner (clubRole). Pas l'adjoint.
+    function canManageClub(clubId) {
+      return isAdmin() || clubRole(clubId) in ['owner', 'coach'];
+    }
+    // Éditer les DONNÉES d'une équipe (joueurs, compo) : admin, coach
+    // principal OU adjoint DE CETTE ÉQUIPE. Parent/joueur/lecteur = non.
+    function canEditTeam(clubId, teamId) {
+      return isAdmin() || teamRole(clubId, teamId) in ['owner', 'coach', 'adjoint'];
+    }
+    // Supprimer une équipe : admin ou coach principal de cette équipe.
+    function canManageTeam(clubId, teamId) {
+      return isAdmin() || teamRole(clubId, teamId) in ['owner', 'coach'];
     }
 
-    // ═══ Helpers — invitations (C4) ═════════════════════════════════
+    // ═══ Helpers — invitations ══════════════════════════════════════
     function invitePath(token) {
       return /databases/$(database)/documents/invites/$(token);
     }
-    // Vrai si l'invitation référencée par m.inviteToken autorise la
-    // création de la membership m (club/rôle/joueur cohérents, non
-    // consommée, non expirée, jamais un rôle coach via lien).
-    function inviteGrantsMembership(m) {
-      let inv = get(invitePath(m.inviteToken)).data;
-      return inv.clubId == m.clubId
-        && inv.role == m.role
+    // Invitation exploitable : non consommée, non expirée, jamais un rôle
+    // coach/owner/admin (ces comptes ne s'obtiennent pas par lien).
+    function inviteValid(token) {
+      let inv = get(invitePath(token)).data;
+      return exists(invitePath(token))
         && inv.consumed == false
-        && inv.playerId == m.playerId
         && !(inv.role in ['owner', 'admin', 'coach'])
         && (!('expiresAt' in inv) || inv.expiresAt == null
             || request.time.toMillis() < inv.expiresAt);
     }
-
-    // Rôle de l'utilisateur courant sur un club ('' si aucune membership).
-    function myRoleOnClub(clubId) {
-      return hasMembership(clubId) ? membershipRole(clubId) : '';
+    // CRÉATION de membership depuis une invitation : la map `teams` ne
+    // contient QUE l'équipe de l'invitation, au rôle de l'invitation.
+    function createMatchesInvite(m) {
+      let inv = get(invitePath(m.inviteToken)).data;
+      return m.clubId == inv.clubId
+        && m.teams is map
+        && m.teams.size() == 1
+        && (inv.teamId in m.teams)
+        && m.teams[inv.teamId].role == inv.role
+        && m.teams[inv.teamId].playerId == inv.playerId
+        && !(m.clubRole in ['owner', 'admin', 'coach']);
     }
-    // Matrice d'invitation — MIROIR de roles.js → INVITE_MATRIX. L'UI s'en
-    // sert pour l'ergonomie, cette règle pour la sécurité (infranchissable).
+    // MISE À JOUR de membership depuis une invitation : on AJOUTE l'équipe
+    // de l'invitation, on garde toutes les anciennes, pas d'escalade coach.
+    function updateMatchesInvite(old, m) {
+      let inv = get(invitePath(m.inviteToken)).data;
+      return m.clubId == old.clubId
+        && m.uid == old.uid
+        && inv.clubId == m.clubId
+        && m.teams is map
+        && (inv.teamId in m.teams)
+        && m.teams[inv.teamId].role == inv.role
+        && m.teams[inv.teamId].playerId == inv.playerId
+        && !(m.clubRole in ['owner', 'admin', 'coach'])
+        && m.teams.size() == old.teams.size() + 1
+        && m.teams.keys().hasAll(old.teams.keys());
+    }
+    // Matrice d'invitation — MIROIR de roles.js → INVITE_MATRIX. Le rôle
+    // de l'invitant est lu SUR L'ÉQUIPE cible de l'invitation.
     //  owner / coach / admin     → adjoint, parent, joueur, lecteur
     //  adjoint / joueur / parent → parent, joueur, lecteur
     //  lecteur                   → personne
-    // Le rôle 'coach' ne s'obtient jamais par lien (compte créé par l'admin).
-    function canInviteRole(clubId, target) {
-      let r = myRoleOnClub(clubId);
-      return isAdmin()
+    function canInviteRole(clubId, teamId, target) {
+      let r = isAdmin() ? 'admin' : teamRole(clubId, teamId);
+      return r == 'admin'
         || (r in ['owner', 'coach']
             && target in ['adjoint', 'parent', 'joueur', 'lecteur'])
         || (r in ['adjoint', 'joueur', 'parent']
@@ -112,73 +151,89 @@ service cloud.firestore {
     // ═══ /clubs/{clubId} ════════════════════════════════════════════
     match /clubs/{clubId} {
       allow read:   if canReadClub(clubId);
-      // Création d'un club = création d'un compte coach → réservé à l'admin
-      // (exigence : "seul l'admin donne accès à un compte coach").
+      // Création d'un club : réservé à l'admin (il vend l'app + la mise en
+      // place). L'auto-inscription payante d'un coach viendra plus tard.
       allow create: if isAdmin()
-        && request.resource.data.createdBy == myUid()
+        && request.resource.data.createdBy is string
         && request.resource.data.size() <= 20;
-      allow update: if canEditClub(clubId) && request.resource.data.size() <= 20;
+      // Éditer le doc club (logo, infos) : admin ou coach principal.
+      allow update: if canManageClub(clubId) && request.resource.data.size() <= 20;
       allow delete: if isAdmin();
     }
 
     // ═══ /teams/{teamId} ════════════════════════════════════════════
     match /teams/{teamId} {
       allow read:   if canReadClub(resource.data.clubId);
-      allow create: if canEditClub(request.resource.data.clubId)
+      // Créer une équipe : admin ou coach principal du club.
+      allow create: if canManageClub(request.resource.data.clubId)
         && isString(request.resource.data.clubId)
         && request.resource.data.size() <= 40;
       // clubId immuable après création.
-      allow update: if canEditClub(resource.data.clubId)
+      allow update: if canEditTeam(resource.data.clubId, teamId)
         && request.resource.data.clubId == resource.data.clubId
         && request.resource.data.size() <= 40;
-      allow delete: if canEditClub(resource.data.clubId);
+      allow delete: if canManageTeam(resource.data.clubId, teamId);
     }
 
     // ═══ /players/{playerId} ════════════════════════════════════════
     match /players/{playerId} {
       allow read:   if canReadClub(resource.data.clubId);
-      allow create: if canEditClub(request.resource.data.clubId)
+      allow create: if canEditTeam(request.resource.data.clubId,
+                                   request.resource.data.teamId)
         && isString(request.resource.data.clubId)
+        && isString(request.resource.data.teamId)
         && request.resource.data.size() <= 80;
-      allow update: if canEditClub(resource.data.clubId)
+      // clubId et teamId immuables après création.
+      allow update: if canEditTeam(resource.data.clubId, resource.data.teamId)
         && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.teamId == resource.data.teamId
         && request.resource.data.size() <= 80;
-      allow delete: if canEditClub(resource.data.clubId);
+      allow delete: if canEditTeam(resource.data.clubId, resource.data.teamId);
     }
 
     // ═══ /memberships/{membershipId}  (id = {uid}_{clubId}) ═════════
     // Table d'autorisation — cœur du système.
     match /memberships/{membershipId} {
-      // Lecture : la sienne, ou celles de son club si on est coach, ou admin.
+      // Lecture : la sienne, celles de son club si on est coach, ou admin.
       allow read: if isSignedIn() && (
         isAdmin() ||
         resource.data.uid == myUid() ||
-        canEditClub(resource.data.clubId)
+        canManageClub(resource.data.clubId)
       );
       // Création :
-      //  - l'id DOIT être {uid}_{clubId} (cohérence + unicité),
-      //  - un rôle coach/owner/admin ne peut être attribué QUE par l'admin,
-      //  - un coach peut rattacher des rôles non-coach à SON club,
-      //  - une membership 'parent' DOIT porter un playerId (lien obligatoire).
+      //  - id imposé {uid}_{clubId},
+      //  - admin : tout (assigne les coachs principaux),
+      //  - coach principal du club : rattacher des membres NON-coach,
+      //  - invité : crée SA propre membership via un token valide.
       allow create: if isSignedIn()
         && membershipId == request.resource.data.uid + '_' + request.resource.data.clubId
+        && request.resource.data.teams is map
         && request.resource.data.size() <= 16
         && (
           isAdmin() ||
-          ( canEditClub(request.resource.data.clubId)
-            && !(request.resource.data.role in ['owner', 'admin', 'coach']) ) ||
-          // Auto-création depuis une invitation : l'invité crée SA propre
-          // membership ({uid}_{clubId}), autorisée par un token d'invitation
-          // valide — le coach n'a pas à pré-créer chaque rattachement.
+          ( canManageClub(request.resource.data.clubId)
+            && !(request.resource.data.clubRole in ['owner', 'admin', 'coach']) ) ||
           ( request.resource.data.uid == myUid()
             && request.resource.data.inviteToken is string
             && exists(invitePath(request.resource.data.inviteToken))
-            && inviteGrantsMembership(request.resource.data) )
-        )
-        && ( request.resource.data.role != 'parent'
-             || request.resource.data.playerId is string );
-      allow update: if isAdmin() || canEditClub(resource.data.clubId);
-      allow delete: if isAdmin() || canEditClub(resource.data.clubId);
+            && inviteValid(request.resource.data.inviteToken)
+            && createMatchesInvite(request.resource.data) )
+        );
+      // Mise à jour :
+      //  - admin, ou coach principal du club (gestion du roster),
+      //  - invité : ajoute UNE équipe à SA membership via un token valide.
+      allow update: if isSignedIn()
+        && request.resource.data.size() <= 16
+        && (
+          isAdmin() ||
+          canManageClub(resource.data.clubId) ||
+          ( request.resource.data.uid == myUid()
+            && request.resource.data.inviteToken is string
+            && exists(invitePath(request.resource.data.inviteToken))
+            && inviteValid(request.resource.data.inviteToken)
+            && updateMatchesInvite(resource.data, request.resource.data) )
+        );
+      allow delete: if isAdmin() || canManageClub(resource.data.clubId);
     }
 
     // ═══ /invites/{token} ═══════════════════════════════════════════
@@ -186,26 +241,26 @@ service cloud.firestore {
     match /invites/{token} {
       // Lecture : tout utilisateur signé (nécessaire pour consommer le lien).
       allow read: if isSignedIn();
-      // Création : selon la matrice d'invitation (canInviteRole). Un membre
-      // ne peut générer un lien que vers un rôle autorisé pour SON rôle sur
-      // ce club. Un lien 'coach' reste impossible (réservé à l'admin, hors
-      // lien). canInviteRole exige une membership sur le club → pas de lien
-      // possible sans rattachement.
+      // Création : selon la matrice — le rôle de l'invitant est lu sur
+      // l'ÉQUIPE cible. canInviteRole exige une membership → pas de lien
+      // sans rattachement à cette équipe.
       allow create: if isSignedIn()
         && request.resource.data.size() <= 15
-        && canInviteRole(request.resource.data.clubId, request.resource.data.role);
-      // Mise à jour : le coach du club, OU l'invité qui consomme le lien
-      // (passage consumed false→true en s'attribuant consumedBy).
+        && canInviteRole(request.resource.data.clubId,
+                         request.resource.data.teamId,
+                         request.resource.data.role);
+      // Mise à jour : coach principal du club, OU l'invité qui consomme
+      // le lien (passage consumed false→true en s'attribuant consumedBy).
       allow update: if isSignedIn() && (
-        canEditClub(resource.data.clubId) ||
+        canManageClub(resource.data.clubId) ||
         ( resource.data.consumed == false
           && request.resource.data.consumed == true
           && request.resource.data.consumedBy == myUid() )
       );
-      // Suppression (révocation) : admin, coach/owner du club, ou l'auteur
-      // du lien lui-même (un parent/joueur peut révoquer ce qu'il a généré).
+      // Suppression (révocation) : admin, coach principal du club, ou
+      // l'auteur du lien lui-même.
       allow delete: if isAdmin()
-        || canEditClub(resource.data.clubId)
+        || canManageClub(resource.data.clubId)
         || resource.data.createdBy == myUid();
     }
 

@@ -19,8 +19,8 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
-  getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, onSnapshot, serverTimestamp,
-  collection, query, where
+  getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, deleteDoc, deleteField,
+  onSnapshot, serverTimestamp, collection, query, where
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
   getAuth, sendSignInLinkToEmail, isSignInWithEmailLink,
@@ -635,24 +635,95 @@ async function savePlayer(player, teamId, clubId) {
 }
 
 // Membership — id imposé = {uid}_{clubId} (cf firestore.rules).
+// Phase D : un rôle PAR ÉQUIPE — la membership porte une map `teams`
+// { [teamId]: { role, playerId? } } + un standing club-level dénormalisé
+// `clubRole` (owner/coach si présent dans la map, sinon '').
+//
+// Deux signatures acceptées :
+//   saveMembership({ uid, clubId, teams: { [tid]: {role, playerId} }, clubRole? })
+//     → nouveau format, recommandé.
+//   saveMembership({ uid, clubId, teamId, role, playerId? })
+//     → ancien format, normalisé en interne en teams: {[teamId]:{role,playerId}}.
+//
+// setDoc(..., {merge:true}) : Firestore fusionne PROFONDÉMENT la map `teams`,
+// donc ajouter une équipe ne touche pas les autres. Pour SUPPRIMER une
+// équipe, utiliser removeTeamMembership().
+//
 // inviteToken (optionnel) : présent lors d'une auto-création depuis une
-// invitation — les règles Firestore le lisent pour autoriser l'écriture.
+// invitation — les règles Firestore le lisent pour autoriser l'écriture
+// (cf. firestore.rules → createMatchesInvite / updateMatchesInvite).
 async function saveMembership(m) {
   if (!db || !m || !m.uid || !m.clubId) throw new Error('db/uid/clubId requis');
   const id = m.uid + '_' + m.clubId;
+
+  // Normalisation : map `teams` à partir du nouveau ou de l'ancien format.
+  let teams = (m.teams && typeof m.teams === 'object') ? { ...m.teams } : {};
+  if (m.teamId && m.role) {
+    teams[m.teamId] = {
+      role: m.role,
+      playerId: m.playerId || null,
+    };
+  }
+  // Nettoyage : strip des entrées sans rôle.
+  Object.keys(teams).forEach(tid => {
+    if (!teams[tid] || !teams[tid].role) delete teams[tid];
+  });
+
+  // clubRole : standing club-level. Forcé à '' pour les rattachements par
+  // invitation (les règles refusent owner/admin/coach via lien). Sinon
+  // dérivé : owner > coach > '' selon les rôles présents dans la map.
+  let clubRole = m.clubRole;
+  if (typeof clubRole !== 'string') {
+    const roles = Object.values(teams).map(t => t && t.role).filter(Boolean);
+    if (roles.includes('owner'))      clubRole = 'owner';
+    else if (roles.includes('coach')) clubRole = 'coach';
+    else                              clubRole = '';
+  }
+
   const payload = {
     uid: m.uid,
     email: (m.email || '').toLowerCase(),
     clubId: m.clubId,
-    teamId: m.teamId || null,
-    role: m.role || 'lecteur',
-    playerId: m.playerId || null,
+    clubRole,
+    teams,
     createdBy: m.createdBy || _uid(),
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   };
   if (m.inviteToken) payload.inviteToken = m.inviteToken;
   await setDoc(doc(db, 'memberships', id), payload, { merge: true });
   return { ok: true, id };
+}
+
+// Retire UNE équipe de la map `teams` d'une membership existante (et
+// recalcule clubRole). Utile pour révoquer un coach principal sans
+// détruire les autres rattachements du même utilisateur sur le club.
+async function removeTeamMembership(uid, clubId, teamId) {
+  if (!db || !uid || !clubId || !teamId) throw new Error('uid/clubId/teamId requis');
+  const id = uid + '_' + clubId;
+  const ref = doc(db, 'memberships', id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return { ok: false, reason: 'not-found' };
+  const data = snap.data() || {};
+  const teams = { ...(data.teams || {}) };
+  if (!(teamId in teams)) return { ok: true, noop: true };
+  const remaining = Object.keys(teams).filter(k => k !== teamId);
+  // Si plus aucune équipe → on supprime la membership entière.
+  if (remaining.length === 0) {
+    await deleteDoc(ref);
+    return { ok: true, deleted: true };
+  }
+  // Recalcule clubRole sur les rôles restants.
+  const rolesLeft = remaining.map(k => teams[k] && teams[k].role).filter(Boolean);
+  let clubRole = '';
+  if (rolesLeft.includes('owner'))      clubRole = 'owner';
+  else if (rolesLeft.includes('coach')) clubRole = 'coach';
+  await updateDoc(ref, {
+    ['teams.' + teamId]: deleteField(),
+    clubRole,
+    updatedAt: serverTimestamp(),
+  });
+  return { ok: true };
 }
 
 // ─── Lecture ───────────────────────────────────────────────
@@ -661,6 +732,19 @@ async function fetchMemberships(uid) {
   const targetUid = uid || _uid();
   if (!targetUid) return [];
   const q = query(collection(db, 'memberships'), where('uid', '==', targetUid));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+
+// Toutes les memberships d'un club — pour l'écran « membres du club ».
+// Lisible uniquement par un coach principal/owner/admin du club (firestore
+// .rules → memberships read = canEditClub). Un adjoint ou un parent qui
+// appelle ça recevra une erreur permission-denied : c'est voulu.
+async function fetchClubMemberships(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'memberships'), where('clubId', '==', clubId));
   const snap = await getDocs(q);
   const out = [];
   snap.forEach(d => out.push({ id: d.id, ...d.data() }));
@@ -691,6 +775,158 @@ async function fetchPlayers(clubId) {
   return out;
 }
 
+// ─── Admin : lecture globale + assignation coach principal ──
+// Phase D — utilisé par le panneau admin clubs/équipes. Lecture autorisée
+// pour l'admin uniquement (firestore.rules → canReadClub = isAdmin() || ...).
+async function fetchAllClubs() {
+  if (!db) return [];
+  const snap = await getDocs(collection(db, 'clubs'));
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+
+// Recherche l'uid d'un utilisateur via une de ses memberships connues
+// (lecture autorisée si admin ou coach manager d'un club partagé). Renvoie
+// null si la personne n'a encore JAMAIS eu de membership.
+async function findUidByEmail(email) {
+  if (!db || !email) return null;
+  const targetEmail = String(email).trim().toLowerCase();
+  if (!targetEmail) return null;
+  const snap = await getDocs(query(
+    collection(db, 'memberships'),
+    where('email', '==', targetEmail)
+  ));
+  let uid = null;
+  snap.forEach(d => { if (!uid) uid = (d.data() || {}).uid || null; });
+  return uid;
+}
+
+// Admin (D5) — Migre les memberships encore au format plat (Phase C) vers
+// le format Phase D (clubRole + teams). Idempotente : les memberships déjà
+// au nouveau format sont ignorées.
+//
+// Stratégie de mapping :
+//   role:'admin'/'owner' (sans teamId) → clubRole=role, teams={}
+//   role:'coach' (sans teamId) :
+//     - 1 seule équipe dans le club → teams={[onlyTeam]:{role:'coach'}}, clubRole='coach'
+//     - plusieurs équipes → on attribue 'coach' à TOUTES (préserve le standing
+//       Phase C qui signifiait « coach principal du club entier »). L'admin
+//       affine ensuite via le panneau.
+//     - aucune équipe dans le club → clubRole='coach', teams={}
+//   role:'adjoint'/'parent'/'joueur'/'lecteur' avec teamId connu →
+//     teams={[teamId]:{role, playerId?}}, clubRole=''
+//   Sans teamId ni rôle club → skip + log (impossible à mapper sûrement).
+//
+// Renvoie { ok, counts: { converted, skipped, errors, alreadyOk } }.
+async function migrateMembershipsToTeamsModel() {
+  if (!db) return { ok: false, reason: 'no-db' };
+  const email = _email();
+  if (email !== ADMIN_EMAIL_DATA) return { ok: false, reason: 'not-admin' };
+
+  const counts = { converted: 0, skipped: 0, errors: 0, alreadyOk: 0 };
+  const skipped = [];
+
+  let clubs;
+  try { clubs = await fetchAllClubs(); }
+  catch (e) { return { ok: false, reason: 'fetch-clubs-failed', error: e.message }; }
+
+  for (const club of clubs) {
+    let teamsOfClub = [];
+    try { teamsOfClub = await fetchTeams(club.id); }
+    catch (e) { console.warn('[migrate] teams', club.id, e.message); }
+
+    let memberships = [];
+    try { memberships = await fetchClubMemberships(club.id); }
+    catch (e) { console.warn('[migrate] memberships', club.id, e.message); counts.errors++; continue; }
+
+    for (const m of memberships) {
+      // Déjà au nouveau format : ne pas écraser.
+      if (m.teams && typeof m.teams === 'object' && !Array.isArray(m.teams)
+          && Object.keys(m.teams).length > 0) {
+        counts.alreadyOk++; continue;
+      }
+      // Cas owner/admin sans teamId : clubRole + teams vide suffit.
+      if (m.role === 'owner' || m.role === 'admin') {
+        try {
+          await updateDoc(doc(db, 'memberships', m.id), {
+            clubRole: m.role,
+            teams: {},
+            role: deleteField(),
+            teamId: deleteField(),
+            playerId: deleteField(),
+            updatedAt: serverTimestamp(),
+          });
+          counts.converted++;
+        } catch (e) { counts.errors++; console.warn('[migrate]', m.id, e.message); }
+        continue;
+      }
+      // Cas coach plat : on étend à toutes les équipes du club (ou à
+      // l'unique équipe), pour préserver le standing « coach principal
+      // du club entier » de Phase C.
+      if (m.role === 'coach') {
+        const teamsMap = {};
+        for (const t of teamsOfClub) teamsMap[t.id] = { role: 'coach' };
+        try {
+          await updateDoc(doc(db, 'memberships', m.id), {
+            clubRole: 'coach',
+            teams: teamsMap,
+            role: deleteField(),
+            teamId: deleteField(),
+            playerId: deleteField(),
+            updatedAt: serverTimestamp(),
+          });
+          counts.converted++;
+        } catch (e) { counts.errors++; console.warn('[migrate]', m.id, e.message); }
+        continue;
+      }
+      // Cas adjoint/parent/joueur/lecteur avec teamId connu.
+      if (['adjoint', 'parent', 'joueur', 'lecteur'].includes(m.role) && m.teamId) {
+        const entry = { role: m.role };
+        if (m.playerId) entry.playerId = m.playerId;
+        try {
+          await updateDoc(doc(db, 'memberships', m.id), {
+            clubRole: '',
+            teams: { [m.teamId]: entry },
+            role: deleteField(),
+            teamId: deleteField(),
+            playerId: deleteField(),
+            updatedAt: serverTimestamp(),
+          });
+          counts.converted++;
+        } catch (e) { counts.errors++; console.warn('[migrate]', m.id, e.message); }
+        continue;
+      }
+      // Cas impossible à mapper sûrement.
+      counts.skipped++;
+      skipped.push({ id: m.id, role: m.role, reason: 'no-teamId-and-not-club-wide' });
+    }
+  }
+  if (skipped.length) console.warn('[migrate] memberships non migrés :', skipped);
+  return { ok: true, counts, skipped };
+}
+
+// Admin : assigne un coach principal sur UNE équipe. Pose `teams[teamId]`
+// avec role='coach' et `clubRole='coach'`. Si la personne avait déjà une
+// membership sur ce club (ex. adjoint sur une autre équipe), on AJOUTE
+// l'équipe sans toucher aux autres (merge profond).
+async function assignTeamCoach(opts) {
+  if (!db) throw new Error('Service cloud indisponible');
+  const o = opts || {};
+  if (!o.uid)     throw new Error('uid requis (cherche-le via findUidByEmail).');
+  if (!o.clubId)  throw new Error('clubId requis.');
+  if (!o.teamId)  throw new Error('teamId requis.');
+  await saveMembership({
+    uid: o.uid,
+    email: o.email || '',
+    clubId: o.clubId,
+    teams: { [o.teamId]: { role: 'coach' } },
+    clubRole: 'coach',
+    createdBy: _uid(),
+  });
+  return { ok: true };
+}
+
 // ─── Migration unique : données locales → Firestore ────────
 // Réservée à l'admin. Pousse arb_clubs / arb_teams (+ joueurs imbriqués)
 // vers Firestore et crée la membership 'owner' de l'admin sur chaque club.
@@ -717,7 +953,9 @@ async function migrateLocalToCloud(opts) {
     try {
       await saveClub({ ...club, logoUrl: logos[club.id] || club.logoDataUrl || null });
       counts.clubs++;
-      await saveMembership({ uid, email, clubId: club.id, role: 'owner', createdBy: 'migration' });
+      // Admin : standing club-level 'owner' sur le club entier, sans entrée
+      // équipe (la map `teams` sera remplie au fur et à mesure des assignations).
+      await saveMembership({ uid, email, clubId: club.id, clubRole: 'owner', createdBy: 'migration' });
       counts.memberships++;
     } catch (e) { counts.errors++; console.warn('[cddData] migrate club', club.id, e.message); }
   }
@@ -789,12 +1027,23 @@ async function pullCloudData() {
   try {
     localStorage.setItem('arb_clubs', JSON.stringify(clubs));
     localStorage.setItem('arb_teams', JSON.stringify(teamsAll));
+    // Phase D — cache LS au nouveau format (map `teams` + clubRole). Si une
+    // membership cloud est encore au vieux format plat (Phase C, pre-D5),
+    // on la garde telle quelle : roles.js D3 lit les deux formats.
     localStorage.setItem('cdd_memberships', JSON.stringify(
-      (memberships || []).map(m => ({
-        email: (m.email || '').toLowerCase(), clubId: m.clubId, role: m.role,
-        playerId: m.playerId || null, createdBy: m.createdBy || 'cloud',
-        createdAt: Date.now(),
-      }))
+      (memberships || []).map(m => {
+        const base = {
+          email: (m.email || '').toLowerCase(),
+          clubId: m.clubId,
+          createdBy: m.createdBy || 'cloud',
+          createdAt: Date.now(),
+        };
+        if (m.teams && typeof m.teams === 'object') {
+          return { ...base, clubRole: m.clubRole || '', teams: m.teams };
+        }
+        // Vieux format : on conserve tel quel pour le bloc rétro-compat.
+        return { ...base, role: m.role, playerId: m.playerId || null };
+      })
     ));
     const cur = localStorage.getItem('arb_current_club');
     if ((!cur || !clubs.some(c => c.id === cur)) && clubs[0]) {
@@ -846,12 +1095,30 @@ function inviteUrl(token) {
   return window.location.origin + window.location.pathname + '?invite=' + token;
 }
 
-// Compte les memberships d'un rôle sur un club (lisible par un coach du club).
+// Compte les memberships d'un rôle sur une ÉQUIPE précise (lisible par un
+// coach du club). Phase D — le plafond adjoints est par équipe, pas par club.
+async function teamRoleCount(clubId, teamId, role) {
+  if (!db || !clubId || !teamId) return 0;
+  const snap = await getDocs(query(collection(db, 'memberships'), where('clubId', '==', clubId)));
+  let n = 0;
+  snap.forEach(d => {
+    const data = d.data() || {};
+    const t = data.teams && data.teams[teamId];
+    if (t && t.role === role) n++;
+  });
+  return n;
+}
+// Alias rétro-compat : ancien code qui voulait compter sur le club entier.
 async function clubRoleCount(clubId, role) {
   if (!db || !clubId) return 0;
   const snap = await getDocs(query(collection(db, 'memberships'), where('clubId', '==', clubId)));
   let n = 0;
-  snap.forEach(d => { if (d.data().role === role) n++; });
+  snap.forEach(d => {
+    const data = d.data() || {};
+    if (data.clubRole === role) { n++; return; }
+    // Rétro-compat ancien format plat.
+    if (data.role === role) n++;
+  });
   return n;
 }
 
@@ -871,40 +1138,45 @@ async function fetchClubInvites(clubId) {
 }
 
 // Coach : crée une invitation. opts = { clubId, teamId, role, playerId, email, label }
+// Phase D : l'invitation cible TOUJOURS une équipe précise (teamId requis).
 async function createInvite(opts) {
   if (!db) throw new Error('Service cloud indisponible');
   const uid = _uid();
   if (!uid) throw new Error('Connecte-toi pour créer une invitation');
   const o = opts || {};
   if (!o.clubId) throw new Error('Aucun club actif');
+  if (!o.teamId) throw new Error('Aucune équipe active — choisis une équipe avant de générer un lien.');
   const role = o.role || 'lecteur';
-  // Matrice d'invitation (cf. roles.js → INVITE_MATRIX et firestore.rules).
-  // Contrôle ergonomique : message clair AVANT l'appel réseau. La sécurité
-  // réelle est imposée côté serveur par la règle invites/create.
-  const myRole = (window.CDD_ROLES && window.CDD_ROLES.effectiveRole)
-    ? window.CDD_ROLES.effectiveRole() : 'coach';
-  const allowed = (window.CDD_ROLES && window.CDD_ROLES.invitableRoles)
-    ? window.CDD_ROLES.invitableRoles(myRole) : ['parent', 'joueur', 'lecteur'];
+  // Matrice d'invitation (cf. roles.js → INVITE_MATRIX et firestore.rules
+  // → canInviteRole). Contrôle ergonomique : message clair AVANT l'appel
+  // réseau. La sécurité réelle est imposée côté serveur. Phase D : le rôle
+  // de l'invitant est lu SUR L'ÉQUIPE cible, pas sur le club entier.
+  const R = window.CDD_ROLES;
+  const isAdminUser = !!(R && R.isAdmin && R.isAdmin());
+  const myRole = isAdminUser
+    ? 'admin'
+    : (R && R.teamRole) ? R.teamRole(o.clubId, o.teamId) : '';
+  const allowed = (R && R.invitableRoles) ? R.invitableRoles(myRole) : [];
   if (!allowed.includes(role)) {
-    const lbl = (window.CDD_ROLES && window.CDD_ROLES.roleLabel)
-      ? window.CDD_ROLES.roleLabel(myRole) : myRole;
-    throw new Error('Ton rôle (' + lbl + ') ne permet pas de générer un lien vers un « ' + role + ' ».');
+    const lbl = (R && R.roleLabel) ? R.roleLabel(myRole || 'lecteur') : (myRole || 'lecteur');
+    throw new Error('Ton rôle sur cette équipe (' + lbl + ') ne permet pas de générer un lien vers un « ' + role + ' ».');
   }
   if (role === 'parent' && !o.playerId) {
     throw new Error('Une invitation parent doit être rattachée à un joueur.');
   }
-  // Plafond adjoints — best-effort, vérifié À LA GÉNÉRATION : le coach a le
-  // droit de lire les memberships de son club, l'invité ne l'a pas.
+  // Plafond adjoints — best-effort, vérifié À LA GÉNÉRATION. Phase D : par
+  // ÉQUIPE (et non plus par club). Le coach a le droit de lire les
+  // memberships de son club, l'invité ne l'a pas.
   if (role === 'adjoint') {
     let used = 0;
     try {
-      used = await clubRoleCount(o.clubId, 'adjoint');
+      used = await teamRoleCount(o.clubId, o.teamId, 'adjoint');
       const invs = await fetchClubInvites(o.clubId);
-      used += invs.filter(i => i.role === 'adjoint' && !i.consumed
-        && (!i.expiresAt || Date.now() < i.expiresAt)).length;
+      used += invs.filter(i => i.role === 'adjoint' && i.teamId === o.teamId
+        && !i.consumed && (!i.expiresAt || Date.now() < i.expiresAt)).length;
     } catch (e) { /* lecture impossible → best-effort, on laisse passer */ }
     if (used >= ADJOINT_CAP) {
-      throw new Error('Plafond atteint : ' + ADJOINT_CAP + ' adjoints maximum par club.');
+      throw new Error('Plafond atteint : ' + ADJOINT_CAP + ' adjoints maximum par équipe.');
     }
   }
   const token = _inviteToken();
@@ -931,7 +1203,8 @@ async function revokeInvite(token) {
   return { ok: true };
 }
 
-// Invité : consomme un lien → crée SA membership, marque l'invitation utilisée.
+// Invité : consomme un lien → crée SA membership (ou ajoute l'équipe à sa
+// map `teams` existante), marque l'invitation utilisée.
 async function consumeInvite(token) {
   if (!db)  return { ok: false, error: 'Service cloud indisponible' };
   const uid = _uid();
@@ -945,17 +1218,40 @@ async function consumeInvite(token) {
   if (inv.expiresAt && Date.now() > inv.expiresAt) {
     return { ok: false, error: 'Cette invitation a expiré.' };
   }
+  if (!inv.teamId) {
+    return { ok: false, error: "Cette invitation n'est pas rattachée à une équipe (lien Phase C non supporté)." };
+  }
 
-  // Crée la membership de l'invité. inviteToken est lu par les règles
-  // Firestore pour autoriser cette auto-création (l'invité n'est pas coach).
+  // Préserve clubRole existant (cas d'un coach principal qui consommerait
+  // un lien adjoint/parent sur le même club — on ne veut pas l'écraser).
+  // Lecture autorisée par les rules : l'utilisateur lit SA propre membership.
+  let preservedClubRole = '';
+  try {
+    const ref = doc(db, 'memberships', uid + '_' + inv.clubId);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const d = snap.data() || {};
+      preservedClubRole = d.clubRole || '';
+      // Cas évident : déjà rattaché à cette équipe → on bloque pour éviter
+      // que la règle update échoue (m.teams.size() == old.teams.size() + 1).
+      if (d.teams && d.teams[inv.teamId]) {
+        return { ok: false, error: 'Tu es déjà rattaché à cette équipe — l\'invitation est inutile.' };
+      }
+    }
+  } catch (e) { /* lecture facultative — fallback clubRole='' */ }
+
+  // Crée/complète la membership. inviteToken est lu par les règles Firestore
+  // pour autoriser cette écriture (l'invité ne peut pas créer une membership
+  // de coach principal).
   try {
     await saveMembership({
       uid,
       email: _email(),
       clubId: inv.clubId,
-      teamId: inv.teamId || null,
-      role: inv.role || 'lecteur',
-      playerId: inv.playerId || null,
+      teams: { [inv.teamId]: { role: inv.role || 'lecteur', playerId: inv.playerId || null } },
+      // clubRole explicite : préservé si déjà élevé, '' sinon — les règles
+      // refusent owner/admin/coach via invite donc passer '' est sûr.
+      clubRole: preservedClubRole,
       createdBy: inv.createdBy || 'invite',
       inviteToken: token,
     });
@@ -970,16 +1266,19 @@ async function consumeInvite(token) {
       { merge: true });
   } catch (e) { console.warn('[invite] marquage consommé échoué', e.message); }
 
-  return { ok: true, clubId: inv.clubId, role: inv.role || 'lecteur', playerId: inv.playerId || null };
+  return { ok: true, clubId: inv.clubId, teamId: inv.teamId, role: inv.role || 'lecteur', playerId: inv.playerId || null };
 }
 
 window.cddData = {
   get ready() { return !!db; },
-  saveClub, saveTeam, savePlayer, saveMembership,
-  fetchMemberships, fetchClub, fetchTeams, fetchPlayers,
+  saveClub, saveTeam, savePlayer, saveMembership, removeTeamMembership,
+  fetchMemberships, fetchClubMemberships, fetchClub, fetchTeams, fetchPlayers,
   migrateLocalToCloud, pullCloudData,
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
-  consumeInvite, clubRoleCount, inviteUrl,
+  consumeInvite, clubRoleCount, teamRoleCount, inviteUrl,
+  // Phase D — admin clubs/équipes
+  fetchAllClubs, findUidByEmail, assignTeamCoach,
+  migrateMembershipsToTeamsModel,
   ADJOINT_CAP, INVITE_TTL_DAYS,
 };
 

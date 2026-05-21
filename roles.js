@@ -66,13 +66,62 @@
   // la boîte Gmail correspondante.
   const ADMIN_EMAIL = 'archi.tech.fr@gmail.com';
 
-  function currentRole() {
+  // ═══════════════════════════════════════════════════════════════════
+  //  CONTEXTE ACTIF (Phase D)
+  // ═══════════════════════════════════════════════════════════════════
+  // Le rôle d'un utilisateur dépend désormais de l'équipe active.
+  // Source de vérité : cdd_active_context = { clubId, teamId, matchId }.
+  // Lu via window.CDD si présent (data-adapter), sinon directement en LS.
+  function readActiveContext() {
     try {
-      const stored = localStorage.getItem('cdd_user_role');
-      if (stored && ROLES[stored.toUpperCase()]) return stored;
-      // Fallback : tout le monde est coach (proto pre-Auth).
-      return 'coach';
-    } catch (e) { return 'coach'; }
+      if (window.CDD && typeof window.CDD.getActiveContext === 'function') {
+        const ctx = window.CDD.getActiveContext();
+        if (ctx) return ctx;
+      }
+    } catch (e) {}
+    try {
+      const raw = localStorage.getItem('cdd_active_context');
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { clubId: null, teamId: null, matchId: null };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  MEMBERSHIP — normalisation (lit le NOUVEAU et l'ANCIEN format)
+  // ═══════════════════════════════════════════════════════════════════
+  // Phase D : memberships/{uid}_{clubId} portent une map `teams`
+  // { [teamId]: { role, playerId? } } et un champ dénormalisé `clubRole`.
+  //
+  // Tant que D4-D5 ne sont pas livrés, le cache local (cdd_memberships)
+  // peut contenir d'anciens documents au format plat { role, playerId? } :
+  // on les lit en rétro-compat, le rôle plat est promu en `clubRole` et
+  // étendu comme wildcard sur les équipes du club (`_legacyFlatRole`) —
+  // un coach migré en Phase C continue donc à coacher pendant la transition.
+  //
+  // Une fois D5 livré, le bloc « _legacy* » peut être supprimé sans
+  // état d'âme : toutes les memberships seront au format `teams`.
+  function _normalizeMembership(m) {
+    if (!m) return null;
+    if (m.teams && typeof m.teams === 'object' && !Array.isArray(m.teams)) {
+      return Object.assign({}, m, {
+        clubRole: m.clubRole || '',
+        teams: m.teams,
+        _legacyFlatRole: null,
+        _legacyPlayerId: null,
+      });
+    }
+    return Object.assign({}, m, {
+      clubRole: m.role || '',
+      teams: {},
+      _legacyFlatRole: m.role || '',
+      _legacyPlayerId: m.playerId || null,
+    });
+  }
+
+  // DEPRECATED — alias rétro-compat de effectiveRole(). À retirer quand
+  // les appelants externes auront migré.
+  function currentRole() {
+    return effectiveRole();
   }
 
   function roleLabel(roleId) {
@@ -107,44 +156,73 @@
     return { clubIds: null, teamIds: null, playerIds: null };
   }
 
-  // Permissions canoniques — utilisées par les écrans pour conditionner l'UI.
-  // Quand Phase 3 sera là, ces fonctions iront aussi vérifier les claims
-  // Firestore (server-side enforcement via rules).
+  // Permissions canoniques — Phase D, lues depuis les memberships.
+  // Miroir serveur : firestore.rules → canManageClub / canEditTeam.
+  // Les écrans utilisent surtout canDo() (ROLE_CAPS, indépendant du clubId) ;
+  // ces helpers servent quand on a besoin de vérifier un id précis.
   function canEditClub(clubId) {
-    if (atLeast('admin')) return true;
-    const scope = getScope();
-    if (!scope.clubIds) return atLeast('coach'); // owner local
-    return scope.clubIds.includes(clubId) && atLeast('coach');
+    if (isAdmin()) return true;
+    if (!clubId) { const ctx = readActiveContext(); clubId = ctx && ctx.clubId; }
+    const r = clubRoleOf(clubId);
+    return r === 'owner' || r === 'coach';
   }
 
-  function canEditTeam(teamId) {
-    if (atLeast('admin')) return true;
-    const scope = getScope();
-    if (!scope.teamIds) return atLeast('coach');
-    return scope.teamIds.includes(teamId) && atLeast('coach');
+  function canEditTeam(teamId, clubId) {
+    if (isAdmin()) return true;
+    const ctx = readActiveContext();
+    const cid = clubId || (ctx && ctx.clubId);
+    const tid = teamId || (ctx && ctx.teamId);
+    const r = teamRole(cid, tid);
+    return r === 'owner' || r === 'coach' || r === 'adjoint';
   }
 
-  function canViewPlayer(playerId) {
-    if (atLeast('coach')) return true;
-    const scope = getScope();
-    if (scope.playerIds && scope.playerIds.includes(playerId)) return true;
-    // Parent voit l'équipe par défaut (cas habituel)
-    return hasRole(['parent', 'joueur', 'dirigeant', 'lecteur']);
+  function canViewPlayer(playerId, teamId, clubId) {
+    if (isAdmin()) return true;
+    const ctx = readActiveContext();
+    const cid = clubId || (ctx && ctx.clubId);
+    // Toute membership sur le club suffit pour lire un joueur (l'isolation
+    // se fait au niveau club côté serveur).
+    if (cid && hasMembership(cid)) return true;
+    // Parent ciblé : voit son joueur même sans rôle sur l'équipe.
+    if (playerId) {
+      const ms = listMemberships();
+      const matched = ms.some(raw => {
+        const m = _normalizeMembership(raw);
+        if (m._legacyPlayerId === playerId) return true;
+        return m.teams && Object.values(m.teams)
+          .some(t => t && t.playerId === playerId);
+      });
+      if (matched) return true;
+    }
+    return false;
   }
 
-  // Rôle EFFECTIF de l'utilisateur courant. Source de vérité pour l'UI :
-  //  1. l'email admin → toujours 'admin' (gating super-utilisateur) ;
-  //  2. sinon cdd_user_role — posé à l'onboarding pour un coach qui crée
-  //     son club, et écrasé par le rôle de l'invitation à sa consommation
-  //     (firebase-sync.js → processPendingInvite). Le rôle est donc bien
-  //     « une conséquence du lien reçu », jamais saisi à la main.
-  function effectiveRole() {
+  // Rôle EFFECTIF de l'utilisateur courant — Phase D.
+  // Priorité :
+  //   1. email admin → toujours 'admin' (super-utilisateur)
+  //   2. rôle sur l'équipe ACTIVE (cdd_active_context.teamId)
+  //   3. rôle « club-wide » sur le club actif (clubRole / ancien format)
+  //   4. RÉTRO-COMPAT TEMPORAIRE : cdd_user_role en localStorage — sera
+  //      retiré une fois la migration D5 livrée. La membership devient
+  //      alors la source de vérité unique.
+  //   5. sans membership ni LS → 'lecteur' (jamais 'coach' par défaut :
+  //      principe de moindre privilège).
+  function effectiveRole(email) {
     if (isAdmin()) return 'admin';
+    const ctx = readActiveContext();
+    if (ctx && ctx.clubId && ctx.teamId) {
+      const r = teamRole(ctx.clubId, ctx.teamId, email);
+      if (r) return r;
+    }
+    if (ctx && ctx.clubId) {
+      const r = clubRoleOf(ctx.clubId, email);
+      if (r) return r;
+    }
     try {
       const r = localStorage.getItem('cdd_user_role');
       if (r && ROLES[r.toUpperCase()]) return r;
     } catch (e) {}
-    return 'coach';
+    return 'lecteur';
   }
 
   // Liste des rôles qu'un rôle donné (ou le rôle courant) peut inviter.
@@ -154,6 +232,37 @@
 
   function canInviteRole(targetRole) {
     return invitableRoles(effectiveRole()).includes(targetRole);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  CAPACITÉS PAR RÔLE — ce que chaque rôle a le droit de MODIFIER
+  // ═══════════════════════════════════════════════════════════════════
+  // Trois domaines d'édition (décision produit 2026-05-21) :
+  //   'compo'    → composition d'équipe, convocations, match en direct
+  //   'effectif' → statuts joueurs, notation/stats, création joueurs/équipes
+  //   'club'     → logo et informations du club
+  // Coach principal / owner / admin : les trois. Coach adjoint : compo +
+  // effectif (PAS la gestion du club). Parent / joueur / lecteur : aucune
+  // (lecture seule intégrale). Miroir serveur : firestore.rules →
+  // canEditClub (domaine 'club') et canEditData (domaines compo/effectif).
+  const ROLE_CAPS = {
+    admin:     ['compo', 'effectif', 'club'],
+    owner:     ['compo', 'effectif', 'club'],
+    coach:     ['compo', 'effectif', 'club'],
+    dirigeant: ['compo', 'effectif', 'club'],
+    ecole:     ['compo', 'effectif', 'club'],
+    adjoint:   ['compo', 'effectif'],
+    parent:    [],
+    joueur:    [],
+    lecteur:   [],
+  };
+  // Vrai si le rôle courant peut modifier le domaine demandé.
+  function canDo(capability) {
+    return (ROLE_CAPS[effectiveRole()] || []).includes(capability);
+  }
+  // Vrai si le rôle courant est en lecture seule intégrale (aucune capacité).
+  function isReadOnly() {
+    return (ROLE_CAPS[effectiveRole()] || []).length === 0;
   }
 
   function canDeleteClub() {
@@ -228,9 +337,111 @@
     return listMemberships(email).some(m => m.clubId === clubId);
   }
 
-  function membershipRole(clubId, email) {
+  // ═══════════════════════════════════════════════════════════════════
+  //  RÔLES PAR ÉQUIPE (Phase D)
+  // ═══════════════════════════════════════════════════════════════════
+  function _findMembership(clubId, email) {
+    if (!clubId) return null;
     const m = listMemberships(email).find(x => x.clubId === clubId);
-    return m ? m.role : null;
+    return m ? _normalizeMembership(m) : null;
+  }
+
+  // Rôle « club-wide » : owner/coach principal sur AU MOINS une équipe,
+  // exposé via le champ dénormalisé `clubRole`. Sert au gating club-level
+  // (créer une équipe, éditer le doc club). Rétro-compat : si la membership
+  // est au format plat, on renvoie `role` directement.
+  function clubRoleOf(clubId, email) {
+    if (isAdmin()) return 'admin';
+    const m = _findMembership(clubId, email);
+    if (!m) return '';
+    return m.clubRole || m._legacyFlatRole || '';
+  }
+
+  // Rôle de l'utilisateur sur UNE équipe précise. Miroir firestore.rules
+  // → teamRole(clubId, teamId). Rétro-compat : ancien format plat = wildcard
+  // sur toutes les équipes du club (à retirer une fois D5 livré).
+  function teamRole(clubId, teamId, email) {
+    if (isAdmin()) return 'admin';
+    if (!clubId) return '';
+    const m = _findMembership(clubId, email);
+    if (!m) return '';
+    if (teamId && m.teams && m.teams[teamId] && m.teams[teamId].role) {
+      return m.teams[teamId].role;
+    }
+    if (m._legacyFlatRole) return m._legacyFlatRole;
+    return '';
+  }
+  // Alias parlant côté UI.
+  function myRoleOnTeam(clubId, teamId, email) {
+    return teamRole(clubId, teamId, email);
+  }
+  function activeTeamRole(email) {
+    const ctx = readActiveContext();
+    return teamRole(ctx && ctx.clubId, ctx && ctx.teamId, email);
+  }
+
+  // « Mes rôles » — un par équipe. Utilisé par la carte des Réglages.
+  // Renvoie [{ clubId, clubName, teamId, teamName, role, playerId,
+  //   isActive, legacy }]. Pour une membership encore au format plat, une
+  // seule ligne « toutes les équipes du club » avec legacy=true.
+  function listMyTeamRoles(email) {
+    const ms = listMemberships(email);
+    const ctx = readActiveContext();
+
+    let allClubs = [];
+    try { if (window.CDD && window.CDD.getAllClubs) allClubs = window.CDD.getAllClubs() || []; } catch (e) {}
+    if (allClubs.length === 0) {
+      try { allClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]'); } catch (e) { allClubs = []; }
+    }
+    let allTeams = [];
+    try { allTeams = JSON.parse(localStorage.getItem('arb_teams') || '[]'); } catch (e) { allTeams = []; }
+    const clubsById = {};
+    allClubs.forEach(c => { if (c && c.id) clubsById[c.id] = c; });
+    const teamsById = {};
+    allTeams.forEach(t => { if (t && t.id) teamsById[t.id] = t; });
+
+    const out = [];
+    ms.forEach(raw => {
+      const m = _normalizeMembership(raw);
+      const club = clubsById[m.clubId];
+      const clubName = (club && club.name) || m.clubId;
+      const teamKeys = Object.keys(m.teams || {});
+      if (teamKeys.length > 0) {
+        teamKeys.forEach(tid => {
+          const entry = m.teams[tid] || {};
+          const team = teamsById[tid];
+          out.push({
+            clubId: m.clubId, clubName,
+            teamId: tid, teamName: (team && team.name) || tid,
+            role: entry.role || '',
+            playerId: entry.playerId || null,
+            isActive: !!(ctx && ctx.clubId === m.clubId && ctx.teamId === tid),
+            legacy: false,
+          });
+        });
+      } else if (m._legacyFlatRole) {
+        out.push({
+          clubId: m.clubId, clubName,
+          teamId: null,
+          teamName: 'Toutes les équipes du club',
+          role: m._legacyFlatRole,
+          playerId: m._legacyPlayerId || null,
+          isActive: !!(ctx && ctx.clubId === m.clubId),
+          legacy: true,
+        });
+      }
+    });
+    out.sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      const cn = (a.clubName || '').localeCompare(b.clubName || '');
+      if (cn) return cn;
+      return (a.teamName || '').localeCompare(b.teamName || '');
+    });
+    return out;
+  }
+
+  function membershipRole(clubId, email) {
+    return clubRoleOf(clubId, email) || null;
   }
 
   function addMembership(email, clubId, role, opts) {
@@ -614,15 +825,19 @@
 
   // Expose
   window.CDD_ROLES = {
-    ROLES, OWNER_EMAIL, ADMIN_EMAIL, INVITE_MATRIX,
+    ROLES, OWNER_EMAIL, ADMIN_EMAIL, INVITE_MATRIX, ROLE_CAPS,
     currentRole, effectiveRole, roleLabel, roleWeight, hasRole, atLeast,
     getScope, canEditClub, canEditTeam, canViewPlayer,
     canInviteRole, invitableRoles, canDeleteClub,
+    canDo, isReadOnly,
     createInvitationDraft, listInvitations,
     // Memberships
     getCurrentEmail, isAdmin, listMemberships, listAllMemberships, hasMembership,
     membershipRole, addMembership, removeMembership, deleteClubAndData,
     myClubIds, isVisitorMode, runMigrationIfNeeded, purgeBadAutoMemberships,
+    // Phase D — rôles par équipe & multi-rôles
+    readActiveContext, clubRoleOf, teamRole, myRoleOnTeam,
+    activeTeamRole, listMyTeamRoles,
     // Diagnostic
     diagnose,
   };

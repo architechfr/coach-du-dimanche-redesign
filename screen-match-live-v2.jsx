@@ -694,6 +694,11 @@ function ScreenMatchV2({ go, tweaks }) {
   const [showSummaryShare, setShowSummaryShare] = useStateMV(false);
 
   const Mref = useRefMV(null);
+
+  // #C5 — piloter le match en direct = capacité 'compo'. Parent / joueur /
+  // lecteur peuvent suivre le score et la timeline, pas saisir d'évènement.
+  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('compo');
   if (!Mref.current) {
     try {
       const existing = localStorage.getItem('cdd_match_current');
@@ -1081,6 +1086,7 @@ function ScreenMatchV2({ go, tweaks }) {
 
   // ─── Undo ──────────────────────────────────────────
   const handleUndo = () => {
+    if (!canEdit) return;
     if (M.ev.length === 0) return;
     const last = M.ev[M.ev.length - 1];
     if (last.tp === 'goal') { if (last.t === 'A') M.sA--; else M.sB--; }
@@ -1174,12 +1180,26 @@ function ScreenMatchV2({ go, tweaks }) {
 
       {!M.notStarted && (
         <>
-          <ActionsMatrix M={M} disabled={disabled}
-            onGoal={(side) => setActiveFlow({ kind:'goal', side })}
-            onCard={handleCard}
-            onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
-            onInjury={handleInjury}/>
+          {/* #C5 — bandeau lecture seule + masquage des contrôles d'édition. */}
+          {!canEdit && (
+            <div style={{
+              margin:'10px 14px', padding:'9px 13px', borderRadius:10, fontSize:12,
+              background:'rgba(125,211,252,0.08)', border:'1px solid rgba(125,211,252,0.30)',
+              color:'#7dd3fc', display:'flex', alignItems:'center', gap:7,
+            }}>
+              <span>👁</span><span>Mode lecture seule — tu suis le match, sans le piloter.</span>
+            </div>
+          )}
 
+          {canEdit && (
+            <ActionsMatrix M={M} disabled={disabled}
+              onGoal={(side) => setActiveFlow({ kind:'goal', side })}
+              onCard={handleCard}
+              onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
+              onInjury={handleInjury}/>
+          )}
+
+          {canEdit && (
           <div className="mv-control-row">
             {M.st === 'live' && <button className="mv-ctrl mv-ctrl-pause" onClick={togglePause}>⏸ Pause</button>}
             {M.st === 'paused' && !M.notStarted && M.ch <= M.cfg.hs && (
@@ -1208,9 +1228,10 @@ function ScreenMatchV2({ go, tweaks }) {
               }}>🏁 Fin de match</button>
             ) : null}
           </div>
+          )}
 
           <EventsTimeline M={M} onUndo={handleUndo}
-                          onEdit={(idx) => setEditingEvent({idx, ev: M.ev[idx]})}/>
+                          onEdit={(idx) => { if (canEdit) setEditingEvent({idx, ev: M.ev[idx]}); }}/>
 
           {M.st === 'finished' && (
             <>
@@ -1406,6 +1427,7 @@ function PreMatchSetup({ M, onStart, rerender }) {
   ];
 
   const applyAndStart = () => {
+    if (!canEdit) return;
     if (MATCH_HELPERS.setOpponent) MATCH_HELPERS.setOpponent(M, oppName.trim() || 'Adversaire', oppColor, { color2: oppColor2 });
     M.cfg = M.cfg || {};
     M.cfg.hd  = parseInt(hd, 10)  || 45;
@@ -1512,7 +1534,15 @@ function PreMatchSetup({ M, onStart, rerender }) {
         )}
       </div>
 
-      <button className="mv-prematch-btn" onClick={applyAndStart}><span>▶ LANCER LE MATCH</span></button>
+      {canEdit ? (
+        <button className="mv-prematch-btn" onClick={applyAndStart}><span>▶ LANCER LE MATCH</span></button>
+      ) : (
+        <div style={{
+          margin:'12px 14px 0', padding:'11px 14px', borderRadius:10, fontSize:12,
+          background:'rgba(125,211,252,0.08)', border:'1px solid rgba(125,211,252,0.30)',
+          color:'#7dd3fc', textAlign:'center',
+        }}>👁 Lecture seule — seul un coach peut lancer le match.</div>
+      )}
     </div>
   );
 }

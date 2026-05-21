@@ -10,23 +10,31 @@
    ============================================================ */
 
 function InviteManager() {
-  // ── Matrice d'invitation : ce que MON rôle a le droit de générer ──────
+  // Club et équipe ciblés par l'invitation = contexte actif (Phase D :
+  // une invitation cible TOUJOURS une équipe précise).
+  const activeClub = (window.CDD && window.CDD.getActiveClub && window.CDD.getActiveClub()) || null;
+  const club = { ...(window.CDD_CLUB || {}), ...(activeClub || {}) };
+  const team = (window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam()) || {};
+
+  // ── Matrice d'invitation : ce que MON rôle SUR CETTE ÉQUIPE peut inviter.
   // Source de vérité : roles.js → INVITE_MATRIX (et firestore.rules côté
-  // serveur). On n'affiche QUE les rôles autorisés pour le rôle courant.
-  const myRole = (window.CDD_ROLES && window.CDD_ROLES.effectiveRole)
-    ? window.CDD_ROLES.effectiveRole() : 'coach';
-  const myRoleLabel = (window.CDD_ROLES && window.CDD_ROLES.roleLabel)
-    ? window.CDD_ROLES.roleLabel(myRole) : myRole;
-  const allowedRoles = (window.CDD_ROLES && window.CDD_ROLES.invitableRoles)
-    ? window.CDD_ROLES.invitableRoles(myRole) : ['parent', 'joueur', 'lecteur'];
+  // serveur). On n'affiche QUE les rôles autorisés pour le rôle SUR L'ÉQUIPE
+  // ciblée — pas le rôle global, qui n'a plus de sens en Phase D.
+  const R = window.CDD_ROLES;
+  const isAdminUser = !!(R && R.isAdmin && R.isAdmin());
+  const myRole = isAdminUser
+    ? 'admin'
+    : (R && R.teamRole && club.id && team.id) ? R.teamRole(club.id, team.id) : '';
+  const myRoleLabel = (R && R.roleLabel) ? R.roleLabel(myRole || 'lecteur') : (myRole || 'lecteur');
+  const allowedRoles = (R && R.invitableRoles) ? R.invitableRoles(myRole) : [];
 
   // Catalogue complet. Le rôle « coach principal » n'y figure jamais : un
   // compte coach est créé par l'administrateur, pas via un lien.
   const ALL_ROLE_CHOICES = [
-    { id: 'adjoint', l: 'Coach adjoint', d: 'Peut éditer le club · max 5' },
+    { id: 'adjoint', l: 'Coach adjoint', d: 'Peut éditer cette équipe · max 5' },
     { id: 'parent',  l: 'Parent',  d: 'Suit un joueur · lecture seule' },
     { id: 'joueur',  l: 'Joueur',  d: 'Voit sa fiche · lecture seule' },
-    { id: 'lecteur', l: 'Lecteur', d: 'Lecture seule du club' },
+    { id: 'lecteur', l: 'Lecteur', d: 'Lecture seule de l\'équipe' },
   ];
   const ROLE_CHOICES = ALL_ROLE_CHOICES.filter(r => allowedRoles.includes(r.id));
 
@@ -39,10 +47,6 @@ function InviteManager() {
   const [invites, setInvites] = React.useState(null);
   const [copied, setCopied]   = React.useState(false);
 
-  // Club actif : on fusionne CDD_CLUB (porte le nom) et getActiveClub (porte l'id).
-  const activeClub = (window.CDD && window.CDD.getActiveClub && window.CDD.getActiveClub()) || null;
-  const club = { ...(window.CDD_CLUB || {}), ...(activeClub || {}) };
-  const team = (window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam()) || {};
   const players = window.CDD_PLAYERS || [];
   const signedIn = !!(window.cddAuth && window.cddAuth.currentUser && window.cddAuth.currentUser());
 
@@ -138,24 +142,36 @@ function InviteManager() {
     );
   }
 
+  // Phase D — une invitation cible TOUJOURS une équipe précise. Sans équipe
+  // active, on bloque proprement avec une instruction claire.
+  if (!team.id) {
+    return (
+      <div className="inv-box inv-box-empty">
+        Sélectionne d'abord une équipe — chaque invitation cible une équipe précise.
+      </div>
+    );
+  }
+
   // Un lecteur (ou tout rôle sans droit d'invitation) ne voit pas le module.
   if (ROLE_CHOICES.length === 0) {
     return (
       <div className="inv-box inv-box-empty">
-        Ton rôle ({myRoleLabel}) ne permet pas de générer des liens d'invitation.
+        Ton rôle sur {team.name || 'cette équipe'} ({myRoleLabel}) ne permet pas
+        de générer des liens d'invitation.
       </div>
     );
   }
 
   return (
     <div className="inv-box">
-      {/* Rappel : ce que mon rôle peut inviter */}
+      {/* Rappel : ce que mon rôle SUR CETTE ÉQUIPE peut inviter */}
       <div style={{
         fontSize: 11.5, lineHeight: 1.5, color: 'var(--tx-3, rgba(255,255,255,0.6))',
         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
         borderRadius: 8, padding: '8px 10px', marginBottom: 12,
       }}>
-        En tant que <b style={{ color: 'var(--ac, #c8f169)' }}>{myRoleLabel}</b>,
+        En tant que <b style={{ color: 'var(--ac, #c8f169)' }}>{myRoleLabel}</b>
+        {' '}de <b>{team.name || 'cette équipe'}</b>,
         tu peux inviter : {ROLE_CHOICES.map(r => r.l.toLowerCase()).join(', ')}.
       </div>
 

@@ -359,6 +359,12 @@ function ScreenLineup({ go, tweaks }) {
   const [showFormationPicker, setShowFormationPicker] = useState(false);
   const [reserveSearch, setReserveSearch] = useState('');
 
+  // #C5 — composer l'équipe = capacité 'compo'. Parent / joueur / lecteur
+  // consultent la compo sans pouvoir la modifier. Fallback éditable si le
+  // module rôles n'est pas chargé (ne jamais bloquer le coach).
+  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('compo');
+
   // Garde-fou : si lineup.formation est inconnue, prendre 4-3-3 par défaut (12 emplacements)
   const slots = CDD_FORMATIONS[lineup.formation] || CDD_FORMATIONS['4-3-3'];
   const playerOf = (pid) => pid && CDD_PLAYERS.find(p => p.id === pid);
@@ -393,6 +399,7 @@ function ScreenLineup({ go, tweaks }) {
 
   // Change formation
   const changeFormation = (newF) => {
+    if (!canEdit) return;
     const newSlots = CDD_FORMATIONS[newF];
     const currentIds = Object.keys(lineup.starters).sort((a,b) => +a - +b).map(k => lineup.starters[k]).filter(Boolean);
     const newStarters = {};
@@ -415,6 +422,7 @@ function ScreenLineup({ go, tweaks }) {
     return a.pid === b.pid;
   };
   const handleTap = (target) => {
+    if (!canEdit) return;
     if (!selection) { setSelection(target); return; }
     if (sameTarget(selection, target)) { setSelection(null); return; }
     setLineup(l => doSwap(l, selection, target));
@@ -475,6 +483,7 @@ function ScreenLineup({ go, tweaks }) {
 
   // Retirer du terrain → réserve
   const removeFromPitch = (slotIdx) => {
+    if (!canEdit) return;
     setLineup(l => {
       const next = { ...l, starters: {...l.starters}, bench: [...l.bench], reserve: [...l.reserve] };
       const pid = next.starters[slotIdx];
@@ -489,6 +498,7 @@ function ScreenLineup({ go, tweaks }) {
 
   // Reset formation initial
   const resetLineup = () => {
+    if (!canEdit) return;
     if (!confirm("Réinitialiser la compo aux titulaires FFF ?")) return;
     const activeTeam = window.CDD?.getActiveTeam?.();
     try {
@@ -528,12 +538,24 @@ function ScreenLineup({ go, tweaks }) {
         </button>
       </div>
 
+      {/* #C5 — bandeau lecture seule pour les rôles sans capacité 'compo'. */}
+      {!canEdit && (
+        <div style={{
+          margin:'10px 14px 0', padding:'9px 13px', borderRadius:10, fontSize:12,
+          background:'rgba(125,211,252,0.08)', border:'1px solid rgba(125,211,252,0.30)',
+          color:'#7dd3fc', display:'flex', alignItems:'center', gap:7,
+        }}>
+          <span>👁</span><span>Mode lecture seule — tu peux consulter la compo, pas la modifier.</span>
+        </div>
+      )}
+
       <div className="lu-top">
         <div className="lu-top-l">
           <span className="lu-top-k">FORMATION{saved && <em className="lu-saved"> · ✓ Enregistré</em>}</span>
-          <button className="lu-formation-current" onClick={() => setShowFormationPicker(true)}>
+          <button className="lu-formation-current"
+                  onClick={() => { if (canEdit) setShowFormationPicker(true); }}>
             <b>{lineup.formation}</b>
-            <span className="lu-formation-arr">▾</span>
+            {canEdit && <span className="lu-formation-arr">▾</span>}
           </button>
         </div>
         <div className="lu-top-r">
@@ -667,8 +689,8 @@ function ScreenLineup({ go, tweaks }) {
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
           </button>
         ))}
-        {/* Toggle banc 3 ↔ 5 (foot amateur strict, jamais 4) */}
-        {lineup.bench.length === 3 && lineup.reserve.length >= 2 && (
+        {/* Toggle banc 3 ↔ 5 (foot amateur strict, jamais 4) — capacité 'compo' */}
+        {canEdit && lineup.bench.length === 3 && lineup.reserve.length >= 2 && (
           <button
             className="lu-bench-card"
             style={{minWidth:110, justifyContent:"center", alignItems:"center", display:"flex", flexDirection:"column", gap:2, fontSize:11, fontWeight:800, color:"var(--acc, #c8f169)", borderStyle:"dashed", cursor:"pointer"}}
@@ -684,7 +706,7 @@ function ScreenLineup({ go, tweaks }) {
             <span>Banc → 5</span>
           </button>
         )}
-        {lineup.bench.length === 5 && (
+        {canEdit && lineup.bench.length === 5 && (
           <button
             className="lu-bench-card"
             style={{minWidth:110, justifyContent:"center", alignItems:"center", display:"flex", flexDirection:"column", gap:2, fontSize:11, fontWeight:800, color:"#f97316", borderStyle:"dashed", borderColor:"rgba(249,115,22,0.45)", cursor:"pointer"}}
@@ -733,7 +755,9 @@ function ScreenLineup({ go, tweaks }) {
       </div>
 
       <div className="lu-actions">
-        <button className="btn-cta ghost" onClick={resetLineup} title="Réinitialiser à la compo FFF">↻ Reset</button>
+        {canEdit && (
+          <button className="btn-cta ghost" onClick={resetLineup} title="Réinitialiser à la compo FFF">↻ Reset</button>
+        )}
         <button className="btn-cta ghost" onClick={()=>go("home")}>← Retour</button>
         <button className="btn-cta" onClick={()=>go("match")} disabled={!allFilled}>
           <span>{allFilled ? "COUP D'ENVOI" : `${slots.length - starterPlayers.length} POSTE(S) VIDE(S)`}</span>

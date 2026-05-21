@@ -1,0 +1,402 @@
+/* global React */
+/* ============================================================
+   ADMIN CLUBS PANEL — Phase D (D4e)
+   ============================================================
+   Réservé à l'admin (archi.tech.fr@gmail.com). Permet de :
+     - Lister tous les clubs (lecture globale)
+     - Créer un nouveau club
+     - Pour chaque club : lister/créer ses équipes
+     - Pour chaque équipe : voir le coach principal actuel + assigner un
+       coach par (email + uid) — un seul coach par équipe.
+
+   L'assignation nécessite l'UID Firebase de la personne. Si elle a déjà
+   une membership (n'importe quel club), on retrouve son UID automatiquement
+   via son email. Sinon, l'admin doit le saisir à la main.
+
+   Source de vérité serveur : firestore.rules → `memberships/{uid}_{clubId}`
+   avec map `teams: { [teamId]: { role } }`. canManageClub (admin/owner/coach)
+   couvre les opérations ici.
+
+   Expose window.AdminClubsPanel — monté à la demande dans les Réglages.
+============================================================ */
+
+function AdminClubsPanel({ onClose }) {
+  const R = window.CDD_ROLES;
+  const D = window.cddData;
+  const isAdmin = !!(R && R.isAdmin && R.isAdmin());
+
+  const [phase, setPhase]   = React.useState('loading'); // loading | ready | error
+  const [error, setError]   = React.useState('');
+  const [clubs, setClubs]   = React.useState([]);       // [{id, name, ...}]
+  const [tick, setTick]     = React.useState(0);         // force reload
+
+  // Détail club ouvert : { clubId, teams[], memberships[] }
+  const [openId, setOpenId] = React.useState(null);
+  const [detail, setDetail] = React.useState(null);
+  const [detailBusy, setDetailBusy] = React.useState(false);
+
+  // Migration Phase C → Phase D (D5)
+  const [migBusy, setMigBusy] = React.useState(false);
+  const [migResult, setMigResult] = React.useState(null);
+
+  const reload = () => setTick(t => t + 1);
+
+  const runMigration = async () => {
+    if (!window.confirm(
+      'Migrer toutes les memberships vers le modèle Phase D (rôle par équipe) ?\n\n'
+      + '  • Les memberships déjà au nouveau format sont ignorées (idempotent).\n'
+      + '  • Les coachs principaux Phase C deviennent coach de TOUTES les équipes existantes de leur club.\n'
+      + '  • Tu pourras ensuite affiner chaque assignation via le panneau.\n\n'
+      + 'Tu peux relancer cette migration sans risque.'
+    )) return;
+    setMigBusy(true); setMigResult(null);
+    try {
+      const res = await D.migrateMembershipsToTeamsModel();
+      setMigResult(res);
+      reload();
+    } catch (e) {
+      setMigResult({ ok: false, error: (e && e.message) || String(e) });
+    } finally {
+      setMigBusy(false);
+    }
+  };
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      setPhase('loading'); setError('');
+      if (!isAdmin) { if (alive) { setPhase('error'); setError('Réservé à l\'administrateur.'); } return; }
+      if (!D || !D.ready) { if (alive) { setPhase('error'); setError('Service cloud indisponible.'); } return; }
+      try {
+        const list = await D.fetchAllClubs();
+        list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        if (alive) { setClubs(list); setPhase('ready'); }
+      } catch (e) {
+        if (alive) { setPhase('error'); setError('Lecture impossible : ' + ((e && e.message) || e)); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [isAdmin, tick]);
+
+  // Charge teams + memberships du club ouvert
+  React.useEffect(() => {
+    let alive = true;
+    if (!openId) { setDetail(null); return; }
+    (async () => {
+      setDetailBusy(true);
+      try {
+        const [teams, memberships] = await Promise.all([
+          D.fetchTeams(openId),
+          D.fetchClubMemberships(openId),
+        ]);
+        teams.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        if (alive) setDetail({ clubId: openId, teams, memberships });
+      } catch (e) {
+        if (alive) setDetail({ clubId: openId, teams: [], memberships: [], error: (e && e.message) || String(e) });
+      } finally {
+        if (alive) setDetailBusy(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [openId, tick, D]);
+
+  // ── Actions ────────────────────────────────────────────────
+  const createClub = async () => {
+    const name = window.prompt('Nom du nouveau club :');
+    if (!name || !name.trim()) return;
+    const id = 'club_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+    try {
+      await D.saveClub({ id, name: name.trim() });
+      reload();
+    } catch (e) { alert('Création impossible : ' + ((e && e.message) || e)); }
+  };
+
+  const deleteClub = async (club) => {
+    if (!window.confirm('Supprimer le club « ' + (club.name || club.id) + ' » ?\n\n'
+      + 'Les équipes et joueurs liés ne seront PAS supprimés automatiquement.')) return;
+    try {
+      // L'API n'expose pas deleteClub côté cddData. On utilise un setDoc
+      // direct ? Non — on n'a pas accès à `db`. Pour D4, on prévient
+      // l'admin que la suppression se fait dans la console Firebase.
+      alert('La suppression d\'un club doit se faire pour l\'instant dans la console Firebase ' +
+            '(/clubs/' + club.id + '). Cette opération sera ajoutée au panneau plus tard.');
+    } catch (e) { alert('Suppression impossible : ' + ((e && e.message) || e)); }
+  };
+
+  const createTeam = async (club) => {
+    const name = window.prompt('Nom de l\'équipe à créer dans « ' + (club.name || club.id) + ' » :');
+    if (!name || !name.trim()) return;
+    const category = window.prompt('Catégorie (ex. Sénior, U13, +35) — facultatif :', '') || '';
+    const id = 'team_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+    try {
+      await D.saveTeam({ id, clubId: club.id, name: name.trim(), category: category.trim() });
+      reload();
+    } catch (e) { alert('Création impossible : ' + ((e && e.message) || e)); }
+  };
+
+  const assignCoach = async (club, team, currentCoachUid) => {
+    const email = window.prompt('Email du futur coach principal de « ' + (team.name || team.id) + ' » :');
+    if (!email || !email.trim()) return;
+    const cleanEmail = email.trim().toLowerCase();
+    let uid = null;
+    try { uid = await D.findUidByEmail(cleanEmail); } catch (e) {}
+    if (!uid) {
+      uid = window.prompt('Cette personne n\'a encore aucune membership cloud.\n\n'
+        + 'Saisis son UID Firebase (visible dans la console Firebase → Authentication).\n'
+        + 'Note : la personne doit s\'être déjà connectée à l\'app au moins une fois.');
+      if (!uid || !uid.trim()) return;
+      uid = uid.trim();
+    }
+    if (currentCoachUid && currentCoachUid !== uid) {
+      if (!window.confirm('Cette équipe a déjà un coach principal (UID ' + currentCoachUid + ').\n\n'
+        + 'Le remplacer par ' + cleanEmail + ' ?\n'
+        + 'L\'ancien coach perdra son rôle « coach » sur cette équipe — il gardera ses autres rattachements.')) return;
+      try {
+        // Rétrograde l'ancien coach en retirant SON entrée teams[teamId].
+        await D.removeTeamMembership(currentCoachUid, club.id, team.id);
+      } catch (e) {
+        if (!window.confirm('Échec du retrait de l\'ancien coach : ' + ((e && e.message) || e)
+          + '\n\nContinuer quand même l\'assignation du nouveau ?')) return;
+      }
+    }
+    try {
+      await D.assignTeamCoach({ uid, email: cleanEmail, clubId: club.id, teamId: team.id });
+      reload();
+    } catch (e) { alert('Assignation impossible : ' + ((e && e.message) || e)); }
+  };
+
+  // ── Helpers d'affichage ────────────────────────────────────
+  const coachOfTeam = (memberships, teamId) => {
+    for (const m of memberships) {
+      const t = (m.teams || {})[teamId];
+      if (t && t.role === 'coach') return m;
+    }
+    return null;
+  };
+  const teamRoleCounts = (memberships, teamId) => {
+    const counts = {};
+    for (const m of memberships) {
+      const t = (m.teams || {})[teamId];
+      if (!t || !t.role) continue;
+      counts[t.role] = (counts[t.role] || 0) + 1;
+    }
+    return counts;
+  };
+
+  // ── Render ─────────────────────────────────────────────────
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:500,
+      display:'flex', justifyContent:'center', alignItems:'flex-start', overflow:'auto', padding:20,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', maxWidth:640, background:'#0B1320', borderRadius:16,
+        border:'1px solid rgba(255,255,255,0.12)', padding:20, color:'#fff',
+      }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14}}>
+          <div>
+            <div style={{fontSize:10.5, fontWeight:800, letterSpacing:'.12em',
+                         color:'#c8f169', textTransform:'uppercase'}}>Admin</div>
+            <div style={{fontSize:20, fontWeight:900, marginTop:2}}>Clubs & équipes</div>
+            <div style={{fontSize:12, color:'rgba(255,255,255,0.55)', marginTop:2}}>
+              Crée des clubs, des équipes, et assigne le coach principal de chaque équipe.
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background:'transparent', border:'none', color:'#fff', fontSize:22, cursor:'pointer',
+            padding:'4px 8px',
+          }}>✕</button>
+        </div>
+
+        {phase === 'loading' && (
+          <div style={{padding:20, textAlign:'center', color:'rgba(255,255,255,0.55)'}}>
+            Chargement…
+          </div>
+        )}
+        {phase === 'error' && (
+          <div style={{padding:14, borderRadius:10, background:'rgba(239,68,68,0.12)',
+                       border:'1px solid rgba(239,68,68,0.35)', color:'#fca5a5'}}>
+            {error}
+          </div>
+        )}
+
+        {phase === 'ready' && (
+          <>
+            {/* Migration Phase C → Phase D (D5) — idempotent. */}
+            <div style={{
+              padding:'10px 12px', borderRadius:10, marginBottom:12,
+              background:'rgba(251,191,36,0.08)',
+              border:'1px solid rgba(251,191,36,0.25)',
+            }}>
+              <div style={{display:'flex', justifyContent:'space-between',
+                           alignItems:'center', gap:10}}>
+                <div style={{fontSize:11.5, color:'rgba(255,255,255,0.75)', lineHeight:1.5}}>
+                  <b style={{color:'#fbbf24'}}>Migration des memberships</b><br/>
+                  Convertit les rattachements pré-D (rôle plat) vers le modèle
+                  par équipe. À lancer UNE fois après publication des règles.
+                </div>
+                <button onClick={runMigration} disabled={migBusy} style={{
+                  background:'rgba(251,191,36,0.18)', color:'#fbbf24',
+                  border:'1px solid rgba(251,191,36,0.45)', borderRadius:7,
+                  padding:'6px 11px', fontSize:11.5, fontWeight:700,
+                  cursor: migBusy ? 'wait' : 'pointer', flexShrink:0,
+                  opacity: migBusy ? 0.6 : 1,
+                }}>{migBusy ? 'Migration…' : 'Migrer'}</button>
+              </div>
+              {migResult && (
+                <div style={{
+                  marginTop:8, fontSize:11.5, lineHeight:1.5,
+                  color: migResult.ok ? '#c8f169' : '#fca5a5',
+                }}>
+                  {migResult.ok ? (
+                    <>
+                      ✓ {migResult.counts.converted} converti{migResult.counts.converted > 1 ? 's' : ''} ·
+                      {' '}{migResult.counts.alreadyOk} déjà OK ·
+                      {' '}{migResult.counts.skipped} sauté{migResult.counts.skipped > 1 ? 's' : ''} ·
+                      {' '}{migResult.counts.errors} erreur{migResult.counts.errors > 1 ? 's' : ''}
+                    </>
+                  ) : (
+                    <>✗ {migResult.error || migResult.reason || 'Échec inconnu'}</>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+              <div style={{fontSize:11.5, color:'rgba(255,255,255,0.55)'}}>
+                {clubs.length} club{clubs.length > 1 ? 's' : ''} en base
+              </div>
+              <button onClick={createClub} style={{
+                background:'#c8f169', color:'#062012', border:'none', borderRadius:9,
+                padding:'7px 12px', fontWeight:800, cursor:'pointer', fontSize:12.5,
+              }}>+ Créer un club</button>
+            </div>
+
+            {clubs.length === 0 && (
+              <div style={{padding:14, color:'rgba(255,255,255,0.55)', fontSize:13, textAlign:'center'}}>
+                Aucun club encore. Crée le premier.
+              </div>
+            )}
+
+            {clubs.map(c => {
+              const isOpen = openId === c.id;
+              const d = isOpen ? detail : null;
+              return (
+                <div key={c.id} style={{
+                  marginBottom:8, borderRadius:11,
+                  background:'rgba(255,255,255,0.03)',
+                  border:'1px solid rgba(255,255,255,0.07)',
+                }}>
+                  <div style={{
+                    display:'flex', alignItems:'center', gap:10, padding:'11px 12px',
+                    cursor:'pointer',
+                  }} onClick={() => setOpenId(isOpen ? null : c.id)}>
+                    <div style={{fontSize:17, opacity:0.8}}>{isOpen ? '▾' : '▸'}</div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontWeight:800, fontSize:14}}>{c.name || '(sans nom)'}</div>
+                      <div style={{fontSize:11, color:'rgba(255,255,255,0.5)', marginTop:2}}>
+                        id : {c.id}
+                      </div>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); deleteClub(c); }} style={{
+                      background:'transparent', border:'1px solid rgba(239,68,68,0.35)',
+                      color:'#fca5a5', borderRadius:7, padding:'4px 8px',
+                      fontSize:11, cursor:'pointer',
+                    }} title="Supprimer ce club">Supprimer</button>
+                  </div>
+
+                  {isOpen && (
+                    <div style={{borderTop:'1px solid rgba(255,255,255,0.06)', padding:12}}>
+                      {detailBusy && <div style={{fontSize:12, color:'rgba(255,255,255,0.5)'}}>Chargement…</div>}
+                      {d && d.error && (
+                        <div style={{padding:8, borderRadius:8, background:'rgba(239,68,68,0.12)',
+                                     color:'#fca5a5', fontSize:12, marginBottom:8}}>
+                          {d.error}
+                        </div>
+                      )}
+                      {d && !d.error && (
+                        <>
+                          <div style={{display:'flex', justifyContent:'space-between',
+                                       alignItems:'center', marginBottom:8}}>
+                            <div style={{fontSize:10.5, fontWeight:800, letterSpacing:'.1em',
+                                         color:'rgba(255,255,255,0.55)', textTransform:'uppercase'}}>
+                              Équipes ({d.teams.length})
+                            </div>
+                            <button onClick={() => createTeam(c)} style={{
+                              background:'rgba(200,241,105,0.18)', color:'#c8f169',
+                              border:'1px solid rgba(200,241,105,0.4)', borderRadius:7,
+                              padding:'4px 10px', fontSize:11.5, fontWeight:700, cursor:'pointer',
+                            }}>+ Équipe</button>
+                          </div>
+                          {d.teams.length === 0 && (
+                            <div style={{fontSize:12, color:'rgba(255,255,255,0.5)',
+                                         padding:'6px 0'}}>
+                              Aucune équipe dans ce club.
+                            </div>
+                          )}
+                          {d.teams.map(t => {
+                            const coach = coachOfTeam(d.memberships, t.id);
+                            const counts = teamRoleCounts(d.memberships, t.id);
+                            return (
+                              <div key={t.id} style={{
+                                padding:'9px 0',
+                                borderTop:'1px solid rgba(255,255,255,0.05)',
+                              }}>
+                                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                                  <div style={{flex:1, minWidth:0}}>
+                                    <div style={{fontWeight:700, fontSize:13.5}}>
+                                      {t.name || t.id}
+                                      {t.category && (
+                                        <span style={{fontWeight:500, fontSize:11.5,
+                                                      color:'rgba(255,255,255,0.55)',
+                                                      marginLeft:6}}>
+                                          · {t.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{fontSize:11.5, color:'rgba(255,255,255,0.6)',
+                                                 marginTop:3}}>
+                                      {coach
+                                        ? <>📋 Coach : <b style={{color:'#c8f169'}}>{coach.email || coach.uid}</b></>
+                                        : <span style={{color:'#fbbf24'}}>⚠ Pas de coach principal</span>}
+                                      {counts.adjoint ? ' · ' + counts.adjoint + ' adjoint' + (counts.adjoint > 1 ? 's' : '') : ''}
+                                      {counts.parent  ? ' · ' + counts.parent  + ' parent'  + (counts.parent  > 1 ? 's' : '') : ''}
+                                      {counts.joueur  ? ' · ' + counts.joueur  + ' joueur'  + (counts.joueur  > 1 ? 's' : '') : ''}
+                                      {counts.lecteur ? ' · ' + counts.lecteur + ' lecteur' + (counts.lecteur > 1 ? 's' : '') : ''}
+                                    </div>
+                                  </div>
+                                  <button onClick={() => assignCoach(c, t, coach && coach.uid)} style={{
+                                    background:'rgba(200,241,105,0.14)', color:'#c8f169',
+                                    border:'1px solid rgba(200,241,105,0.32)', borderRadius:7,
+                                    padding:'5px 10px', fontSize:11.5, fontWeight:700, cursor:'pointer',
+                                    flexShrink:0,
+                                  }}>{coach ? 'Changer' : 'Assigner'}</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        <div style={{
+          marginTop:14, paddingTop:12,
+          borderTop:'1px solid rgba(255,255,255,0.08)',
+          fontSize:11, color:'rgba(255,255,255,0.45)', lineHeight:1.55,
+        }}>
+          Pour qu'un futur coach apparaisse dans la recherche par email, il doit
+          d'abord s'être connecté à l'app au moins une fois (création de son
+          compte Firebase Auth).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+window.AdminClubsPanel = AdminClubsPanel;
