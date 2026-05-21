@@ -19,7 +19,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
-  getFirestore, doc, setDoc, getDoc, getDocs, onSnapshot, serverTimestamp,
+  getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, onSnapshot, serverTimestamp,
   collection, query, where
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
@@ -635,10 +635,12 @@ async function savePlayer(player, teamId, clubId) {
 }
 
 // Membership — id imposé = {uid}_{clubId} (cf firestore.rules).
+// inviteToken (optionnel) : présent lors d'une auto-création depuis une
+// invitation — les règles Firestore le lisent pour autoriser l'écriture.
 async function saveMembership(m) {
   if (!db || !m || !m.uid || !m.clubId) throw new Error('db/uid/clubId requis');
   const id = m.uid + '_' + m.clubId;
-  await setDoc(doc(db, 'memberships', id), {
+  const payload = {
     uid: m.uid,
     email: (m.email || '').toLowerCase(),
     clubId: m.clubId,
@@ -647,7 +649,9 @@ async function saveMembership(m) {
     playerId: m.playerId || null,
     createdBy: m.createdBy || _uid(),
     createdAt: serverTimestamp(),
-  }, { merge: true });
+  };
+  if (m.inviteToken) payload.inviteToken = m.inviteToken;
+  await setDoc(doc(db, 'memberships', id), payload, { merge: true });
   return { ok: true, id };
 }
 
@@ -817,12 +821,257 @@ async function pullCloudData() {
   return { ok: true, counts: { clubs: clubs.length, teams: teamsAll.length, players: playerCount } };
 }
 
+/* ============================================================
+   INVITES (Phase C — C4) — liens d'invitation
+   ============================================================
+   Le coach génère un lien → doc `invites/{token}`. L'invité ouvre
+   le lien, se connecte, et SA membership est créée automatiquement
+   selon le contenu de l'invitation (rôle / club / joueur imposés).
+   Règles serveur : firestore.rules → collection `invites` + branche
+   « auto-création depuis invitation » de `memberships`.
+============================================================ */
+
+const INVITE_TTL_DAYS       = 14;     // durée de validité d'un lien
+const ADJOINT_CAP           = 5;      // plafond d'adjoints par club
+const PENDING_INVITE_KEY    = 'cdd_pending_invite';
+const INVITE_RESTRICTED     = ['owner', 'admin', 'coach'];
+
+function _inviteToken() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+  return 'inv' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+}
+
+function inviteUrl(token) {
+  return window.location.origin + window.location.pathname + '?invite=' + token;
+}
+
+// Compte les memberships d'un rôle sur un club (lisible par un coach du club).
+async function clubRoleCount(clubId, role) {
+  if (!db || !clubId) return 0;
+  const snap = await getDocs(query(collection(db, 'memberships'), where('clubId', '==', clubId)));
+  let n = 0;
+  snap.forEach(d => { if (d.data().role === role) n++; });
+  return n;
+}
+
+async function fetchInvite(token) {
+  if (!db || !token) return null;
+  const d = await getDoc(doc(db, 'invites', token));
+  return d.exists() ? { token: d.id, ...d.data() } : null;
+}
+
+// Toutes les invitations d'un club (en attente + consommées).
+async function fetchClubInvites(clubId) {
+  if (!db || !clubId) return [];
+  const snap = await getDocs(query(collection(db, 'invites'), where('clubId', '==', clubId)));
+  const out = [];
+  snap.forEach(d => out.push({ token: d.id, ...d.data() }));
+  return out;
+}
+
+// Coach : crée une invitation. opts = { clubId, teamId, role, playerId, email, label }
+async function createInvite(opts) {
+  if (!db) throw new Error('Service cloud indisponible');
+  const uid = _uid();
+  if (!uid) throw new Error('Connecte-toi pour créer une invitation');
+  const o = opts || {};
+  if (!o.clubId) throw new Error('Aucun club actif');
+  const role = o.role || 'lecteur';
+  if (INVITE_RESTRICTED.includes(role) && _email() !== ADMIN_EMAIL_DATA) {
+    throw new Error("Seul l'administrateur peut inviter un coach.");
+  }
+  if (role === 'parent' && !o.playerId) {
+    throw new Error('Une invitation parent doit être rattachée à un joueur.');
+  }
+  // Plafond adjoints — best-effort, vérifié À LA GÉNÉRATION : le coach a le
+  // droit de lire les memberships de son club, l'invité ne l'a pas.
+  if (role === 'adjoint') {
+    let used = 0;
+    try {
+      used = await clubRoleCount(o.clubId, 'adjoint');
+      const invs = await fetchClubInvites(o.clubId);
+      used += invs.filter(i => i.role === 'adjoint' && !i.consumed
+        && (!i.expiresAt || Date.now() < i.expiresAt)).length;
+    } catch (e) { /* lecture impossible → best-effort, on laisse passer */ }
+    if (used >= ADJOINT_CAP) {
+      throw new Error('Plafond atteint : ' + ADJOINT_CAP + ' adjoints maximum par club.');
+    }
+  }
+  const token = _inviteToken();
+  await setDoc(doc(db, 'invites', token), {
+    clubId: o.clubId,
+    teamId: o.teamId || null,
+    role,
+    playerId: o.playerId || null,
+    email: ((o.email || '').trim().toLowerCase()) || null,
+    label: (o.label || '').toString().slice(0, 80) || null,
+    createdBy: uid,
+    createdByEmail: _email(),
+    createdAt: serverTimestamp(),
+    expiresAt: Date.now() + INVITE_TTL_DAYS * 86400000,
+    consumed: false,
+    consumedBy: null,
+  });
+  return { ok: true, token, url: inviteUrl(token), role, expiresInDays: INVITE_TTL_DAYS };
+}
+
+async function revokeInvite(token) {
+  if (!db || !token) return { ok: false };
+  await deleteDoc(doc(db, 'invites', token));
+  return { ok: true };
+}
+
+// Invité : consomme un lien → crée SA membership, marque l'invitation utilisée.
+async function consumeInvite(token) {
+  if (!db)  return { ok: false, error: 'Service cloud indisponible' };
+  const uid = _uid();
+  if (!uid) return { ok: false, error: 'not-signed-in' };
+
+  let inv;
+  try { inv = await fetchInvite(token); }
+  catch (e) { return { ok: false, error: "Lecture de l'invitation impossible" }; }
+  if (!inv)         return { ok: false, error: 'Cette invitation est introuvable.' };
+  if (inv.consumed) return { ok: false, error: 'Cette invitation a déjà été utilisée.' };
+  if (inv.expiresAt && Date.now() > inv.expiresAt) {
+    return { ok: false, error: 'Cette invitation a expiré.' };
+  }
+
+  // Crée la membership de l'invité. inviteToken est lu par les règles
+  // Firestore pour autoriser cette auto-création (l'invité n'est pas coach).
+  try {
+    await saveMembership({
+      uid,
+      email: _email(),
+      clubId: inv.clubId,
+      teamId: inv.teamId || null,
+      role: inv.role || 'lecteur',
+      playerId: inv.playerId || null,
+      createdBy: inv.createdBy || 'invite',
+      inviteToken: token,
+    });
+  } catch (e) {
+    return { ok: false, error: 'Rattachement refusé : ' + (e.message || e) };
+  }
+
+  // Marque l'invitation consommée (non bloquant si ça échoue).
+  try {
+    await setDoc(doc(db, 'invites', token),
+      { consumed: true, consumedBy: uid, consumedAt: serverTimestamp() },
+      { merge: true });
+  } catch (e) { console.warn('[invite] marquage consommé échoué', e.message); }
+
+  return { ok: true, clubId: inv.clubId, role: inv.role || 'lecteur', playerId: inv.playerId || null };
+}
+
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, saveMembership,
   fetchMemberships, fetchClub, fetchTeams, fetchPlayers,
   migrateLocalToCloud, pullCloudData,
+  createInvite, fetchInvite, fetchClubInvites, revokeInvite,
+  consumeInvite, clubRoleCount, inviteUrl,
+  ADJOINT_CAP, INVITE_TTL_DAYS,
 };
+
+/* ---------- Consommation automatique du lien d'invitation ---------- */
+
+// Capté tôt : ?invite=TOKEN dans l'URL. On le met de côté car le round-trip
+// de connexion par lien email PERD la query string (le continueUrl ne
+// contient que origin+pathname).
+(function captureInviteParam() {
+  try {
+    const t = new URLSearchParams(window.location.search).get('invite');
+    if (t) {
+      localStorage.setItem(PENDING_INVITE_KEY, t);
+      const clean = window.location.origin + window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, clean);
+      // Si pas encore connecté, on prévient l'invité pourquoi se connecter.
+      if (!auth || !auth.currentUser) {
+        showInviteBanner('info', 'Une invitation t\'attend — connecte-toi pour rejoindre le club.');
+      }
+    }
+  } catch (e) {}
+})();
+
+let _inviteRunning = false;
+
+async function processPendingInvite() {
+  if (_inviteRunning) return;
+  let token = '';
+  try { token = localStorage.getItem(PENDING_INVITE_KEY) || ''; } catch (e) {}
+  if (!token) return;
+  if (!auth || !auth.currentUser) return; // attend la connexion
+  _inviteRunning = true;
+  try {
+    const res = await consumeInvite(token);
+    if (res.error !== 'not-signed-in') {
+      try { localStorage.removeItem(PENDING_INVITE_KEY); } catch (e) {}
+    }
+    if (res.ok) {
+      // Le rôle de l'invité est imposé par l'invitation.
+      try { if (res.role) localStorage.setItem('cdd_user_role', res.role); } catch (e) {}
+      // Charge les données du club nouvellement accessible.
+      try { await pullCloudData(); } catch (e) {}
+      let clubName = res.clubId;
+      try { const c = await fetchClub(res.clubId); if (c && c.name) clubName = c.name; }
+      catch (e) {}
+      showInviteBanner('ok', 'Bienvenue ! Tu es maintenant rattaché à ' + clubName + '.');
+    } else if (res.error !== 'not-signed-in') {
+      showInviteBanner('err', 'Invitation non valable — ' + res.error);
+    }
+    window.dispatchEvent(new CustomEvent('cdd-invite-consumed', { detail: res }));
+  } catch (e) {
+    console.warn('[invite] consommation échouée', e);
+  } finally {
+    _inviteRunning = false;
+  }
+}
+
+// Bannière de retour — DOM pur, indépendante de React (survit à la navigation).
+function showInviteBanner(kind, message) {
+  try {
+    const old = document.getElementById('cdd-invite-banner');
+    if (old) old.remove();
+    const palette = {
+      ok:   { bg: '#16361c', fg: '#c8f169', bd: '#2f6b34' },
+      err:  { bg: '#3a1518', fg: '#fca5a5', bd: '#7f2a2a' },
+      info: { bg: '#0f2433', fg: '#7dd3fc', bd: '#1e4d66' },
+    }[kind] || { bg: '#1a1f28', fg: '#fff', bd: '#333' };
+    const el = document.createElement('div');
+    el.id = 'cdd-invite-banner';
+    el.style.cssText = [
+      'position:fixed', 'left:50%', 'transform:translateX(-50%)', 'top:14px',
+      'z-index:99999', 'max-width:92vw', 'box-sizing:border-box',
+      'padding:12px 42px 12px 16px', 'border-radius:12px',
+      'font-family:system-ui,-apple-system,sans-serif', 'font-size:13px',
+      'font-weight:600', 'line-height:1.45',
+      'box-shadow:0 10px 34px rgba(0,0,0,.55)',
+      'background:' + palette.bg, 'color:' + palette.fg,
+      'border:1px solid ' + palette.bd,
+    ].join(';');
+    el.textContent = message;
+    const btn = document.createElement('button');
+    btn.textContent = '✕';
+    btn.setAttribute('aria-label', 'Fermer');
+    btn.style.cssText = [
+      'position:absolute', 'top:6px', 'right:8px', 'background:transparent',
+      'border:none', 'color:inherit', 'font-size:15px', 'cursor:pointer',
+      'opacity:.7', 'padding:4px',
+    ].join(';');
+    btn.onclick = () => { try { el.remove(); } catch (e) {} };
+    el.appendChild(btn);
+    document.body.appendChild(el);
+    if (kind === 'ok' || kind === 'info') {
+      setTimeout(() => { try { el.remove(); } catch (e) {} }, 9000);
+    }
+  } catch (e) {}
+}
+
+// Dès qu'une session est active (login email-link, Google, ou session déjà
+// ouverte), on tente de consommer une invitation en attente.
+window.addEventListener('cdd-auth-changed', () => { processPendingInvite(); });
 
 // Migration auto, une seule fois, quand l'ADMIN est authentifié.
 window.addEventListener('cdd-auth-changed', () => {

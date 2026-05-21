@@ -72,6 +72,24 @@ service cloud.firestore {
          membershipRole(clubId) in ['owner', 'coach']);
     }
 
+    // ═══ Helpers — invitations (C4) ═════════════════════════════════
+    function invitePath(token) {
+      return /databases/$(database)/documents/invites/$(token);
+    }
+    // Vrai si l'invitation référencée par m.inviteToken autorise la
+    // création de la membership m (club/rôle/joueur cohérents, non
+    // consommée, non expirée, jamais un rôle coach via lien).
+    function inviteGrantsMembership(m) {
+      let inv = get(invitePath(m.inviteToken)).data;
+      return inv.clubId == m.clubId
+        && inv.role == m.role
+        && inv.consumed == false
+        && inv.playerId == m.playerId
+        && !(inv.role in ['owner', 'admin', 'coach'])
+        && (!('expiresAt' in inv) || inv.expiresAt == null
+            || request.time.toMillis() < inv.expiresAt);
+    }
+
     // ═══ /clubs/{clubId} ════════════════════════════════════════════
     match /clubs/{clubId} {
       allow read:   if canReadClub(clubId);
@@ -125,11 +143,18 @@ service cloud.firestore {
       //  - une membership 'parent' DOIT porter un playerId (lien obligatoire).
       allow create: if isSignedIn()
         && membershipId == request.resource.data.uid + '_' + request.resource.data.clubId
-        && request.resource.data.size() <= 15
+        && request.resource.data.size() <= 16
         && (
           isAdmin() ||
           ( canEditClub(request.resource.data.clubId)
-            && !(request.resource.data.role in ['owner', 'admin', 'coach']) )
+            && !(request.resource.data.role in ['owner', 'admin', 'coach']) ) ||
+          // Auto-création depuis une invitation : l'invité crée SA propre
+          // membership ({uid}_{clubId}), autorisée par un token d'invitation
+          // valide — le coach n'a pas à pré-créer chaque rattachement.
+          ( request.resource.data.uid == myUid()
+            && request.resource.data.inviteToken is string
+            && exists(invitePath(request.resource.data.inviteToken))
+            && inviteGrantsMembership(request.resource.data) )
         )
         && ( request.resource.data.role != 'parent'
              || request.resource.data.playerId is string );

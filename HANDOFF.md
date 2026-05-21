@@ -7,15 +7,20 @@
 
 ## 1. Comment reprendre
 
-La **notation des joueurs pondérée par poste** est livrée (détail en §5).
-Shahine est passé à un OVR de **83** (objectif « 82 minimum » atteint).
+Deux gros chantiers livrés le 2026-05-21 : la **notation pondérée par poste**
+(§5) et **C4 — les invitations** (§4). Shahine est à un OVR de **83**.
+
+> ⚠️ **Action requise après le push C4** : redéployer `firestore.rules` dans
+> la console Firebase (`arbitre-sport` → Firestore → Règles → Publier). La
+> règle `memberships` a une nouvelle branche « auto-création depuis
+> invitation » — sans ce redéploiement, la consommation d'un lien échoue.
 
 Sujet suivant au choix :
-- **« C4 »** → continuer le chantier sécurité (invitations).
-- **« notation v2 »** → suite de la notation : stats gardien stockées sous
-  des clés dédiées (aujourd'hui réutilise les 6 emplacements PAC..PHY
-  relibellés), persistance Firestore des stats, recalage de la progression
-  auto par match (`applyMatchPerformanceDeltas`) sur l'OVR pondéré.
+- **« C5 »** → dernier volet sécurité : application des droits par rôle dans
+  l'UI, écran coach « qui est connecté en quelle qualité », `pullCloudData`
+  automatique au login, images (logos/photos) vers Firebase Storage.
+- **« notation v2 »** → suite de la notation : stats gardien sous clés
+  dédiées, persistance Firestore des stats, recalage de la progression auto.
 
 ---
 
@@ -40,6 +45,7 @@ Sujet suivant au choix :
 - **Chantier sécurité — Phase C** : voir §4.
 - Nettoyage : bundles `push-*` supprimés à la racine.
 - **Notation des joueurs pondérée par poste** : livrée — voir §5.
+- **C4 — Invitations** : livré — voir §4.
 
 ---
 
@@ -51,8 +57,20 @@ Objectif : un compte non autorisé ne doit voir AUCUNE donnée d'un club. Plan c
 - **C2 ✓** — données montées dans Firestore. `window.cddData` (dans `firebase-sync.js`) : save/fetch + `migrateLocalToCloud`. Bouton **Réglages → Sauvegarde cloud**.
 - **C3 ✓** — migration rendue non-lossy (sauvegarde objet complet) ; `pullCloudData()` (lecture cloud → cache local) ; bouton **Réglages → Charger depuis le cloud** ; `seed-inline.js` vidé (données de mineurs hors du code public — RGPD). Testé : aller-retour cloud sans perte.
 
+- **C4 ✓** (2026-05-21) — invitations par lien. `firebase-sync.js` :
+  `createInvite` / `fetchClubInvites` / `revokeInvite` / `consumeInvite`
+  exposés sur `window.cddData`. UI coach `invite-manager.jsx` dans les
+  Réglages (section « Inviter quelqu'un »). Le coach choisit un rôle
+  (adjoint / parent / joueur / lecteur), un joueur pour parent (obligatoire),
+  génère un lien `?invite=TOKEN`. À l'ouverture le token est mis de côté
+  (`cdd_pending_invite`, survit au round-trip de connexion email) puis
+  consommé dès la connexion : la `membership` de l'invité est créée,
+  `pullCloudData()` charge le club, une bannière confirme. Plafond 5
+  adjoints vérifié à la génération (l'invité n'a pas le droit de lire les
+  memberships). `firestore.rules` : nouvelle branche « auto-création depuis
+  invitation » de `memberships` → **à redéployer dans la console Firebase**.
+
 **Reste à faire :**
-- **C4 — Invitations** : le coach génère un lien → crée une `membership`. Rattachement parent↔joueur obligatoire. Plafond 5 adjoints par coach.
 - **C5 — Rôles & tableau de bord** : application des droits par rôle dans l'UI ; écran coach « qui est connecté en quelle qualité » ; nettoyer le fallback `currentRole()→'coach'` de `roles.js` ; rendre `pullCloudData` automatique au login ; images (logo club + photos joueurs) → Firebase Storage.
 - Ménage non urgent : collections Firestore legacy (`matches`, `club_matches`, `transfers`, `users`, `cdd_v2_*`).
 
@@ -106,14 +124,15 @@ persistance Firestore des stats dans les docs `players`, recalage de
 
 - **Mount OneDrive du sandbox** : sert souvent des fichiers tronqués/stale → la validation de syntaxe par script échoue à tort. La vérité = relecture par l'outil fichier. Validation fiable uniquement côté Git Bash Windows.
 - **OneDrive ressuscite `.git/index.lock`** — connu de longue date sur ce projet.
-- Cache buster : `firebase-sync.js` est chargé avec `?v=NN` dans `app.html` — l'incrémenter à chaque modif de ce fichier (actuellement v51).
+- Cache buster : `firebase-sync.js` est chargé avec `?v=NN` dans `app.html` — l'incrémenter à chaque modif de ce fichier (actuellement v52).
 - Méthode de travail : Florian pousse lui-même via Git Bash dans `Version/V2/`. Éditeur git configuré sur `notepad`.
 
 ---
 
 ## 7. Repères techniques
 
-- `firebase-sync.js` expose `window.cddSync` (convoc/vote), `window.cddAuth` (auth email-link + Google), `window.cddData` (clubs/teams/players/memberships + migration + pullCloudData).
+- `firebase-sync.js` expose `window.cddSync` (convoc/vote), `window.cddAuth` (auth email-link + Google), `window.cddData` (clubs/teams/players/memberships + migration + pullCloudData + invitations C4).
+- `invite-manager.jsx` expose `window.InviteManager` — UI coach de génération de liens, montée dans les Réglages (`screen-onb-set.jsx`, section gatée `isCoach`).
 - `roles.js` expose `window.CDD_ROLES` (rôles, memberships localStorage, `isAdmin`, `ADMIN_EMAIL`).
 - `data-adapter.js` (`window.CDD`) : seul accès au stockage ; filtre les clubs par membership de l'utilisateur.
 - `data-bridge.js` : construit les globaux `CDD_CLUB`, `CDD_PLAYERS`, `CDD_CONVO`… consommés par les écrans React.

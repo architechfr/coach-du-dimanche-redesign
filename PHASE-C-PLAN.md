@@ -115,9 +115,12 @@ durcissement possible plus tard avec une Cloud Function (plan Blaze).
 
 ## 6. État
 
-- [x] C1 — socle : `firestore.rules` réécrites + ce doc (2026-05-19).
-      Reste : déployer les règles dans la console Firebase.
-- [ ] C2 — écriture Firestore + migration
-- [ ] C3 — lecture Firestore + vidage du seed
-- [ ] C4 — invitations
+- [x] C1 — socle : `firestore.rules` + ce doc (2026-05-19).
+- [x] C2 — écriture Firestore + migration (`window.cddData`, bouton Sauvegarde cloud).
+- [x] C3 — lecture Firestore (`pullCloudData`) + vidage du seed.
+- [x] C4 — invitations (2026-05-21) : `createInvite`/`consumeInvite`/`revokeInvite`
+      dans `firebase-sync.js`, UI coach `invite-manager.jsx` dans les Réglages,
+      consommation auto à la connexion, rattachement parent↔joueur, plafond
+      5 adjoints. **`firestore.rules` modifiées → à redéployer dans la console
+      Firebase** (branche « auto-création depuis invitation » de `memberships`).
 - [ ] C5 — rôles & dashboard

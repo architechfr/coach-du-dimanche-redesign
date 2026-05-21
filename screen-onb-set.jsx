@@ -378,6 +378,20 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         </div>
       </div>
 
+      {/* INVITER — génération de liens d'invitation (C4). Réservé au coach. */}
+      {isCoach && (
+        <div className="set-sec">
+          <div className="set-sec-k">INVITER QUELQU'UN</div>
+          <div style={{ padding: '0 14px' }}>
+            {window.InviteManager
+              ? <window.InviteManager />
+              : <div style={{ fontSize: 12, color: 'var(--tx-3)', padding: '8px 0' }}>
+                  Module d'invitation indisponible.
+                </div>}
+          </div>
+        </div>
+      )}
+
       {/* MES RATTACHEMENTS — liste des clubs où l'user a une membership.
           C'est la source de vérité du « à quels clubs j'appartiens ».
           Le bouton 'Quitter' supprime la membership ET les données du club. */}
