@@ -218,13 +218,24 @@
       const r = clubRoleOf(ctx.clubId, email);
       if (r) return r;
     }
-    // SÉCURITÉ (2026-05-22) : PLUS de fallback sur cdd_user_role.
-    // cdd_user_role est une clé d'APPAREIL, pas liée au compte connecté —
-    // un compte sans rattachement héritait du rôle laissé par un autre
-    // compte sur le même appareil. Sans membership = 'lecteur', toujours
-    // (principe de moindre privilège). Le rôle vient UNIQUEMENT des
-    // memberships (cache local de Firestore, scopé par email).
-    return 'lecteur';
+    // SÉCURITÉ (2026-05-22) : PLUS de fallback sur cdd_user_role (clé
+    // d'APPAREIL non liée au compte — un compte sans rattachement héritait
+    // du rôle d'un autre). Fallback SÛR : le MEILLEUR rôle parmi les
+    // memberships DU COMPTE lui-même (scopé par email). Ainsi un coach
+    // reste coach même si le contexte actif pointe sur un autre club ;
+    // un compte sans aucune membership reste 'lecteur'.
+    let best = '';
+    listMemberships(email).forEach(raw => {
+      const m = _normalizeMembership(raw);
+      const cand = [];
+      if (m.clubRole) cand.push(m.clubRole);
+      if (m._legacyFlatRole) cand.push(m._legacyFlatRole);
+      if (m.teams) Object.values(m.teams).forEach(t => { if (t && t.role) cand.push(t.role); });
+      cand.forEach(role => {
+        if (role && (!best || roleWeight(role) > roleWeight(best))) best = role;
+      });
+    });
+    return best || 'lecteur';
   }
 
   // Liste des rôles qu'un rôle donné (ou le rôle courant) peut inviter.

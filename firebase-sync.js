@@ -1180,6 +1180,22 @@ async function pullCloudData() {
     if ((!cur || !mergedClubs.some(c => c.id === cur)) && mergedClubs[0]) {
       localStorage.setItem('arb_current_club', mergedClubs[0].id);
     }
+    // CONTEXTE ACTIF (2026-05-22) : si cdd_active_context pointe sur un club
+    // hors du périmètre autorisé (résidu d'un autre compte), on le recale
+    // sur un club/équipe valides. Sinon effectiveRole interroge un club où
+    // le compte n'a aucun rôle → un coach se retrouve à tort en 'lecteur'.
+    try {
+      const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+      if (!ctx.clubId || !mergedClubs.some(c => c.id === ctx.clubId)) {
+        const club0 = mergedClubs[0] || null;
+        const team0 = club0 ? mergedTeams.find(t => t && t.clubId === club0.id) : null;
+        localStorage.setItem('cdd_active_context', JSON.stringify({
+          clubId: club0 ? club0.id : null,
+          teamId: team0 ? team0.id : null,
+          matchId: null,
+        }));
+      }
+    } catch (e) {}
     // Si l'adaptateur tourne en mode override (seed), on le met à jour aussi.
     if (window.__CDD_OVERRIDE) {
       window.__CDD_OVERRIDE['arb_clubs'] = mergedClubs;
