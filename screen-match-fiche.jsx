@@ -8,8 +8,14 @@
    ============================================================ */
 
 function ScreenFiche({ go, tweaks, player }) {
-  const p = player || CDD_PLAYERS[0]; // default first player
-  if (!p) return <div className="fi-empty">Aucun joueur</div>;
+  const basePlayer = player || CDD_PLAYERS[0]; // default first player
+  if (!basePlayer) return <div className="fi-empty">Aucun joueur</div>;
+  // Re-résoudre le joueur depuis CDD_PLAYERS à CHAQUE render. Indispensable pour
+  // la notation : updateStat/applyQuick persistent l'override puis CDD_REBUILD()
+  // remplace les objets de CDD_PLAYERS. Sans cette résolution, `p` resterait
+  // l'objet capturé via la prop AVANT le rebuild → la fiche afficherait les
+  // anciennes stats jusqu'à un sortie/retour (bug notation Rapide + Détaillé).
+  const p = CDD_PLAYERS.find(x => x.id === basePlayer.id) || basePlayer;
   const stats = p.stats;
   const [tab, setTab] = useState("stats");
   const [, setRefresh] = useState(0);

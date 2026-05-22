@@ -97,7 +97,7 @@ function ClubBadge({
             border: `1.5px solid ${c1}`,
           }}>
       <img src={logo} alt={clubName || ''}
-           style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+           style={{ width: '100%', height: '100%', objectFit: 'contain' }}/>
     </span>
   ) : (
     <span className={`club-badge club-badge-init ${className}`}

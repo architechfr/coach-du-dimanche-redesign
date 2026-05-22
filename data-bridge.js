@@ -524,7 +524,7 @@ async function rebuildCDDGlobals() {
   if (!logoDataUrl) logoDataUrl = activeClub?.logoDataUrl || null;
 
   window.CDD_CLUB = {
-    name: clubName || 'AS Club',
+    name: clubName || 'Mon club',
     short: clubName || 'CLUB',
     team: activeTeam?.name || 'Équipe',
     season: '2025–2026',
@@ -599,7 +599,9 @@ async function rebuildCDDGlobals() {
   const prevNext = window.CDD_NEXT_MATCH;
   const hasRealNext = prevNext && !prevNext.noUpcoming && prevNext.away && prevNext.away !== 'À déterminer';
   window.CDD_NEXT_MATCH = hasRealNext ? prevNext : {
-    id: '__placeholder__',
+    // ⚠ id sûr pour Firestore : les ids encadrés par '__..__' sont RÉSERVÉS et
+    // refusés à l'écriture. Ne jamais revenir à '__placeholder__'.
+    id: 'placeholder',
     date: "À déterminer",
     home: clubName || "Mon équipe",
     away: "À déterminer",
@@ -628,7 +630,7 @@ async function rebuildCDDGlobals() {
   // Overlay match (séparation Compo type ↔ Convocation match) : si une convoc spécifique
   // existe pour le prochain match, elle prend le pas sur lineupTemplate. Sinon, fallback
   // sur le template (comportement historique).
-  const matchId = window.CDD_NEXT_MATCH?.id || '__placeholder__';
+  const matchId = window.CDD_NEXT_MATCH?.id || 'placeholder';
   let overlay = null;
   try {
     const allOv = JSON.parse(localStorage.getItem('cdd_match_convoc') || '{}');
@@ -743,7 +745,7 @@ async function rebuildCDDGlobals() {
 
   window.CDD_CONVO = {
     match: window.CDD_NEXT_MATCH,
-    matchId,                  // id du match courant (ou '__placeholder__')
+    matchId,                  // id du match courant (ou 'placeholder' si aucun match)
     hasMatchOverlay: !!overlay, // true si la convoc est adaptée pour ce match (overlay actif)
     starters,
     bench,
@@ -974,7 +976,7 @@ function _writeMatchConvoc(all) {
   try { localStorage.setItem('cdd_match_convoc', JSON.stringify(all)); } catch (e) {}
 }
 function _currentMatchId() {
-  return window.CDD_NEXT_MATCH?.id || '__placeholder__';
+  return window.CDD_NEXT_MATCH?.id || 'placeholder';
 }
 function _getTeamTemplate(teamId) {
   try {
