@@ -99,12 +99,10 @@ function ScreenSettings({ go, tweaks, setTweak }) {
   // Roles possibles : parent | joueur | coach | adjoint | dirigeant | ecole | admin
   // ⚠️ La notion d'owner-par-email a ete retiree (repo public + faille).
   // Le super-admin reviendra Sprint 3 via Firebase Auth custom claims.
-  // #C5 — Le rôle n'est plus librement éditable. effectiveRole() le dérive :
-  // email admin → 'admin' ; sinon cdd_user_role, posé à l'onboarding pour un
-  // coach créateur et écrasé par le rôle de l'invitation à sa consommation.
+  // Phase D — le rôle vient des memberships Firestore via effectiveRole().
   const role = (window.CDD_ROLES && window.CDD_ROLES.effectiveRole)
     ? window.CDD_ROLES.effectiveRole()
-    : (localStorage.getItem('cdd_user_role') || 'coach');
+    : 'lecteur';
   const userEmail = localStorage.getItem('cdd_user_email') || '';
   const isOwner   = role === 'owner';
   // Admin = compte authentifié archi.tech.fr@gmail.com (gating super-user),

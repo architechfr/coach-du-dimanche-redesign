@@ -1,20 +1,16 @@
 /* ============================================================
-   ROLES & PERMISSIONS — squelette pour Phase 3 (Auth réelle)
+   ROLES & PERMISSIONS — Phase D (modèle par équipe, multi-rôles)
    ============================================================
-   Architecture d'identité côté front. Tant que Firebase Auth n'est pas
-   branché (Phase 3), les rôles sont stockés en localStorage et tout le
-   monde est de facto "owner local" de son appareil. Quand Auth arrive,
-   on charge les claims depuis Firebase (custom claims) et on utilise
-   les mêmes helpers — aucun changement côté UI.
+   Source de vérité : memberships Firestore (cdd_memberships en cache LS).
+   Le rôle effectif = rôle sur l'équipe active (cdd_active_context).
+   L'admin (archi.tech.fr@gmail.com) est reconnu uniquement par son email
+   Firebase Auth — impossible à usurper sans posséder la boîte Gmail.
 
-   Storage actuel :
-     cdd_user_role          → string  (rôle de l'utilisateur courant)
-     cdd_user_email         → string  (email si configuré)
-     cdd_coach_name         → string  (nom affiché)
-     cdd_user_scope         → JSON    (clubIds[], teamIds[], playerIds[])
-
-   Storage futur (Phase 3) :
-     window.cddAuth.currentUser.claims = { role, clubIds, teamIds, playerIds }
+   Clés localStorage pertinentes :
+     cdd_memberships    → JSON  (memberships du compte courant, Phase D format)
+     cdd_active_context → JSON  { clubId, teamId, matchId }
+     cdd_user_email     → string (email de la session Firebase Auth)
+     cdd_coach_name     → string (nom affiché)
    ============================================================ */
 
 (function () {
@@ -201,12 +197,9 @@
   // Priorité :
   //   1. email admin → toujours 'admin' (super-utilisateur)
   //   2. rôle sur l'équipe ACTIVE (cdd_active_context.teamId)
-  //   3. rôle « club-wide » sur le club actif (clubRole / ancien format)
-  //   4. RÉTRO-COMPAT TEMPORAIRE : cdd_user_role en localStorage — sera
-  //      retiré une fois la migration D5 livrée. La membership devient
-  //      alors la source de vérité unique.
-  //   5. sans membership ni LS → 'lecteur' (jamais 'coach' par défaut :
-  //      principe de moindre privilège).
+  //   3. rôle « club-wide » sur le club actif (clubRole)
+  //   4. meilleur rôle parmi toutes les memberships du compte
+  //   5. sans membership → 'lecteur' (principe de moindre privilège).
   function effectiveRole(email) {
     if (isAdmin()) return 'admin';
     const ctx = readActiveContext();
@@ -280,35 +273,6 @@
 
   function canDeleteClub() {
     return hasRole('owner');
-  }
-
-  // Stub pour Phase 3 : crée une structure d'invitation (token + scope) en local.
-  // Sans serveur, ces tokens ne sont pas vraiment sécurisés (n'importe qui peut en forger),
-  // donc on les utilise seulement pour le test/proto en attendant Firestore.
-  function createInvitationDraft({ role, scope, expiresInDays }) {
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 24).toUpperCase();
-    const now = Date.now();
-    const inv = {
-      token,
-      role,
-      scope: scope || {},
-      createdAt: now,
-      createdBy: localStorage.getItem('cdd_user_email') || localStorage.getItem('cdd_coach_name') || 'anonyme',
-      expiresAt: now + (expiresInDays || 7) * 86400000,
-      consumed: false,
-    };
-    try {
-      const all = JSON.parse(localStorage.getItem('cdd_invitations') || '[]');
-      all.unshift(inv);
-      localStorage.setItem('cdd_invitations', JSON.stringify(all.slice(0, 100)));
-    } catch (e) {}
-    return inv;
-  }
-
-  function listInvitations() {
-    try { return JSON.parse(localStorage.getItem('cdd_invitations') || '[]'); }
-    catch (e) { return []; }
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -838,12 +802,11 @@
 
   // Expose
   window.CDD_ROLES = {
-    ROLES, OWNER_EMAIL, ADMIN_EMAIL, INVITE_MATRIX, ROLE_CAPS,
+    ROLES, ADMIN_EMAIL, INVITE_MATRIX, ROLE_CAPS,
     currentRole, effectiveRole, roleLabel, roleWeight, hasRole, atLeast,
     getScope, canEditClub, canEditTeam, canViewPlayer,
     canInviteRole, invitableRoles, canDeleteClub,
     canDo, isReadOnly,
-    createInvitationDraft, listInvitations,
     // Memberships
     getCurrentEmail, isAdmin, listMemberships, listAllMemberships, hasMembership,
     membershipRole, addMembership, removeMembership, deleteClubAndData,
