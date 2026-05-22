@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check \"C:/Users/fclar/OneDrive - CADENCE ARCHITECTES/ARCHI-TECH-FR/APPLICATIONS-CLAUDE/COACH-DU-DIMANCHE/Version/V2/roles.js\")",
+      "Bash(node --check \"C:/Users/fclar/OneDrive - CADENCE ARCHITECTES/ARCHI-TECH-FR/APPLICATIONS-CLAUDE/COACH-DU-DIMANCHE/Version/V2/firebase-sync.js\")",
+      "Bash(git add *)",
+      "Bash(node --check \"C:/Users/fclar/OneDrive - CADENCE ARCHITECTES/ARCHI-TECH-FR/APPLICATIONS-CLAUDE/COACH-DU-DIMANCHE/Version/V2/position-rating.js\")",
+      "Bash(node --check \"C:/Users/fclar/OneDrive - CADENCE ARCHITECTES/ARCHI-TECH-FR/APPLICATIONS-CLAUDE/COACH-DU-DIMANCHE/Version/V2/data-bridge.js\")"
+    ]
+  }
+}
