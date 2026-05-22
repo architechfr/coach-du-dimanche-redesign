@@ -1018,6 +1018,24 @@ async function pullCloudData() {
 
   const clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
   if (clubIds.length === 0) {
+    // SÉCURITÉ (2026-05-22) : ce compte n'a AUCUN rattachement cloud. On
+    // purge ses éventuelles entrées locales dans cdd_memberships — un
+    // cache empoisonné par un ancien « self-healing » se corrige ici.
+    // Les entrées des AUTRES comptes (sur appareil partagé) sont intactes.
+    try {
+      const email = _email();
+      if (email) {
+        const local = JSON.parse(localStorage.getItem('cdd_memberships') || '[]');
+        if (Array.isArray(local)) {
+          const cleaned = local.filter(m => m && (m.email || '').toLowerCase() !== email);
+          if (cleaned.length !== local.length) {
+            localStorage.setItem('cdd_memberships', JSON.stringify(cleaned));
+            window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
+            if (window.CDD_REBUILD) window.CDD_REBUILD();
+          }
+        }
+      }
+    } catch (e) {}
     return { ok: true, empty: true, counts: { clubs: 0, teams: 0, players: 0 } };
   }
 
@@ -1500,6 +1518,23 @@ window.addEventListener('cdd-auth-changed', () => {
       migrateLocalToCloud().catch(e => console.warn('[cddData] auto-migration', e));
     }
   } catch (e) {}
+});
+
+// SÉCURITÉ / RÔLES (2026-05-22) : à chaque session active, on réconcilie
+// systématiquement données + rôles depuis le cloud (source de vérité).
+// Un compte n'hérite ainsi jamais d'un rôle laissé en cache par un autre
+// compte sur le même appareil, et une révocation côté admin se propage.
+let _autoPullRunning = false;
+window.addEventListener('cdd-auth-changed', () => {
+  try {
+    if (!auth || !auth.currentUser) return;
+    if (_autoPullRunning) return;
+    _autoPullRunning = true;
+    Promise.resolve()
+      .then(() => pullCloudData())
+      .catch(e => console.warn('[cddData] auto-pull connexion', e))
+      .finally(() => { _autoPullRunning = false; });
+  } catch (e) { _autoPullRunning = false; }
 });
 
 /* ---------- Expose globally ---------- */

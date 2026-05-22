@@ -260,61 +260,18 @@ function ScreenSyncCloud({ go, tweaks }) {
   // C'est le fallback ultime quand la migration au boot a été aveugle
   // (data-bridge pas encore prêt) ou quand les données sont uniquement
   // dans CDD_CLUB (pas dans arb_clubs/arb_teams).
+  // SÉCURITÉ (2026-05-22) : l'ancien « self-healing » attribuait automati-
+  // quement un rôle COACH à tout compte connecté dès qu'un club était
+  // présent localement (CDD_CLUB) — sur un appareil partagé, n'importe quel
+  // compte devenait coach du club affiché. SUPPRIMÉ. Le rôle vient désormais
+  // EXCLUSIVEMENT du cloud (memberships Firestore, via pullCloudData). Seule
+  // la migration admin — idempotente et réservée à l'admin — reste lancée.
   React.useEffect(() => {
-    const email = window.CDD_ROLES?.getCurrentEmail?.();
-    if (!email) return; // mode visiteur : on ne touche à rien
-    const myMemberships = window.CDD_ROLES?.listMemberships?.(email) || [];
-    if (myMemberships.length > 0) return; // déjà migré
-
-    // Étape 1 : tenter la migration normale (4 sources)
-    const result = window.CDD_ROLES?.runMigrationIfNeeded?.();
-    if (result?.added > 0) {
-      console.info('[SyncCloud] self-healing : migration normale a créé', result.added, 'membership(s)');
-      setHealTick(t => t + 1);
-      return;
-    }
-
-    // Étape 2 : fallback synthétique. Si CDD_CLUB existe (donc le coach
-    // voit bien son club dans l'app ailleurs), persiste-le en arb_clubs et
-    // crée la membership. Permet de récupérer même quand les sources
-    // brutes sont introuvables.
-    if (window.CDD_CLUB?.name) {
-      try {
-        const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
-        const clubId = ctx.clubId
-                    || localStorage.getItem('arb_current_club')
-                    || ('club_recovered_' + window.CDD_CLUB.name.replace(/\s+/g, '_'));
-        // Persister le club dans arb_clubs si pas déjà présent
-        const existing = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
-        if (!existing.find(c => c.id === clubId)) {
-          existing.push({
-            id: clubId,
-            name: window.CDD_CLUB.name,
-            primaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[0]) || '#c8f169',
-            secondaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[1]) || '#0a0e14',
-            createdAt: Date.now(),
-            createdBy: email,
-            _recovered: true,
-          });
-          localStorage.setItem('arb_clubs', JSON.stringify(existing));
-          localStorage.setItem('arb_current_club', clubId);
-          try {
-            const ctx2 = { ...ctx, clubId };
-            localStorage.setItem('cdd_active_context', JSON.stringify(ctx2));
-          } catch (e) {}
-        }
-        // Crée la membership
-        window.CDD_ROLES?.addMembership?.(email, clubId, 'coach', { createdBy: 'self-healing' });
-        console.info('[SyncCloud] self-healing : club récupéré depuis CDD_CLUB →', window.CDD_CLUB.name, '(clubId=' + clubId + ')');
-        setHealTick(t => t + 1);
-        if (window.CDD_REBUILD) window.CDD_REBUILD();
-      } catch (e) {
-        console.warn('[SyncCloud] self-healing CDD_CLUB failed', e);
-      }
-    } else {
-      console.info('[SyncCloud] self-healing : aucune source disponible (email saisi mais ni arb_clubs ni CDD_CLUB). Mode coach sans rattachement.');
-    }
-  }, [healTick]); // healTick force re-trigger si besoin
+    try {
+      const result = window.CDD_ROLES?.runMigrationIfNeeded?.();
+      if (result?.added > 0) setHealTick(t => t + 1);
+    } catch (e) {}
+  }, [healTick]);
 
   // Si une migration crée des memberships pendant l'écran (ex : data-bridge
   // finalise plus tard et dispatche cdd-data-rebuilt), re-render pour refléter.
@@ -657,44 +614,30 @@ function ScreenSyncCloud({ go, tweaks }) {
             </div>
 
             {anySource ? (
-              <button onClick={() => {
-                // Forcer la migration + le fallback CDD_CLUB
+              <button onClick={async () => {
+                // SÉCURITÉ (2026-05-22) : ce bouton fabriquait un rôle COACH
+                // à partir des données locales — même faille que le self-
+                // healing. Désormais il RÉCUPÈRE depuis le cloud (source de
+                // vérité). La migration admin reste tentée d'abord.
                 const r1 = window.CDD_ROLES?.runMigrationIfNeeded?.();
                 if (r1?.added > 0) { setHealTick(t => t + 1); return; }
-                // Fallback synthetique
-                if (window.CDD_CLUB?.name) {
-                  try {
-                    const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
-                    const clubId = ctx.clubId || localStorage.getItem('arb_current_club')
-                                || ('club_recovered_' + window.CDD_CLUB.name.replace(/\s+/g, '_'));
-                    const existing = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
-                    if (!existing.find(c => c.id === clubId)) {
-                      existing.push({
-                        id: clubId,
-                        name: window.CDD_CLUB.name,
-                        primaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[0]) || '#c8f169',
-                        secondaryColor: (window.CDD_CLUB.colors && window.CDD_CLUB.colors[1]) || '#0a0e14',
-                        createdAt: Date.now(),
-                        createdBy: myEmail,
-                        _recovered: true,
-                      });
-                      localStorage.setItem('arb_clubs', JSON.stringify(existing));
-                      localStorage.setItem('arb_current_club', clubId);
-                      localStorage.setItem('cdd_active_context', JSON.stringify({ ...ctx, clubId }));
-                    }
-                    window.CDD_ROLES?.addMembership?.(myEmail, clubId, 'coach', { createdBy: 'manual-recovery' });
+                try {
+                  const res = window.cddData && window.cddData.pullCloudData
+                    ? await window.cddData.pullCloudData() : null;
+                  if (res && res.ok && !res.empty && (res.counts && res.counts.clubs > 0)) {
                     if (window.CDD_REBUILD) window.CDD_REBUILD();
                     setHealTick(t => t + 1);
-                  } catch (e) { alert('Récupération échouée : ' + e.message); }
-                } else {
-                  alert('Aucune source de données disponible. Crée un nouveau club ou contacte le support.');
-                }
+                    alert('✓ Rattachement récupéré depuis le cloud.');
+                  } else {
+                    alert("Aucun rattachement pour ce compte dans le cloud.\n\nLe rôle de coach s'obtient en créant un club, ou en étant désigné par l'administrateur.");
+                  }
+                } catch (e) { alert('Récupération échouée : ' + (e && e.message ? e.message : e)); }
               }} style={{
                 width:'100%', padding:'12px', borderRadius:10, marginBottom:8,
                 background:'rgba(200,241,105,0.15)', border:'1px solid rgba(200,241,105,0.45)',
                 color:'#c8f169', fontWeight:900, fontSize:13, fontFamily:'inherit',
                 cursor:'pointer',
-              }}>🔧 RATTACHER {detected.global_club !== '—' ? detected.global_club.toUpperCase() : 'MES DONNÉES'} À MON COMPTE</button>
+              }}>🔧 RÉCUPÉRER MON RATTACHEMENT DEPUIS LE CLOUD</button>
             ) : null}
 
             <button className="btn-cta" style={{width:'100%'}} onClick={() => addNewClub()}>

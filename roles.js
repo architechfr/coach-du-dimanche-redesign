@@ -218,10 +218,12 @@
       const r = clubRoleOf(ctx.clubId, email);
       if (r) return r;
     }
-    try {
-      const r = localStorage.getItem('cdd_user_role');
-      if (r && ROLES[r.toUpperCase()]) return r;
-    } catch (e) {}
+    // SÉCURITÉ (2026-05-22) : PLUS de fallback sur cdd_user_role.
+    // cdd_user_role est une clé d'APPAREIL, pas liée au compte connecté —
+    // un compte sans rattachement héritait du rôle laissé par un autre
+    // compte sur le même appareil. Sans membership = 'lecteur', toujours
+    // (principe de moindre privilège). Le rôle vient UNIQUEMENT des
+    // memberships (cache local de Firestore, scopé par email).
     return 'lecteur';
   }
 
