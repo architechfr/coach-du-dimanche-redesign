@@ -634,6 +634,18 @@ async function savePlayer(player, teamId, clubId) {
   return { ok: true, id: player.id };
 }
 
+// Sauvegarde les stats overrides d'un joueur dans son doc Firestore.
+// statsObj = { PAC, SHO, PAS, DRI, DEF, PHY } ou null pour effacer.
+async function savePlayerStats(playerId, statsObj) {
+  if (!db || !playerId) return { ok: false, reason: 'no-db' };
+  await setDoc(doc(db, 'players', String(playerId)), {
+    statsOverride: statsObj || null,
+    statsUpdatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: true });
+  return { ok: true };
+}
+
 // Membership — id imposé = {uid}_{clubId} (cf firestore.rules).
 // Phase D : un rôle PAR ÉQUIPE — la membership porte une map `teams`
 // { [teamId]: { role, playerId? } } + un standing club-level dénormalisé
@@ -1049,12 +1061,19 @@ async function pullCloudData() {
   const clubs = [];
   const teamsAll = [];
   let playerCount = 0;
+  // Capture les statsOverride AVANT stripMeta (le Timestamp ne survit pas à JSON).
+  const rawPlayerStats = {}; // { [playerId]: { statsOverride, statsUpdatedAt } }
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
       if (club) clubs.push(stripMeta(club));
       const teams = await fetchTeams(cid);
       const players = await fetchPlayers(cid);
+      players.forEach(p => {
+        if (p && p.id && ('statsOverride' in p)) {
+          rawPlayerStats[p.id] = { statsOverride: p.statsOverride || null, statsUpdatedAt: p.statsUpdatedAt || null };
+        }
+      });
       for (const t of teams) {
         const tc = stripMeta(t);
         tc.players = players.filter(p => p.teamId === t.id).map(stripMeta);
@@ -1153,6 +1172,35 @@ async function pullCloudData() {
     };
   });
   const mergedClubs = Object.values(clubById);
+
+  // Sync des stats overrides depuis le cloud (last-write-wins, même logique que les statuts).
+  try {
+    const keys = Object.keys(rawPlayerStats);
+    if (keys.length) {
+      const statsOv = JSON.parse(localStorage.getItem('cdd_player_stats_override') || '{}');
+      const statsTs  = JSON.parse(localStorage.getItem('cdd_player_stats_local_ts')  || '{}');
+      let dirty = false;
+      keys.forEach(pid => {
+        const { statsOverride, statsUpdatedAt } = rawPlayerStats[pid];
+        const cloudMs = statsUpdatedAt && typeof statsUpdatedAt.toMillis === 'function'
+          ? statsUpdatedAt.toMillis()
+          : (typeof statsUpdatedAt === 'number' ? statsUpdatedAt : 0);
+        const localMs = statsTs[pid] || 0;
+        if (localMs > cloudMs && localMs > 0) return; // local plus récent → on garde
+        if (statsOverride && typeof statsOverride === 'object') {
+          statsOv[pid] = { ...statsOverride };
+        } else {
+          delete statsOv[pid]; // cloud = null → on efface l'override local
+        }
+        delete statsTs[pid];
+        dirty = true;
+      });
+      if (dirty) {
+        localStorage.setItem('cdd_player_stats_override', JSON.stringify(statsOv));
+        localStorage.setItem('cdd_player_stats_local_ts',  JSON.stringify(statsTs));
+      }
+    }
+  } catch (e) {}
 
   // Écriture du cache local (source que lit l'adaptateur synchrone).
   try {
@@ -1418,7 +1466,7 @@ async function consumeInvite(token) {
 
 window.cddData = {
   get ready() { return !!db; },
-  saveClub, saveTeam, savePlayer, saveMembership, removeTeamMembership,
+  saveClub, saveTeam, savePlayer, savePlayerStats, saveMembership, removeTeamMembership,
   fetchMemberships, fetchClubMemberships, fetchClub, fetchTeams, fetchPlayers,
   migrateLocalToCloud, pullCloudData,
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,

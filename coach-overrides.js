@@ -117,6 +117,15 @@ window.CDD_COACH = {
     if (!all[playerId]) all[playerId] = {};
     all[playerId][key] = value;
     try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
+    try {
+      const ts = JSON.parse(localStorage.getItem('cdd_player_stats_local_ts') || '{}');
+      ts[playerId] = Date.now();
+      localStorage.setItem('cdd_player_stats_local_ts', JSON.stringify(ts));
+    } catch (e) {}
+    if (window.cddData?.savePlayerStats) {
+      window.cddData.savePlayerStats(playerId, all[playerId])
+        .catch(err => console.warn('[CDD] sync stats cloud failed', err.message));
+    }
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
@@ -128,6 +137,15 @@ window.CDD_COACH = {
       if (typeof statsObj[k] === 'number') all[playerId][k] = statsObj[k];
     });
     try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
+    try {
+      const ts = JSON.parse(localStorage.getItem('cdd_player_stats_local_ts') || '{}');
+      ts[playerId] = Date.now();
+      localStorage.setItem('cdd_player_stats_local_ts', JSON.stringify(ts));
+    } catch (e) {}
+    if (window.cddData?.savePlayerStats) {
+      window.cddData.savePlayerStats(playerId, all[playerId])
+        .catch(err => console.warn('[CDD] sync stats cloud failed', err.message));
+    }
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
@@ -135,6 +153,15 @@ window.CDD_COACH = {
     const all = this.getStatsOverrides();
     delete all[playerId];
     try { localStorage.setItem('cdd_player_stats_override', JSON.stringify(all)); } catch (e) {}
+    try {
+      const ts = JSON.parse(localStorage.getItem('cdd_player_stats_local_ts') || '{}');
+      delete ts[playerId];
+      localStorage.setItem('cdd_player_stats_local_ts', JSON.stringify(ts));
+    } catch (e) {}
+    if (window.cddData?.savePlayerStats) {
+      window.cddData.savePlayerStats(playerId, null)
+        .catch(err => console.warn('[CDD] sync stats cloud failed', err.message));
+    }
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
