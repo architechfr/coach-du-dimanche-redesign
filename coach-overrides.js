@@ -412,6 +412,15 @@ window.CDD_COACH = {
     });
 
     try { localStorage.setItem('cdd_player_perf_deltas', JSON.stringify(allDeltas)); } catch (e) {}
+    // Sync cloud pour chaque joueur modifié (fire-and-forget)
+    if (window.cddData?.savePlayerPerfDeltas) {
+      lineup.forEach(p => {
+        if (allDeltas[p.id] && allDeltas[p.id][M.id]) {
+          window.cddData.savePlayerPerfDeltas(p.id, allDeltas[p.id])
+            .catch(err => console.warn('[CDD] sync perf deltas cloud failed', err.message));
+        }
+      });
+    }
     window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },

@@ -646,6 +646,18 @@ async function savePlayerStats(playerId, statsObj) {
   return { ok: true };
 }
 
+// Sauvegarde l'historique de progression par match d'un joueur.
+// deltasObj = { [matchId]: { PAC, SHO, PAS, DRI, DEF, PHY, goals, … } }
+async function savePlayerPerfDeltas(playerId, deltasObj) {
+  if (!db || !playerId) return { ok: false, reason: 'no-db' };
+  await setDoc(doc(db, 'players', String(playerId)), {
+    perfDeltasOverride: deltasObj && Object.keys(deltasObj).length ? deltasObj : null,
+    perfDeltasUpdatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: true });
+  return { ok: true };
+}
+
 // Sauvegarde le profil d'un joueur (poste, licence, taille, pied, contacts…).
 // La photo (photoDataUrl) est exclue — trop volumineuse pour Firestore.
 async function savePlayerProfile(playerId, profileObj) {
@@ -1090,9 +1102,10 @@ async function pullCloudData() {
   const teamsAll = [];
   let playerCount = 0;
   // Capture les overrides AVANT stripMeta (les Timestamps ne survivent pas à JSON).
-  const rawPlayerStats    = {};
-  const rawPlayerProfiles = {};
-  const rawPlayerNotes    = {};
+  const rawPlayerStats      = {};
+  const rawPlayerProfiles   = {};
+  const rawPlayerNotes      = {};
+  const rawPlayerPerfDeltas = {};
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
@@ -1101,9 +1114,10 @@ async function pullCloudData() {
       const players = await fetchPlayers(cid);
       players.forEach(p => {
         if (!p || !p.id) return;
-        if ('statsOverride'    in p) rawPlayerStats[p.id]    = { statsOverride:    p.statsOverride    || null, statsUpdatedAt:    p.statsUpdatedAt    || null };
-        if ('profileOverride'  in p) rawPlayerProfiles[p.id] = { profileOverride:  p.profileOverride  || null, profileUpdatedAt:  p.profileUpdatedAt  || null };
-        if ('notesOverride'    in p) rawPlayerNotes[p.id]    = { notesOverride:    p.notesOverride    || null, notesUpdatedAt:    p.notesUpdatedAt    || null };
+        if ('statsOverride'      in p) rawPlayerStats[p.id]      = { statsOverride:      p.statsOverride      || null, statsUpdatedAt:      p.statsUpdatedAt      || null };
+        if ('profileOverride'    in p) rawPlayerProfiles[p.id]   = { profileOverride:    p.profileOverride    || null, profileUpdatedAt:    p.profileUpdatedAt    || null };
+        if ('notesOverride'      in p) rawPlayerNotes[p.id]      = { notesOverride:      p.notesOverride      || null, notesUpdatedAt:      p.notesUpdatedAt      || null };
+        if ('perfDeltasOverride' in p) rawPlayerPerfDeltas[p.id] = { perfDeltasOverride: p.perfDeltasOverride || null };
       });
       for (const t of teams) {
         const tc = stripMeta(t);
@@ -1288,6 +1302,22 @@ async function pullCloudData() {
         localStorage.setItem('cdd_player_notes', JSON.stringify(notesOv));
         localStorage.setItem('cdd_player_notes_local_ts', JSON.stringify(notesTs));
       }
+    }
+  } catch (e) {}
+
+  // Sync perf deltas (UNION par matchId — on ne perd jamais un match).
+  try {
+    const keys = Object.keys(rawPlayerPerfDeltas);
+    if (keys.length) {
+      const allDeltas = JSON.parse(localStorage.getItem('cdd_player_perf_deltas') || '{}');
+      let dirty = false;
+      keys.forEach(pid => {
+        const { perfDeltasOverride } = rawPlayerPerfDeltas[pid];
+        if (!perfDeltasOverride || typeof perfDeltasOverride !== 'object') return;
+        allDeltas[pid] = { ...(allDeltas[pid] || {}), ...perfDeltasOverride };
+        dirty = true;
+      });
+      if (dirty) localStorage.setItem('cdd_player_perf_deltas', JSON.stringify(allDeltas));
     }
   } catch (e) {}
 
@@ -1555,7 +1585,7 @@ async function consumeInvite(token) {
 
 window.cddData = {
   get ready() { return !!db; },
-  saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, saveMembership, removeTeamMembership,
+  saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas, saveMembership, removeTeamMembership,
   fetchMemberships, fetchClubMemberships, fetchClub, fetchTeams, fetchPlayers,
   migrateLocalToCloud, pullCloudData,
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
