@@ -960,8 +960,31 @@ async function migrateLocalToCloud(opts) {
     } catch (e) { counts.errors++; console.warn('[cddData] migrate club', club.id, e.message); }
   }
 
+  // GARDE-FOU : on ne pousse pas un effectif si le cloud en a déjà une
+  // version plus riche — un appareil au local appauvri ne doit jamais
+  // corrompre le cloud (anti-imbroglio 2026-05-22).
+  const cloudCount = {};
+  try {
+    const seenClubs = {};
+    for (const team of (Array.isArray(teams) ? teams : [])) {
+      const cid = team && team.clubId;
+      if (!cid || seenClubs[cid]) continue;
+      seenClubs[cid] = true;
+      const cp = await fetchPlayers(cid);
+      cp.forEach(p => { if (p && p.teamId) cloudCount[p.teamId] = (cloudCount[p.teamId] || 0) + 1; });
+    }
+  } catch (e) { console.warn('[cddData] migrate : lecture cloud préalable échouée', e.message); }
+
   for (const team of (Array.isArray(teams) ? teams : [])) {
     if (!team || !team.id) continue;
+    const localN = (team.players || []).length;
+    const cloudN = cloudCount[team.id] || 0;
+    if (cloudN > localN) {
+      console.warn('[cddData] migrate : équipe ' + team.id + ' IGNORÉE — le cloud est plus riche ('
+        + cloudN + ' > ' + localN + ' joueurs)');
+      counts.skipped = (counts.skipped || 0) + 1;
+      continue;
+    }
     try {
       await saveTeam(team);
       counts.teams++;
@@ -1023,10 +1046,87 @@ async function pullCloudData() {
     } catch (e) { console.warn('[cddData] pull club', cid, e.message); }
   }
 
+  // ═══ GARDE-FOU ANTI-ÉCRASEMENT (anti-imbroglio 2026-05-22) ═══════
+  // Le cloud ne doit JAMAIS détruire un effectif local plus riche.
+  // On lit le local, on le sauvegarde, puis on FUSIONNE — on ne
+  // remplace jamais une équipe par une version cloud plus pauvre.
+  let localClubs = [];
+  let localTeams = [];
+  try { localClubs = JSON.parse(localStorage.getItem('arb_clubs') || '[]'); } catch (e) {}
+  try { localTeams = JSON.parse(localStorage.getItem('arb_teams') || '[]'); } catch (e) {}
+  if (!Array.isArray(localClubs)) localClubs = [];
+  if (!Array.isArray(localTeams)) localTeams = [];
+
+  // Sauvegarde horodatée du local AVANT toute écriture — filet de sécurité.
+  // On ne garde que les 3 sauvegardes les plus récentes (anti-saturation).
+  try {
+    if (localTeams.length || localClubs.length) {
+      const bkeys = Object.keys(localStorage)
+        .filter(k => k.indexOf('cdd_cloud_backup_') === 0).sort();
+      while (bkeys.length > 3) { localStorage.removeItem(bkeys.shift()); }
+      localStorage.setItem('cdd_cloud_backup_' + Date.now(), JSON.stringify({
+        arb_clubs: localStorage.getItem('arb_clubs'),
+        arb_teams: localStorage.getItem('arb_teams'),
+        arb_current_club: localStorage.getItem('arb_current_club'),
+        cdd_active_context: localStorage.getItem('cdd_active_context'),
+      }));
+    }
+  } catch (e) {}
+
+  // Cloud vide alors qu'on a du local → on ne touche À RIEN à l'effectif.
+  // (les memberships, elles, suivent toujours le cloud — source des rôles.)
+  if (teamsAll.length === 0 && localTeams.length > 0) {
+    console.warn('[cddData] pull : cloud vide — effectif local préservé (anti-écrasement)');
+    try {
+      localStorage.setItem('cdd_memberships', JSON.stringify(memberships || []));
+      window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+    } catch (e) {}
+    return { ok: true, skipped: 'cloud-empty', counts: { clubs: 0, teams: 0, players: 0 } };
+  }
+
+  // Fusion équipes par id : pour une équipe présente des deux côtés, on ne
+  // prend le cloud QUE s'il a au moins autant de joueurs ; sinon on garde le
+  // local. Les joueurs sont fusionnés par id (zéro perte). Les équipes
+  // locales absentes du cloud sont conservées.
+  const teamById = {};
+  localTeams.forEach(t => { if (t && t.id) teamById[t.id] = t; });
+  teamsAll.forEach(ct => {
+    if (!ct || !ct.id) return;
+    const lt = teamById[ct.id];
+    if (!lt) { teamById[ct.id] = ct; return; }
+    const cloudN = (ct.players || []).length;
+    const localN = (lt.players || []).length;
+    if (cloudN >= localN) {
+      const pById = {};
+      (lt.players || []).forEach(p => { if (p && p.id) pById[p.id] = p; });
+      (ct.players || []).forEach(p => { if (p && p.id) pById[p.id] = { ...pById[p.id], ...p }; });
+      teamById[ct.id] = { ...lt, ...ct, players: Object.values(pById) };
+    } else {
+      console.warn('[cddData] équipe ' + ct.id + ' : cloud plus pauvre ('
+        + cloudN + ' < ' + localN + ' joueurs) — version locale conservée');
+    }
+  });
+  const mergedTeams = Object.values(teamById);
+
+  // Fusion clubs par id (union). Le logo est préservé : le cloud le stocke
+  // sous `logoUrl`, l'app le lit sous `logoDataUrl` → on harmonise les deux.
+  const clubById = {};
+  localClubs.forEach(c => { if (c && c.id) clubById[c.id] = c; });
+  clubs.forEach(cc => {
+    if (!cc || !cc.id) return;
+    const lc = clubById[cc.id] || {};
+    clubById[cc.id] = {
+      ...lc, ...cc,
+      logoDataUrl: lc.logoDataUrl || cc.logoDataUrl || cc.logoUrl || null,
+    };
+  });
+  const mergedClubs = Object.values(clubById);
+
   // Écriture du cache local (source que lit l'adaptateur synchrone).
   try {
-    localStorage.setItem('arb_clubs', JSON.stringify(clubs));
-    localStorage.setItem('arb_teams', JSON.stringify(teamsAll));
+    localStorage.setItem('arb_clubs', JSON.stringify(mergedClubs));
+    localStorage.setItem('arb_teams', JSON.stringify(mergedTeams));
     // Phase D — cache LS au nouveau format (map `teams` + clubRole). Si une
     // membership cloud est encore au vieux format plat (Phase C, pre-D5),
     // on la garde telle quelle : roles.js D3 lit les deux formats.
@@ -1046,13 +1146,13 @@ async function pullCloudData() {
       })
     ));
     const cur = localStorage.getItem('arb_current_club');
-    if ((!cur || !clubs.some(c => c.id === cur)) && clubs[0]) {
-      localStorage.setItem('arb_current_club', clubs[0].id);
+    if ((!cur || !mergedClubs.some(c => c.id === cur)) && mergedClubs[0]) {
+      localStorage.setItem('arb_current_club', mergedClubs[0].id);
     }
     // Si l'adaptateur tourne en mode override (seed), on le met à jour aussi.
     if (window.__CDD_OVERRIDE) {
-      window.__CDD_OVERRIDE['arb_clubs'] = clubs;
-      window.__CDD_OVERRIDE['arb_teams'] = teamsAll;
+      window.__CDD_OVERRIDE['arb_clubs'] = mergedClubs;
+      window.__CDD_OVERRIDE['arb_teams'] = mergedTeams;
       window.__CDD_OVERRIDE['arb_current_club'] = localStorage.getItem('arb_current_club');
     }
   } catch (e) {
@@ -1065,9 +1165,9 @@ async function pullCloudData() {
     window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
   } catch (e) {}
 
-  console.info('%c[cddData] lecture cloud → local terminée', 'color:#c8f169;font-weight:900',
-    { clubs: clubs.length, teams: teamsAll.length, players: playerCount });
-  return { ok: true, counts: { clubs: clubs.length, teams: teamsAll.length, players: playerCount } };
+  console.info('%c[cddData] lecture cloud → local terminée (fusion sûre)', 'color:#c8f169;font-weight:900',
+    { clubs: mergedClubs.length, teams: mergedTeams.length, players: playerCount });
+  return { ok: true, counts: { clubs: mergedClubs.length, teams: mergedTeams.length, players: playerCount } };
 }
 
 /* ============================================================
