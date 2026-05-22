@@ -752,8 +752,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         <div className="set-sec">
           <div className="set-sec-k">DONNÉES</div>
           <div className="set-rows">
-            <SetRow ic="☁️" t="Sauvegarde cloud" d="Envoyer mes données vers le cloud" go={cloudBackup}/>
-            <SetRow ic="📥" t="Charger depuis le cloud" d="Récupérer mes données du cloud" go={cloudRestore}/>
+            <SetRow ic="☁️" t="Sauvegarder mon équipe" d="Envoie ta version actuelle en ligne, pour la retrouver sur tes autres appareils" go={cloudBackup}/>
+            <SetRow ic="📥" t="Récupérer mon équipe" d="Remet sur cet appareil la dernière version enregistrée en ligne" go={cloudRestore}/>
             <SetRow ic="📤" t="Exporter mes données" d="Télécharger toutes mes données (JSON)" go={exportData}/>
             {isAdmin && (
               <SetRow ic="🗑️" t="Vider le cache local" d="Efface toutes les données locales" go={clearCache} warn/>

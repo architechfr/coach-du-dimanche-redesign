@@ -1085,12 +1085,23 @@ async function pullCloudData() {
     return { ok: true, skipped: 'cloud-empty', counts: { clubs: 0, teams: 0, players: 0 } };
   }
 
+  // RÉCUPÉRATION SCOPÉE AUX DROITS (2026-05-22) : le périmètre autorisé du
+  // compte = les clubs de ses memberships (clubIds). On ne conserve QUE le
+  // local de ce périmètre — le résidu d'un autre compte (ex. USDF traîné sur
+  // un compte qui ne coache que le FCMH) est écarté. Sûr car on n'arrive ici
+  // qu'avec ≥1 membership valide (le cas 0 membership est sorti plus haut),
+  // et une sauvegarde horodatée a déjà été posée.
+  const authorizedClubIds = new Set(clubIds);
+
   // Fusion équipes par id : pour une équipe présente des deux côtés, on ne
   // prend le cloud QUE s'il a au moins autant de joueurs ; sinon on garde le
   // local. Les joueurs sont fusionnés par id (zéro perte). Les équipes
-  // locales absentes du cloud sont conservées.
+  // locales d'un club AUTORISÉ absentes du cloud sont conservées (équipe
+  // créée en local pas encore poussée) ; les autres sont écartées.
   const teamById = {};
-  localTeams.forEach(t => { if (t && t.id) teamById[t.id] = t; });
+  localTeams.forEach(t => {
+    if (t && t.id && authorizedClubIds.has(t.clubId)) teamById[t.id] = t;
+  });
   teamsAll.forEach(ct => {
     if (!ct || !ct.id) return;
     const lt = teamById[ct.id];
@@ -1109,10 +1120,12 @@ async function pullCloudData() {
   });
   const mergedTeams = Object.values(teamById);
 
-  // Fusion clubs par id (union). Le logo est préservé : le cloud le stocke
-  // sous `logoUrl`, l'app le lit sous `logoDataUrl` → on harmonise les deux.
+  // Fusion clubs par id, scopée au périmètre autorisé. Le logo est préservé :
+  // le cloud le stocke sous `logoUrl`, l'app le lit sous `logoDataUrl`.
   const clubById = {};
-  localClubs.forEach(c => { if (c && c.id) clubById[c.id] = c; });
+  localClubs.forEach(c => {
+    if (c && c.id && authorizedClubIds.has(c.id)) clubById[c.id] = c;
+  });
   clubs.forEach(cc => {
     if (!cc || !cc.id) return;
     const lc = clubById[cc.id] || {};

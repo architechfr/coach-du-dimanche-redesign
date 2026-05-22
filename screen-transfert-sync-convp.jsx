@@ -854,8 +854,27 @@ function ScreenSyncCloud({ go, tweaks }) {
       </div>
 
       <div className="sync-actions">
-        <button className="btn-cta" onClick={() => alert("Sync cloud Firestore — disponible avec l'auth Google (V2.x)")}>↻ FORCER UNE SYNC</button>
-        <button className="btn-cta ghost" onClick={() => alert("Pull cloud — disponible avec l'auth Google (V2.x)")}>↧ Pull depuis cloud</button>
+        <button className="btn-cta" onClick={async () => {
+          if (!window.cddData || !window.cddData.pullCloudData) {
+            alert("Service cloud indisponible — vérifie ta connexion et réessaie."); return;
+          }
+          if (!confirm("Récupérer ton équipe depuis le cloud ?\n\nLa version enregistrée en ligne sera remise sur cet appareil.")) return;
+          try {
+            const r = await window.cddData.pullCloudData();
+            if (r && r.ok && !r.skipped && !r.empty) {
+              alert("✓ Équipe récupérée\n\nClubs : " + ((r.counts && r.counts.clubs) || 0)
+                + " · Joueurs : " + ((r.counts && r.counts.players) || 0)
+                + "\n\nRecharge l'app si l'affichage ne s'actualise pas.");
+            } else if (r && (r.empty || r.skipped)) {
+              alert("Rien à récupérer pour ce compte dans le cloud.");
+            } else {
+              alert("La récupération a échoué" + (r && r.reason ? " (" + r.reason + ")" : "") + ".");
+            }
+          } catch (e) {
+            alert("✗ Erreur pendant la récupération :\n\n" + (e && e.message ? e.message : e));
+          }
+        }}>Récupérer mon équipe</button>
+        <div className="sync-actions-hint">Remet sur cet appareil la dernière version de ton équipe enregistrée en ligne. Pour sauvegarder, va dans Réglages &rsaquo; Données.</div>
       </div>
     </div>
   );
