@@ -185,6 +185,15 @@ window.CDD_COACH = {
     });
     if (Object.keys(all[playerId]).length === 0) delete all[playerId];
     try { localStorage.setItem('cdd_player_profile', JSON.stringify(all)); } catch (e) {}
+    try {
+      const ts = JSON.parse(localStorage.getItem('cdd_player_profile_local_ts') || '{}');
+      ts[playerId] = Date.now();
+      localStorage.setItem('cdd_player_profile_local_ts', JSON.stringify(ts));
+    } catch (e) {}
+    if (window.cddData?.savePlayerProfile) {
+      window.cddData.savePlayerProfile(playerId, all[playerId] || null)
+        .catch(err => console.warn('[CDD] sync profile cloud failed', err.message));
+    }
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
@@ -192,6 +201,15 @@ window.CDD_COACH = {
     const all = this.getProfileOverrides();
     delete all[playerId];
     try { localStorage.setItem('cdd_player_profile', JSON.stringify(all)); } catch (e) {}
+    try {
+      const ts = JSON.parse(localStorage.getItem('cdd_player_profile_local_ts') || '{}');
+      delete ts[playerId];
+      localStorage.setItem('cdd_player_profile_local_ts', JSON.stringify(ts));
+    } catch (e) {}
+    if (window.cddData?.savePlayerProfile) {
+      window.cddData.savePlayerProfile(playerId, null)
+        .catch(err => console.warn('[CDD] sync profile cloud failed', err.message));
+    }
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
@@ -248,6 +266,15 @@ window.CDD_COACH = {
         ...note,
       });
       localStorage.setItem('cdd_player_notes', JSON.stringify(all));
+      try {
+        const ts = JSON.parse(localStorage.getItem('cdd_player_notes_local_ts') || '{}');
+        ts[playerId] = Date.now();
+        localStorage.setItem('cdd_player_notes_local_ts', JSON.stringify(ts));
+      } catch (e) {}
+      if (window.cddData?.savePlayerNotes) {
+        window.cddData.savePlayerNotes(playerId, all[playerId])
+          .catch(err => console.warn('[CDD] sync notes cloud failed', err.message));
+      }
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
   },
@@ -257,6 +284,15 @@ window.CDD_COACH = {
       if (all[playerId]) {
         all[playerId].splice(idx, 1);
         localStorage.setItem('cdd_player_notes', JSON.stringify(all));
+        try {
+          const ts = JSON.parse(localStorage.getItem('cdd_player_notes_local_ts') || '{}');
+          ts[playerId] = Date.now();
+          localStorage.setItem('cdd_player_notes_local_ts', JSON.stringify(ts));
+        } catch (e) {}
+        if (window.cddData?.savePlayerNotes) {
+          window.cddData.savePlayerNotes(playerId, all[playerId])
+            .catch(err => console.warn('[CDD] sync notes cloud failed', err.message));
+        }
       }
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-player-changed', { detail: { playerId } }));
