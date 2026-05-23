@@ -132,6 +132,8 @@ function ScreenSettings({ go, tweaks, setTweak }) {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
   const [showAdminClubsPanel, setShowAdminClubsPanel] = useState(false);
+  // Modale « Quitter le club » — { clubId, clubName, teamsCount } ou null.
+  const [leavingClub, setLeavingClub] = useState(null);
   const dark      = getToggle("dark", true);
   const sons      = getToggle("sons", true);
   const vibrate   = getToggle("vibrate", false);
@@ -629,24 +631,48 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                 {myMemberships.map(m => {
                   const club = clubById[m.clubId];
                   const clubName = club?.name || `Club inconnu (${m.clubId.slice(0, 10)}…)`;
-                  const clubColor = club?.primaryColor || club?.color || '#666';
+                  const clubColors = club?.colors || [
+                    club?.primaryColor || club?.color || '#c8f169',
+                    '#0a0e14',
+                  ];
                   const teams = allTeams.filter(t => t.clubId === m.clubId);
                   const isInferred = !club;
+                  // Rôle Phase D : on lit clubRole d'abord (owner/coach/admin),
+                  // sinon le « meilleur » rôle parmi les équipes attachées,
+                  // sinon legacy m.role (compat pre-D5). Évite l'affichage « ? ».
+                  const roleOrder = ['owner', 'coach', 'adjoint', 'parent', 'joueur', 'lecteur'];
+                  let effRole = m.clubRole || m.role || '';
+                  if (!effRole && m.teams && typeof m.teams === 'object') {
+                    for (const ord of roleOrder) {
+                      const found = Object.values(m.teams).some(t => t && t.role === ord);
+                      if (found) { effRole = ord; break; }
+                    }
+                  }
+                  const effLabel = effRole
+                    ? (window.CDD_ROLES?.roleLabel?.(effRole) || effRole)
+                    : 'Membre';
                   return (
                     <div key={m.clubId} style={{
                       padding:'12px 14px', borderRadius:10,
                       background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
                     }}>
                       <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>
-                        <div style={{
-                          width:38, height:38, borderRadius:8,
-                          background: clubColor, color:'#0a0e14',
-                          display:'flex', alignItems:'center', justifyContent:'center',
-                          fontWeight:900, fontSize:16,
-                        }}>{(clubName[0] || '?').toUpperCase()}</div>
+                        {/* Vrai logo via ClubBadge (résout cdd_club_logos[clubId]
+                            ou arb_clubs[].logoDataUrl) — fallback initiale+couleur. */}
+                        {window.ClubBadge ? (
+                          <window.ClubBadge clubId={m.clubId} clubName={clubName}
+                                            colors={clubColors} size={38} shape="square"/>
+                        ) : (
+                          <div style={{
+                            width:38, height:38, borderRadius:8,
+                            background: clubColors[0], color: clubColors[1] || '#0a0e14',
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            fontWeight:900, fontSize:16,
+                          }}>{(clubName[0] || '?').toUpperCase()}</div>
+                        )}
                         <div style={{flex:1, minWidth:0}}>
                           <div style={{fontWeight:800, fontSize:14}}>
-                            🏆 {window.CDD_ROLES?.roleLabel?.(m.role) || m.role} de {clubName}
+                            🏆 {effLabel} de {clubName}
                           </div>
                           <div style={{fontSize:11, opacity:0.6, marginTop:2}}>
                             {teams.length} équipe{teams.length > 1 ? 's' : ''}
@@ -662,31 +688,17 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                         </div>
                       )}
                       <div style={{display:'flex', gap:8, paddingLeft:48}}>
-                        <button onClick={() => {
-                          const confirmMsg =
-                            `⚠️ Quitter "${clubName}" supprime DÉFINITIVEMENT :\n` +
-                            `  • le club\n` +
-                            `  • ses ${teams.length} équipe(s) et leurs joueurs\n` +
-                            `  • le logo et les préférences du club\n\n` +
-                            `Cette action est IRRÉVERSIBLE. Continuer ?`;
-                          if (!confirm(confirmMsg)) return;
-                          const second = prompt(`Pour confirmer, tape le nom du club : ${clubName}`);
-                          if (second !== clubName) {
-                            alert('Nom incorrect. Suppression annulée.');
-                            return;
-                          }
-                          const ok = window.CDD_ROLES?.deleteClubAndData?.(m.clubId, { email: myEmail });
-                          if (ok) {
-                            alert(`Club "${clubName}" supprimé. L'app va se rafraîchir.`);
-                            setRefresh(x => x + 1);
-                          } else {
-                            alert('Erreur lors de la suppression. Voir la console pour détails.');
-                          }
-                        }} style={{
-                          padding:'7px 12px', borderRadius:6, fontSize:11, fontWeight:700,
-                          background:'rgba(239,68,68,0.10)', border:'1px solid rgba(239,68,68,0.40)',
-                          color:'#ef4444', cursor:'pointer', fontFamily:'inherit',
-                        }}>🗑 Quitter ce club</button>
+                        {/* Bouton « Quitter » volontairement discret (lien gris)
+                            pour éviter les clics accidentels. La vraie sécurité
+                            est dans la modale LeaveClubModal qui s'ouvre ensuite. */}
+                        <button onClick={() => setLeavingClub({
+                          clubId: m.clubId, clubName, teamsCount: teams.length,
+                        })} style={{
+                          padding:'5px 8px', borderRadius:6, fontSize:11, fontWeight:600,
+                          background:'transparent',
+                          border:'1px solid rgba(255,255,255,0.10)',
+                          color:'rgba(255,255,255,0.45)', cursor:'pointer', fontFamily:'inherit',
+                        }}>🗑 Quitter ce club…</button>
                       </div>
                     </div>
                   );
@@ -707,16 +719,22 @@ function ScreenSettings({ go, tweaks, setTweak }) {
               <span className="set-row-d">{accentOptions.find(c => c.id === tweaks.accent)?.label || "Personnalisée"}</span>
             </div>
           </div>
-          <div className="theme-picker-inline">
-            {accentOptions.map(c => (
-              <button key={c.id}
-                className={`theme-swatch ${tweaks.accent===c.id?"on":""}`}
-                style={{"--sw": c.id}}
-                onClick={() => setTweak("accent", c.id)}>
-                <span className="theme-swatch-color"/>
-                <span className="theme-swatch-label">{c.label}</span>
-              </button>
-            ))}
+          {/* Grille visuelle : pastille de couleur EN TAILLE, label en dessous,
+              coche en haut à droite si sélectionné. Les classes .set-theme-swatches
+              et .set-swatch sont définies dans quick-theme.css. */}
+          <div className="set-theme-swatches">
+            {accentOptions.map(c => {
+              const selected = tweaks.accent === c.id;
+              return (
+                <button key={c.id}
+                  className={`set-swatch ${selected ? "on" : ""}`}
+                  onClick={() => setTweak("accent", c.id)}>
+                  <span className="set-swatch-c" style={{background: c.id}}/>
+                  <span className="set-swatch-l">{c.label}</span>
+                  {selected && <span className="set-swatch-tick">✓</span>}
+                </button>
+              );
+            })}
           </div>
           <SetRow ic="🌑" t="Thème sombre" d={dark ? "Activé" : "Désactivé"} rightToggle on={dark} onToggle={() => setToggle("dark", !dark)}/>
           <SetRow ic="📱" t="Installer l'app" d="Ajouter à l'écran d'accueil" go={installApp}/>
@@ -798,6 +816,19 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         <ClubMembersPanel
           clubName={club.name}
           onClose={() => setShowMembersPanel(false)}/>
+      )}
+
+      {leavingClub && (
+        <LeaveClubModal
+          clubId={leavingClub.clubId}
+          clubName={leavingClub.clubName}
+          teamsCount={leavingClub.teamsCount}
+          email={localStorage.getItem('cdd_user_email') || ''}
+          onClose={() => setLeavingClub(null)}
+          onConfirmed={() => {
+            setLeavingClub(null);
+            setRefresh(x => x + 1);
+          }}/>
       )}
 
       <div className="set-sec">
@@ -1362,3 +1393,121 @@ function ClubMembersPanel({ clubName, onClose }) {
 }
 
 window.ScreenSettings = ScreenSettings;
+
+// ─── Modale « Quitter ce club » ─────────────────────────────────────
+// Action destructive (irréversible) → friction délibérée :
+//   1. Liste explicite de ce qui sera perdu (équipes, joueurs, logo).
+//   2. Champ texte à remplir EXACTEMENT avec le nom du club. Le bouton
+//      « Quitter définitivement » reste désactivé tant que le nom n'est
+//      pas tapé à l'identique. Évite les clics accidentels (un confirm
+//      natif est trop facile à valider sans réfléchir).
+function LeaveClubModal({ clubId, clubName, teamsCount, email, onClose, onConfirmed }) {
+  const [typed, setTyped] = React.useState('');
+  const [working, setWorking] = React.useState(false);
+  const expected = (clubName || '').trim();
+  const canQuit = typed.trim() === expected && !working;
+
+  const handleQuit = () => {
+    if (!canQuit) return;
+    setWorking(true);
+    try {
+      const ok = window.CDD_ROLES?.deleteClubAndData?.(clubId, { email });
+      if (ok) {
+        if (onConfirmed) onConfirmed();
+      } else {
+        alert('Erreur lors de la suppression. Voir la console pour détails.');
+        setWorking(false);
+      }
+    } catch (e) {
+      alert('Erreur : ' + ((e && e.message) || e));
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.78)', zIndex:500,
+      display:'flex', justifyContent:'center', alignItems:'flex-start',
+      overflow:'auto', padding:20,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:'100%', maxWidth:460, background:'#0B1320', borderRadius:16,
+        border:'1px solid rgba(239,68,68,0.35)', padding:22, color:'#fff', marginTop:40,
+      }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14}}>
+          <div>
+            <div style={{
+              fontSize:10, fontWeight:800, letterSpacing:'.12em',
+              color:'#ef4444', textTransform:'uppercase',
+            }}>Action irréversible</div>
+            <div style={{fontSize:20, fontWeight:900, marginTop:4}}>Quitter {clubName}</div>
+          </div>
+          <button onClick={onClose} style={{
+            background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.18)',
+            color:'#fff', width:32, height:32, borderRadius:16, cursor:'pointer', fontSize:16,
+          }}>✕</button>
+        </div>
+
+        <div style={{
+          padding:'12px 14px', borderRadius:10, marginBottom:14,
+          background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.35)',
+          fontSize:12.5, lineHeight:1.6, color:'rgba(255,255,255,0.92)',
+        }}>
+          Cette action <b style={{color:'#ff8a8a'}}>supprime définitivement</b> sur cet appareil :
+          <ul style={{margin:'8px 0 0', paddingLeft:20, lineHeight:1.7}}>
+            <li>le club <b>{clubName}</b></li>
+            <li>{teamsCount} équipe{teamsCount > 1 ? 's' : ''} et leurs joueurs</li>
+            <li>le logo et les préférences du club</li>
+            <li>ton rattachement (membership) au club</li>
+          </ul>
+          <div style={{marginTop:10, fontSize:11.5, opacity:0.8}}>
+            Tu pourras à nouveau rejoindre le club uniquement par un lien d'invitation.
+          </div>
+        </div>
+
+        <label style={{display:'flex', flexDirection:'column', gap:6, marginBottom:14}}>
+          <span style={{fontSize:11, fontWeight:800, letterSpacing:'.06em', color:'rgba(255,255,255,0.75)', textTransform:'uppercase'}}>
+            Pour confirmer, retape : <b style={{color:'#c8f169'}}>{expected}</b>
+          </span>
+          <input
+            type="text"
+            value={typed}
+            onChange={e => setTyped(e.target.value)}
+            placeholder={expected}
+            autoFocus
+            autoCapitalize="off"
+            autoCorrect="off"
+            style={{
+              width:'100%', padding:'12px 14px', borderRadius:10,
+              background:'rgba(255,255,255,0.06)',
+              border:`1px solid ${canQuit ? 'rgba(239,68,68,0.55)' : 'rgba(255,255,255,0.14)'}`,
+              color:'#fff', fontSize:15, outline:'none', boxSizing:'border-box',
+              fontFamily:'inherit',
+            }}/>
+          <span style={{fontSize:10.5, opacity:0.55, lineHeight:1.5}}>
+            La saisie est sensible aux majuscules. Recopie le nom à l'identique.
+          </span>
+        </label>
+
+        <div style={{display:'flex', gap:8}}>
+          <button onClick={onClose} disabled={working} style={{
+            flex:1, padding:'12px', borderRadius:10,
+            background:'rgba(255,255,255,0.06)', color:'#fff',
+            border:'1px solid rgba(255,255,255,0.14)', cursor: working ? 'default' : 'pointer',
+            fontWeight:700, fontSize:13, fontFamily:'inherit',
+            opacity: working ? 0.5 : 1,
+          }}>Annuler</button>
+          <button onClick={handleQuit} disabled={!canQuit} style={{
+            flex:2, padding:'12px', borderRadius:10,
+            background: canQuit ? '#ef4444' : 'rgba(239,68,68,0.18)',
+            color: canQuit ? '#fff' : 'rgba(255,138,138,0.55)',
+            border:'none', cursor: canQuit ? 'pointer' : 'not-allowed',
+            fontWeight:800, fontSize:13, fontFamily:'inherit',
+          }}>
+            {working ? 'Suppression…' : '🗑 Quitter définitivement'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
