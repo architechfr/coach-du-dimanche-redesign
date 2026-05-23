@@ -1139,7 +1139,7 @@ function ScreenMatchV2({ go, tweaks }) {
 
       {/* Pre-match setup adversaire (#14) */}
       {M.notStarted && (
-        <PreMatchSetup M={M} onStart={startMatch} rerender={rerender}/>
+        <PreMatchSetup M={M} onStart={startMatch} rerender={rerender} canEdit={canEdit}/>
       )}
 
       {/* Vue Composition en match (#17) */}
@@ -1409,7 +1409,7 @@ function getYellowsForPlayer(M, t, lbl) {
 // ──────────────────────────────────────────────────────────
 // Setup adversaire pré-match (#14)
 // ──────────────────────────────────────────────────────────
-function PreMatchSetup({ M, onStart, rerender }) {
+function PreMatchSetup({ M, onStart, rerender, canEdit }) {
   const [oppName, setOppName] = useStateMV(M.tB?.n || 'Adversaire');
   const [oppColor, setOppColor] = useStateMV(M.tB?.c || '#3b82f6');
   const [oppColor2, setOppColor2] = useStateMV(M.tB?.c2 || '#ffffff');
