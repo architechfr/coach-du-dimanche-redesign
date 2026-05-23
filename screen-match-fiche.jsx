@@ -937,13 +937,20 @@ function ProfilTab({ player, onChange }) {
     if (!canEdit) return;
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (file.size > 1500000) {
-      alert('Photo trop lourde (max ~1,5 Mo). Recompresse-la avant.');
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Photo trop lourde (max 10 Mo).');
       return;
     }
-    const r = new FileReader();
-    r.onload = () => set('photoDataUrl')(r.result);
-    r.readAsDataURL(file);
+    if (!window.CDD_compressImage) {
+      alert('Module compression image indisponible. Recharge l\'app.');
+      return;
+    }
+    // Compression : 400×400 max, JPEG qualité 75 → ~40-80 Ko. La photo va
+    // ensuite dans profileOverride.photoDataUrl et sync via Firestore au
+    // prochain enregistrement du profil (plan Spark OK).
+    window.CDD_compressImage(file, 400, 0.75)
+      .then(dataUrl => set('photoDataUrl')(dataUrl))
+      .catch(err => alert('Erreur compression photo : ' + (err.message || err)));
   };
 
   return (

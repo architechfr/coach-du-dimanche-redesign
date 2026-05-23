@@ -852,30 +852,39 @@ function ClubLogoRow({ refresh }) {
   const currentLogo = (window.CDD_CLUB && window.CDD_CLUB.logoDataUrl) || null;
   const fileInputRef = React.useRef(null);
 
-  const handleFile = (file) => {
+  const handleFile = async (file) => {
     if (!file) return;
-    if (file.size > 800 * 1024) {
-      alert('Logo trop lourd (max 800 Ko). Redimensionne ton image et réessaie.');
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image trop lourde (max 10 Mo). Choisis une image plus légère.');
       return;
     }
     if (!activeClubId) {
       alert('Aucun club actif détecté. Sélectionne un club avant d\'uploader son logo.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const dataUrl = reader.result;
-        const all = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
-        all[activeClubId] = dataUrl;
-        localStorage.setItem('cdd_club_logos', JSON.stringify(all));
-        if (window.CDD_CLUB) window.CDD_CLUB.logoDataUrl = dataUrl;
-        window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
-        if (window.CDD_REBUILD) window.CDD_REBUILD();
-        if (refresh) refresh();
-      } catch (e) { alert('Erreur enregistrement : ' + e.message); }
-    };
-    reader.readAsDataURL(file);
+    if (!window.CDD_compressImage) {
+      alert('Module compression image indisponible. Recharge l\'app.');
+      return;
+    }
+    try {
+      // Compression : 256×256 max, JPEG qualité 80 → ~30-60 Ko (tient
+      // largement dans la limite 1 Mo/doc Firestore, plan Spark OK).
+      const dataUrl = await window.CDD_compressImage(file, 256, 0.8);
+      const all = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
+      all[activeClubId] = dataUrl;
+      localStorage.setItem('cdd_club_logos', JSON.stringify(all));
+      if (window.CDD_CLUB) window.CDD_CLUB.logoDataUrl = dataUrl;
+      window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+      if (refresh) refresh();
+      // Sync vers Firestore (base64 compressé dans clubs/{id}.logoUrl).
+      if (window.cddData && window.cddData.saveClubLogoBase64) {
+        window.cddData.saveClubLogoBase64(activeClubId, dataUrl)
+          .catch(e => console.warn('[logo] sync Firestore', e));
+      }
+    } catch (e) {
+      alert('Erreur traitement image : ' + (e.message || e));
+    }
   };
 
   const removeLogo = () => {
@@ -889,6 +898,11 @@ function ClubLogoRow({ refresh }) {
       window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
       if (window.CDD_REBUILD) window.CDD_REBUILD();
       if (refresh) refresh();
+      // Sync vers Firestore (null efface le logo cloud aussi).
+      if (window.cddData && window.cddData.saveClubLogoBase64) {
+        window.cddData.saveClubLogoBase64(activeClubId, null)
+          .catch(e => console.warn('[logo] sync delete Firestore', e));
+      }
     } catch (e) {}
   };
 
@@ -924,7 +938,7 @@ function ClubLogoRow({ refresh }) {
           background:'rgba(255,200,40,0.06)', border:'1px solid rgba(255,200,40,0.18)',
           display:'inline-block',
         }}>
-          💡 Image carrée recommandée · PNG/JPG · max 800 Ko
+          💡 Image carrée recommandée · PNG/JPG · compressée auto en 256×256
         </div>
         <div style={{display:'flex', gap:6, marginTop:8}}>
           <button onClick={() => fileInputRef.current?.click()} style={{

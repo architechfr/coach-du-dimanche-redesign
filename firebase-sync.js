@@ -27,6 +27,9 @@ import {
   signInWithEmailLink, onAuthStateChanged, signOut as fbSignOut,
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCsAHr2QpRwL-LiC_hawce_rbWyOAl-wrc",
@@ -45,11 +48,12 @@ const COLL_PLAYERS = 'cdd_v2_players';
 
 const VALID_STATUSES = ['active', 'rest', 'injured', 'suspended', 'reserve'];
 
-let app, db, auth;
+let app, db, auth, storage;
 try {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
+  storage = getStorage(app);
 } catch (err) {
   console.error('[cddSync] init failed', err);
 }
@@ -646,6 +650,98 @@ async function savePlayerStats(playerId, statsObj) {
   return { ok: true };
 }
 
+// ─── Images : compression + persistance en base64 dans Firestore ────────────
+// Compromis plan Spark (gratuit) : pas de Firebase Storage. On compresse les
+// images côté navigateur (Canvas API) et on les stocke en base64 dans le doc
+// Firestore (limite 1 Mo/doc). Avec maxDim=400 et quality=0.75, un visage
+// pèse ~40-80 Ko — bien en dessous de la limite, sync OK entre appareils.
+async function compressImageFile(file, maxDim, quality) {
+  if (!file) throw new Error('Aucun fichier fourni');
+  const readAsDataUrl = (f) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error('Lecture fichier échouée'));
+    r.readAsDataURL(f);
+  });
+  const loadImg = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload  = () => resolve(img);
+    img.onerror = () => reject(new Error('Image illisible'));
+    img.src = src;
+  });
+  const dataUrl = await readAsDataUrl(file);
+  const img = await loadImg(dataUrl);
+  let w = img.width, h = img.height;
+  if (w > maxDim || h > maxDim) {
+    if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+    else       { w = Math.round(w * maxDim / h); h = maxDim; }
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  // Fond blanc pour les PNG transparents (JPEG ne supporte pas l'alpha).
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+window.CDD_compressImage = compressImageFile;
+
+// Sauvegarde le logo d'un club en base64 dans son doc Firestore (champ
+// `logoUrl`). dataUrl=null → efface le logo.
+async function saveClubLogoBase64(clubId, dataUrl) {
+  if (!db || !clubId) return { ok: false, reason: 'no-db' };
+  await setDoc(doc(db, 'clubs', String(clubId)), {
+    logoUrl: dataUrl || null,
+    updatedBy: _uid(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true };
+}
+
+// ─── Firebase Storage — DORMANT (plan Spark ne supporte pas Storage) ────────
+// Code conservé pour une future bascule sur plan Blaze : il suffira de
+// rebrancher l'appel depuis screen-onb-set.jsx et screen-match-fiche.jsx.
+
+// Uploade le logo d'un club dans Firebase Storage et sauvegarde l'URL dans
+// le doc Firestore du club. Accepte un objet File (input file, pas de base64).
+async function uploadClubLogo(clubId, file) {
+  if (!storage || !db || !clubId || !file) return { ok: false, reason: 'no-storage' };
+  const sRef = storageRef(storage, `clubs/${clubId}/logo`);
+  const snap = await uploadBytes(sRef, file, { contentType: file.type || 'image/jpeg' });
+  const url = await getDownloadURL(snap.ref);
+  await setDoc(doc(db, 'clubs', String(clubId)), {
+    logoUrl: url, updatedBy: _uid(), updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true, url };
+}
+
+// Supprime le logo d'un club de Storage et efface l'URL dans Firestore.
+async function deleteClubLogo(clubId) {
+  if (!clubId) return { ok: false };
+  if (storage) {
+    try { await deleteObject(storageRef(storage, `clubs/${clubId}/logo`)); } catch (e) {}
+  }
+  if (db) {
+    await setDoc(doc(db, 'clubs', String(clubId)), {
+      logoUrl: null, updatedBy: _uid(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
+  return { ok: true };
+}
+
+// Uploade la photo d'un joueur dans Firebase Storage et sauvegarde l'URL.
+async function uploadPlayerPhoto(playerId, file) {
+  if (!storage || !db || !playerId || !file) return { ok: false, reason: 'no-storage' };
+  const sRef = storageRef(storage, `players/${playerId}/photo`);
+  const snap = await uploadBytes(sRef, file, { contentType: file.type || 'image/jpeg' });
+  const url = await getDownloadURL(snap.ref);
+  await setDoc(doc(db, 'players', String(playerId)), {
+    photoUrl: url, updatedBy: _uid(), updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true, url };
+}
+
 // Sauvegarde l'historique de progression par match d'un joueur.
 // deltasObj = { [matchId]: { PAC, SHO, PAS, DRI, DEF, PHY, goals, … } }
 async function savePlayerPerfDeltas(playerId, deltasObj) {
@@ -658,15 +754,13 @@ async function savePlayerPerfDeltas(playerId, deltasObj) {
   return { ok: true };
 }
 
-// Sauvegarde le profil d'un joueur (poste, licence, taille, pied, contacts…).
-// La photo (photoDataUrl) est exclue — trop volumineuse pour Firestore.
+// Sauvegarde le profil d'un joueur (poste, licence, taille, pied, contacts…
+// et photoDataUrl compressée). On compresse côté UI (compressImageFile) avant
+// d'appeler ce save, pour rester sous la limite 1 Mo/doc Firestore.
 async function savePlayerProfile(playerId, profileObj) {
   if (!db || !playerId) return { ok: false, reason: 'no-db' };
-  let forCloud = null;
-  if (profileObj && typeof profileObj === 'object') {
-    const { photoDataUrl: _photo, ...rest } = profileObj;
-    forCloud = Object.keys(rest).length ? rest : null;
-  }
+  const forCloud = (profileObj && typeof profileObj === 'object' && Object.keys(profileObj).length)
+    ? profileObj : null;
   await setDoc(doc(db, 'players', String(playerId)), {
     profileOverride: forCloud,
     profileUpdatedAt: serverTimestamp(),
@@ -1115,7 +1209,7 @@ async function pullCloudData() {
       players.forEach(p => {
         if (!p || !p.id) return;
         if ('statsOverride'      in p) rawPlayerStats[p.id]      = { statsOverride:      p.statsOverride      || null, statsUpdatedAt:      p.statsUpdatedAt      || null };
-        if ('profileOverride'    in p) rawPlayerProfiles[p.id]   = { profileOverride:    p.profileOverride    || null, profileUpdatedAt:    p.profileUpdatedAt    || null };
+        if ('profileOverride' in p || p.photoUrl) rawPlayerProfiles[p.id] = { profileOverride: p.profileOverride || null, profileUpdatedAt: p.profileUpdatedAt || null, photoUrl: p.photoUrl || null };
         if ('notesOverride'      in p) rawPlayerNotes[p.id]      = { notesOverride:      p.notesOverride      || null, notesUpdatedAt:      p.notesUpdatedAt      || null };
         if ('perfDeltasOverride' in p) rawPlayerPerfDeltas[p.id] = { perfDeltasOverride: p.perfDeltasOverride || null };
       });
@@ -1203,19 +1297,34 @@ async function pullCloudData() {
   const mergedTeams = Object.values(teamById);
 
   // Fusion clubs par id, scopée au périmètre autorisé. Le logo est préservé :
-  // le cloud le stocke sous `logoUrl`, l'app le lit sous `logoDataUrl`.
+  // le cloud le stocke sous `logoUrl` (base64 compressé, plan Spark), l'app
+  // le lit sous `logoDataUrl` ET dans la map localStorage `cdd_club_logos`
+  // (cf. data-bridge.js). On sync les deux pour ne rien manquer.
   const clubById = {};
   localClubs.forEach(c => {
     if (c && c.id && authorizedClubIds.has(c.id)) clubById[c.id] = c;
   });
-  clubs.forEach(cc => {
-    if (!cc || !cc.id) return;
-    const lc = clubById[cc.id] || {};
-    clubById[cc.id] = {
-      ...lc, ...cc,
-      logoDataUrl: lc.logoDataUrl || cc.logoDataUrl || cc.logoUrl || null,
-    };
-  });
+  try {
+    const logosMap = JSON.parse(localStorage.getItem('cdd_club_logos') || '{}');
+    let logosDirty = false;
+    clubs.forEach(cc => {
+      if (!cc || !cc.id) return;
+      const lc = clubById[cc.id] || {};
+      const cloudLogo = cc.logoUrl || cc.logoDataUrl || null;
+      const finalLogo = lc.logoDataUrl || cloudLogo || null;
+      clubById[cc.id] = { ...lc, ...cc, logoDataUrl: finalLogo };
+      // Propage aussi dans cdd_club_logos pour que data-bridge.js le voit.
+      if (cloudLogo && logosMap[cc.id] !== cloudLogo) {
+        logosMap[cc.id] = cloudLogo;
+        logosDirty = true;
+      } else if (!cloudLogo && cc.id in logosMap && !lc.logoDataUrl) {
+        // Cloud a effacé le logo → on retire aussi du local.
+        delete logosMap[cc.id];
+        logosDirty = true;
+      }
+    });
+    if (logosDirty) localStorage.setItem('cdd_club_logos', JSON.stringify(logosMap));
+  } catch (e) { console.warn('[cddData] sync logos', e); }
   const mergedClubs = Object.values(clubById);
 
   // Sync des stats overrides depuis le cloud (last-write-wins, même logique que les statuts).
@@ -1260,14 +1369,12 @@ async function pullCloudData() {
           ? profileUpdatedAt.toMillis()
           : (typeof profileUpdatedAt === 'number' ? profileUpdatedAt : 0);
         const localMs = profTs[pid] || 0;
-        if (localMs > cloudMs && localMs > 0) return;
-        const photoDataUrl = (profOv[pid] || {}).photoDataUrl || null;
+        if (localMs > cloudMs && localMs > 0) return; // local plus récent → on garde
+        // La photoDataUrl (base64 compressée) est désormais dans profileOverride.
         if (profileOverride && typeof profileOverride === 'object') {
           profOv[pid] = { ...profileOverride };
-          if (photoDataUrl) profOv[pid].photoDataUrl = photoDataUrl; // préserve photo locale
         } else {
-          if (photoDataUrl) profOv[pid] = { photoDataUrl };
-          else delete profOv[pid];
+          delete profOv[pid];
         }
         delete profTs[pid];
         dirty = true;
@@ -1585,7 +1692,10 @@ async function consumeInvite(token) {
 
 window.cddData = {
   get ready() { return !!db; },
-  saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas, saveMembership, removeTeamMembership,
+  saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
+  saveClubLogoBase64,
+  uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)
+  saveMembership, removeTeamMembership,
   fetchMemberships, fetchClubMemberships, fetchClub, fetchTeams, fetchPlayers,
   migrateLocalToCloud, pullCloudData,
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
