@@ -270,6 +270,33 @@ service cloud.firestore {
         || resource.data.createdBy == myUid();
     }
 
+    // ═══ /match_lineups/{lineupId}  (id = {teamId}_{matchId}) ═══════
+    // Compo spécifique d'un match (Phase 1A — 2026-05-23). Distincte de
+    // la compo type saison (champ lineupTemplate du doc team). Chaque match
+    // a SA propre compo, partagée avec tous les membres du club.
+    //
+    // Lecture : tout membre du club voit la compo du match.
+    // Écriture : coach/owner/adjoint de l'équipe concernée.
+    match /match_lineups/{lineupId} {
+      allow read:   if isSignedIn() && canReadClub(resource.data.clubId);
+      allow create: if isSignedIn()
+        && canEditTeam(request.resource.data.clubId,
+                       request.resource.data.teamId)
+        && isString(request.resource.data.teamId)
+        && isString(request.resource.data.matchId)
+        && isString(request.resource.data.clubId)
+        && lineupId == request.resource.data.teamId + '_' + request.resource.data.matchId
+        && request.resource.data.size() <= 10;
+      allow update: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.matchId == resource.data.matchId
+        && request.resource.data.size() <= 10;
+      allow delete: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  COLLECTIONS EXISTANTES — conservées telles quelles (ne pas casser)
     // ═══════════════════════════════════════════════════════════════

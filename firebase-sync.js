@@ -785,6 +785,53 @@ async function saveLineupTemplate(teamId, lineupObj) {
   return { ok: true };
 }
 
+// ─── Compo de MATCH (refonte 2026-05-23, Phase 1A) ───────────────────
+// Architecture : la compo TYPE saison (lineupTemplate) reste figée comme
+// référence. Chaque match a SA propre compo (titulaires + banc) qui peut
+// diverger : un blessé, un test tactique, un match amical. Cette compo
+// match est stockée séparément, pour ne pas polluer la compo type.
+//
+// Storage :
+//   • Local : cdd_match_lineup[teamId][matchId] = { formation, starters, bench, reserve, updatedAt }
+//   • Cloud : collection match_lineups, id = `{teamId}_{matchId}`
+//
+// Convention id : on inclut le teamId pour permettre la requête « toutes
+// les compos de match de mon équipe » via where('teamId', '==', ...).
+
+async function saveMatchLineup(teamId, matchId, lineupObj, clubId) {
+  if (!db || !teamId || !matchId) return { ok: false, reason: 'no-db' };
+  const id = String(teamId) + '_' + String(matchId);
+  await setDoc(doc(db, 'match_lineups', id), {
+    teamId: String(teamId),
+    matchId: String(matchId),
+    clubId: clubId ? String(clubId) : null,
+    lineup: lineupObj || null,
+    updatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: true });
+  return { ok: true };
+}
+
+// Récupère toutes les compos de match d'un club. Lecture autorisée à tout
+// membre du club (firestore.rules → match_lineups read = canReadClub).
+async function fetchMatchLineups(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'match_lineups'), where('clubId', '==', String(clubId)));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+
+// Supprime une compo de match (utilisé quand le coach veut « revenir à la
+// compo type pure » pour un match).
+async function deleteMatchLineup(teamId, matchId) {
+  if (!db || !teamId || !matchId) return { ok: false };
+  const id = String(teamId) + '_' + String(matchId);
+  try { await deleteDoc(doc(db, 'match_lineups', id)); } catch (e) {}
+  return { ok: true };
+}
+
 // Push EN BLOC de tous les overrides locaux (stats, profils, notes, perf
 // deltas) vers Firestore. Utile pour les cas où le coach a édité des
 // joueurs avant que la sync Firestore n'existe (overrides pre-v62) — ces
@@ -1305,6 +1352,9 @@ async function pullCloudData() {
   // Compo type embarquée dans le doc team (sync 2026-05-23) — propagée
   // ensuite vers localStorage cdd_lineup_template via LWW.
   const rawTeamLineups      = {};
+  // Compos de match (Phase 1A) — récupérées depuis collection match_lineups,
+  // propagées vers localStorage cdd_match_lineup[teamId][matchId].
+  const rawMatchLineups     = [];
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
@@ -1330,6 +1380,20 @@ async function pullCloudData() {
         playerCount += tc.players.length;
         teamsAll.push(tc);
       }
+      // Compos de match du club (collection match_lineups)
+      try {
+        const mlList = await fetchMatchLineups(cid);
+        mlList.forEach(ml => {
+          if (ml && ml.teamId && ml.matchId) {
+            rawMatchLineups.push({
+              teamId: ml.teamId,
+              matchId: ml.matchId,
+              lineup: ml.lineup || null,
+              updatedAt: ml.updatedAt || null,
+            });
+          }
+        });
+      } catch (e) { console.warn('[cddData] pull match_lineups', cid, e.message); }
     } catch (e) { console.warn('[cddData] pull club', cid, e.message); }
   }
 
@@ -1565,6 +1629,32 @@ async function pullCloudData() {
         dirty = true;
       });
       if (dirty) localStorage.setItem('cdd_lineup_template', JSON.stringify(allLineups));
+    }
+  } catch (e) {}
+
+  // Sync compos de MATCH depuis le cloud — LWW par (teamId, matchId).
+  // Permet à tous les comptes (adjoints, parents, lecteurs) de voir les
+  // compos spécifiques de chaque match préparées par le coach.
+  try {
+    if (rawMatchLineups.length) {
+      const allMl = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+      let dirty = false;
+      rawMatchLineups.forEach(({ teamId, matchId, lineup, updatedAt }) => {
+        if (!teamId || !matchId) return;
+        const cloudMs = updatedAt && typeof updatedAt.toMillis === 'function'
+          ? updatedAt.toMillis()
+          : (typeof updatedAt === 'number' ? updatedAt : 0);
+        if (!allMl[teamId]) allMl[teamId] = {};
+        const localMs = (allMl[teamId][matchId] && allMl[teamId][matchId].updatedAt) || 0;
+        if (localMs > cloudMs && localMs > 0) return; // local plus récent
+        if (lineup && typeof lineup === 'object') {
+          allMl[teamId][matchId] = { ...lineup, updatedAt: cloudMs };
+        } else {
+          delete allMl[teamId][matchId];
+        }
+        dirty = true;
+      });
+      if (dirty) localStorage.setItem('cdd_match_lineup', JSON.stringify(allMl));
     }
   } catch (e) {}
 
@@ -1842,6 +1932,7 @@ window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
   saveLineupTemplate,
+  saveMatchLineup, fetchMatchLineups, deleteMatchLineup,
   pushAllLocalOverrides,
   saveClubLogoBase64,
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)
