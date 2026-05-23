@@ -41,6 +41,19 @@ function InviteManager() {
   const [role, setRole]       = React.useState(() => (ROLE_CHOICES[0] || {}).id || 'lecteur');
   const [playerId, setPlayerId] = React.useState('');
   const [label, setLabel]     = React.useState('');
+  // Lien de parenté (UNIQUEMENT pour rôle=parent). Sélecteur dur plutôt que
+  // texte libre — décision UX 2026-05-23 (Florian) : éviter que le coach ait
+  // à formuler « Maman de Léonis » à la main. L'app compose automatiquement
+  // le libellé à partir de PARENT_KINDS + playerName.
+  const PARENT_KINDS = [
+    { id: 'mere',       l: 'Mère' },
+    { id: 'pere',       l: 'Père' },
+    { id: 'belle-mere', l: 'Belle-mère' },
+    { id: 'beau-pere',  l: 'Beau-père' },
+    { id: 'tuteur',     l: 'Tuteur·rice légal·e' },
+    { id: 'proche',     l: 'Autre proche' },
+  ];
+  const [parentKind, setParentKind] = React.useState('mere');
   const [busy, setBusy]       = React.useState(false);
   const [result, setResult]   = React.useState(null);
   const [error, setError]     = React.useState('');
@@ -85,12 +98,19 @@ function InviteManager() {
       const playerName = pickedPlayer
         ? ((pickedPlayer.first || '') + ' ' + (pickedPlayer.last || '')).trim() || null
         : null;
+      // Pour les invitations PARENT : label = lien de parenté seul (« Mère »).
+      // Le nom du joueur est dans playerName et sera ajouté par le rendu de
+      // liste (« Mère · pour Léonis CLARISSE »). Pas de doublon ni de saisie
+      // libre du coach — zéro risque d'oubli.
+      const finalLabel = role === 'parent'
+        ? (PARENT_KINDS.find(k => k.id === parentKind) || PARENT_KINDS[0]).l
+        : (label.trim() || autoLabel());
       const r = await window.cddData.createInvite({
         clubId: club.id,
         teamId: team.id || null,
         role,
         playerId: needsPlayer ? playerId : null,
-        label: (label.trim() || autoLabel()),
+        label: finalLabel,
         clubName:   club.name || club.short || null,
         teamName:   team.name || team.category || null,
         playerName: playerName,
@@ -214,13 +234,28 @@ function InviteManager() {
         </label>
       )}
 
-      {/* Libellé optionnel */}
-      <label className="inv-field">
-        <span className="inv-field-l">Note <em className="inv-opt">facultatif</em></span>
-        <input className="inv-input" type="text" value={label} maxLength={80}
-               placeholder="ex. Maman de Lucas, coach U13…"
-               onChange={e => setLabel(e.target.value)}/>
-      </label>
+      {/* Pour PARENT : sélecteur Mère/Père/Beau-père/etc. — pas de saisie libre.
+          L'app compose automatiquement « Mère · pour Léonis CLARISSE » dans
+          la liste des invitations, sans intervention du coach. */}
+      {role === 'parent' ? (
+        <label className="inv-field">
+          <span className="inv-field-l">Lien de parenté</span>
+          <select className="inv-select" value={parentKind}
+                  onChange={e => { setParentKind(e.target.value); setResult(null); }}>
+            {PARENT_KINDS.map(k => (
+              <option key={k.id} value={k.id}>{k.l}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        /* Pour les autres rôles (joueur / lecteur / adjoint) : note libre. */
+        <label className="inv-field">
+          <span className="inv-field-l">Note <em className="inv-opt">facultatif</em></span>
+          <input className="inv-input" type="text" value={label} maxLength={80}
+                 placeholder="ex. Coach U13, ami du club…"
+                 onChange={e => setLabel(e.target.value)}/>
+        </label>
+      )}
 
       {error && <div className="inv-error">{error}</div>}
 
@@ -257,10 +292,28 @@ function InviteManager() {
       )}
       {invites && invites.map(inv => {
         const st = inviteStatus(inv);
+        // Nom du joueur concerné — affiché pour les invitations parent/joueur.
+        // Source 1 : inv.playerName embarqué dans l'invite (v67+).
+        // Source 2 : lookup local dans CDD_PLAYERS via playerId (rétro-compat
+        // pour les invitations créées avant v67).
+        let playerName = inv.playerName || '';
+        if (!playerName && inv.playerId) {
+          const p = players.find(x => x.id === inv.playerId);
+          if (p) playerName = ((p.first || '') + ' ' + (p.last || '')).trim();
+        }
+        const showPlayer = !!playerName
+          && (inv.role === 'parent' || inv.role === 'joueur');
         return (
           <div className="inv-row" key={inv.token}>
             <div className="inv-row-main">
-              <span className="inv-row-label">{inv.label || roleLabel(inv.role)}</span>
+              <span className="inv-row-label">
+                {inv.label || roleLabel(inv.role)}
+                {showPlayer && (
+                  <span style={{
+                    opacity: 0.75, fontWeight: 400, marginLeft: 6,
+                  }}>· pour {playerName}</span>
+                )}
+              </span>
               <span className="inv-row-meta">
                 {roleLabel(inv.role)}{fmtDate(inv.createdAt) ? ' · ' + fmtDate(inv.createdAt) : ''}
               </span>
