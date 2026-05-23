@@ -1,30 +1,105 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-21** (Phase D).
+> Document de reprise. Dernière mise à jour : **2026-05-23** (cache buster **v74**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
 
-## 1. Comment reprendre
+## 1. État au 23 mai 2026 — où on en est
 
-**Phase D livrée (code, non publié)** : modèle d'autorisation **par équipe**
-+ multi-rôles. Voir §6 pour la séquence de publication, et `PHASE-D-PLAN.md`
-pour la conception complète.
+### ✅ Livré et publié (v74 en prod)
 
-> ⚠️ **À FAIRE EN UN SEUL PASSAGE** (cf. §6 ci-dessous) : pousser le code
-> de Phase D **ET** redéployer `firestore.rules` **ET** lancer la migration
-> des memberships depuis le panneau admin. Les trois sont solidaires —
-> publier les règles avant que l'app n'écrive le format `teams` casserait
-> la prod ; publier le code sans les règles laisserait l'écriture refusée.
+- **Phase D** : modèle d'autorisation par équipe + multi-rôles. Publié.
+- **Notation v2** : labels par poste (FINITION pour BU, MARQUAGE pour DC,
+  VISION DU JEU pour MOC…), cap 99, fix slider fractionnaire `.15`, sync
+  stats overrides Firestore.
+- **Sync Firestore globale** : stats, profils, notes, perf deltas, compo
+  type, **compo de match**, logos club (base64 compressé), photos joueurs
+  (base64 compressé) — tout est partagé entre coach principal, adjoints,
+  parents, joueurs, lecteurs.
+- **Images** : compression Canvas auto (logo 256×256 JPEG 80%, photo
+  400×400 JPEG 75%). Pas de Firebase Storage (plan Spark — base64 direct
+  dans Firestore).
+- **Invitations** : page de validation publique AVANT login (« Tu rejoins
+  FCMH · U15 A en tant que Parent de Léonis CLARISSE »). Sélecteur de
+  lien de parenté (Mère/Père/Beau-père/etc.) au lieu de saisie libre.
+  Affichage du joueur concerné dans la liste invitations.
+- **Page Convocations** : refondue. Tri par numéro, photos avatar, fusion
+  des listes "Suivi présences" + "Titulaires/Banc" (un bouton 💬 inline
+  sur chaque ligne).
+- **Page Membres du club** : refondue Phase D. Badge "ADMIN APP" distinct
+  des owners de club. Un rôle par équipe affiché.
+- **Modale "Quitter le club"** : friction délibérée (saisie texte du nom
+  exact). Bouton discret.
+- **Couleurs d'accent** : pastilles colorées visuelles (au lieu de boutons
+  texte).
+- **Page lecteur** : onglet Effectif en 3 sections (Titulaires/Banc/Reste).
+- **Phase 1A + 1B compo match** : data layer + éditeur dédié. Collection
+  Firestore `match_lineups` (id `{teamId}_{matchId}`). Bouton
+  "🎯 COMPO DU MATCH" dans Convocations → réutilise `ScreenLineup` avec
+  param `matchId`. Hérite de la compo type au 1er accès.
 
-Sujet suivant au choix :
-- **« publication D »** → suivre §6 et tester FCMH / snipflo en bout-en-bout.
-- **« C5 fin »** → derniers points hérités de C5 : `pullCloudData`
-  automatique au login, images (logos/photos) vers Firebase Storage,
-  nettoyage du fallback `cdd_user_role` dans `effectiveRole()` une fois
-  la publication D validée.
-- **« notation v2 »** → suite de la notation : stats gardien sous clés
-  dédiées, persistance Firestore des stats, recalage de la progression auto.
+### 🔧 Bugs corrigés récemment
+- `canEdit is not defined` dans PreMatchSetup (oubli de prop passing).
+- Crash `convoStartersIds is not defined` dans screen-tv (variable orpheline
+  après refonte).
+- Mode Vestiaire qui divergeait de Feuille de match (couche convocation
+  adaptative supprimée — Mode Vestiaire lit maintenant directement le
+  template du coach).
+- Bug stats slider qui sautait par `.15` (Math.round forcé sur les
+  perfDeltas fractionnaires).
+- Cap stat passé de 95 à 99.
+- Logo club rogné sur page Effectif (CSS `.ef-banner-in` passé en `row`).
+
+### ⚠️ Convention cache buster (à respecter)
+**1 push git = 1 numéro de version.** Tous les fichiers modifiés dans
+le même commit prennent le même `?v=NN`. Le push suivant incrémente
+de 1 (v74 → v75 → v76…). **Pas de réutilisation d'un numéro.**
+
+---
+
+## 2. Sujet suivant — Phase 1C → 1E du chantier compo match
+
+### Phase 1C : Mode Vestiaire contextualisé
+- Si arrivée depuis Convocations → mode vestiaire affiche la **compo de
+  match** (cdd_match_lineup[teamId][matchId]).
+- Si arrivée depuis Feuille de match → mode vestiaire affiche la **compo
+  type saison** (cdd_lineup_template[teamId]) — comportement actuel.
+- Bandeau visuel différent : "📅 Compo match du XX/XX" vs "🗓️ Compo type
+  saison".
+
+### Phase 1D : Synchronisation compo type ↔ compo match
+- **Bouton "📌 Adopter cette compo comme compo type"** sur l'écran compo
+  match (réponse Florian Q1 = OUI).
+- **Bouton "↻ Reset à la compo type"** sur l'écran compo match.
+- **Bannière "💡 La compo type a évolué — voulez-vous synchroniser ?"**
+  si la compo type est modifiée APRÈS création d'une compo match (réponse
+  Q2 = A + C).
+
+### Phase 1E : Coup d'envoi depuis Convocations
+- Bouton "🏁 Lancer le match" dans Convocations (en plus de Préparation).
+- Le Match Live démarre avec la **compo de match** (pas la compo type).
+
+### Match amical (réponse Q3 = A + C)
+- A : Bouton "Ajouter un match amical" dans Convocations.
+- C : Onglet "Amicaux" dédié à côté de "Championnat".
+
+---
+
+## 3. Sujets en backlog (post-Phase 1)
+
+- **Page Match dédiée** depuis Accueil : voir l'équipe convoquée + lancer
+  le match depuis là.
+- **Page Club** complète (organigramme, stade, GPS, contacts).
+- **Page Coach** partageable (carte de visite).
+- **Onboarding émotionnel** repensé.
+- **Page Soutien projet** dédiée (pas paiement, juste présentation).
+- **Import district / FFF** (futur module ingestion).
+- **Mode visiteur public sur `?t=token`** : à BLOQUER (réponse Florian =
+  pas de visiteur public, tout le monde doit se logger).
+- **Photos manquantes** : Djibril TRAORE, Ilian LUNETEAU, Niels BRUDEY
+  → Florian dit "pas important, joueurs d'une autre catégorie".
+- **QR code d'invitation** : si flow D livré est clair, peut être OK.
 
 ---
 
