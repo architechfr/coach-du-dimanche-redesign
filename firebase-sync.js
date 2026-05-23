@@ -769,6 +769,22 @@ async function savePlayerProfile(playerId, profileObj) {
   return { ok: true };
 }
 
+// Sauvegarde la compo type (lineup template) d'une équipe dans son doc
+// Firestore. Inclut starters (map slot→pid), bench (array), reserve (array),
+// formation. Source de vérité partagée entre tous les comptes du club :
+// coach principal, adjoint, parents, joueurs, lecteurs voient la MÊME
+// compo. Sans ça, chaque appareil avait sa propre compo locale, divergeant.
+// Idée originale Florian 2026-05-23 : « la compo doit être dans le cloud ».
+async function saveLineupTemplate(teamId, lineupObj) {
+  if (!db || !teamId) return { ok: false, reason: 'no-db' };
+  await setDoc(doc(db, 'teams', String(teamId)), {
+    lineupTemplate: lineupObj || null,
+    lineupUpdatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: true });
+  return { ok: true };
+}
+
 // Push EN BLOC de tous les overrides locaux (stats, profils, notes, perf
 // deltas) vers Firestore. Utile pour les cas où le coach a édité des
 // joueurs avant que la sync Firestore n'existe (overrides pre-v62) — ces
@@ -836,6 +852,15 @@ async function pushAllLocalOverrides(opts) {
       for (const pid of Object.keys(all)) {
         try { await savePlayerPerfDeltas(pid, all[pid]); counts.perfDeltas++; }
         catch (e) { counts.errors++; console.warn('[pushAll] perfDeltas', pid, e.message); }
+      }
+    } catch (e) {}
+    // 5) Compo type (lineup template) — partagée avec adjoints/parents/etc.
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      counts.lineups = 0;
+      for (const tid of Object.keys(all)) {
+        try { await saveLineupTemplate(tid, all[tid]); counts.lineups++; }
+        catch (e) { counts.errors++; console.warn('[pushAll] lineup', tid, e.message); }
       }
     } catch (e) {}
     try { localStorage.setItem(PUSH_ALL_KEY, String(Date.now())); } catch (e) {}
@@ -1277,6 +1302,9 @@ async function pullCloudData() {
   const rawPlayerProfiles   = {};
   const rawPlayerNotes      = {};
   const rawPlayerPerfDeltas = {};
+  // Compo type embarquée dans le doc team (sync 2026-05-23) — propagée
+  // ensuite vers localStorage cdd_lineup_template via LWW.
+  const rawTeamLineups      = {};
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
@@ -1291,6 +1319,12 @@ async function pullCloudData() {
         if ('perfDeltasOverride' in p) rawPlayerPerfDeltas[p.id] = { perfDeltasOverride: p.perfDeltasOverride || null };
       });
       for (const t of teams) {
+        if ('lineupTemplate' in t) {
+          rawTeamLineups[t.id] = {
+            lineupTemplate:   t.lineupTemplate   || null,
+            lineupUpdatedAt:  t.lineupUpdatedAt  || null,
+          };
+        }
         const tc = stripMeta(t);
         tc.players = players.filter(p => p.teamId === t.id).map(stripMeta);
         playerCount += tc.players.length;
@@ -1502,6 +1536,35 @@ async function pullCloudData() {
         dirty = true;
       });
       if (dirty) localStorage.setItem('cdd_player_perf_deltas', JSON.stringify(allDeltas));
+    }
+  } catch (e) {}
+
+  // Sync compo type (lineup template) depuis le cloud — LWW. Permet aux
+  // adjoints, parents, joueurs, lecteurs de voir la compo posée par le
+  // coach principal sur son tel. Source de vérité = cloud, mais l'écran
+  // Feuille de match peut éditer en local et re-push.
+  try {
+    const keys = Object.keys(rawTeamLineups);
+    if (keys.length) {
+      const allLineups = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      let dirty = false;
+      keys.forEach(tid => {
+        const { lineupTemplate, lineupUpdatedAt } = rawTeamLineups[tid];
+        const cloudMs = lineupUpdatedAt && typeof lineupUpdatedAt.toMillis === 'function'
+          ? lineupUpdatedAt.toMillis()
+          : (typeof lineupUpdatedAt === 'number' ? lineupUpdatedAt : 0);
+        const localMs = (allLineups[tid] && allLineups[tid].updatedAt) || 0;
+        // LWW : local plus récent → on garde le local (le coach vient
+        // probablement d'éditer et le push fire-and-forget arrive bientôt).
+        if (localMs > cloudMs && localMs > 0) return;
+        if (lineupTemplate && typeof lineupTemplate === 'object') {
+          allLineups[tid] = lineupTemplate;
+        } else {
+          delete allLineups[tid];
+        }
+        dirty = true;
+      });
+      if (dirty) localStorage.setItem('cdd_lineup_template', JSON.stringify(allLineups));
     }
   } catch (e) {}
 
@@ -1778,6 +1841,7 @@ async function consumeInvite(token) {
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
+  saveLineupTemplate,
   pushAllLocalOverrides,
   saveClubLogoBase64,
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)

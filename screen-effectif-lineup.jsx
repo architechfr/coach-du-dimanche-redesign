@@ -383,13 +383,15 @@ function ScreenLineup({ go, tweaks }) {
     return p ? `${p.first} ${p.last}` : 'Inconnu';
   })();
 
-  // Persist + rebuild des globaux (CDD_CONVO etc.) pour que Mode Vestiaire,
-  // Convocations et tous les autres écrans voient IMMÉDIATEMENT la nouvelle
-  // compo. Sans ce rebuild, screen-tv affiche l'ancienne convoc tant que
-  // l'app n'a pas été rechargée (bug remonté 2026-05-23).
-  // Rebuild debounced à 400ms : évite la cascade de rebuilds pendant un
-  // drag (le user fait 10 mouvements de slider en 1 seconde → 1 seul rebuild
-  // après la dernière modif).
+  // Persist + rebuild des globaux + push cloud (3 niveaux de cohérence).
+  // 1) localStorage : immédiat, pour persistence locale.
+  // 2) CDD_REBUILD() : debounced 400ms, pour que Mode Vestiaire et tous
+  //    les autres écrans de CE tel voient la nouvelle compo sans recharger.
+  // 3) Firestore saveLineupTemplate : debounced 400ms, pour que tous les
+  //    autres comptes (adjoints, parents, joueurs, lecteurs) voient la
+  //    même compo au prochain pullCloudData. C'est le « partage cloud de
+  //    la compo » demandé par Florian 2026-05-23 (« quand je clique VISUEL
+  //    COMPO, ça devrait pousser au cloud »).
   useEffect(() => {
     const activeTeam = window.CDD?.getActiveTeam?.();
     if (!activeTeam) return;
@@ -402,6 +404,12 @@ function ScreenLineup({ go, tweaks }) {
       const t2 = setTimeout(() => {
         if (window.CDD_REBUILD) window.CDD_REBUILD();
         window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+        // Push cloud fire-and-forget — les autres comptes recevront cette
+        // compo à leur prochain login / pull cloud / rafraîchissement.
+        if (window.cddData && window.cddData.saveLineupTemplate && activeTeam.id) {
+          window.cddData.saveLineupTemplate(activeTeam.id, all[activeTeam.id])
+            .catch(e => console.warn('[lineup] sync cloud', e.message));
+        }
       }, 400);
       return () => { clearTimeout(t1); clearTimeout(t2); };
     } catch (e) {}
@@ -544,10 +552,21 @@ function ScreenLineup({ go, tweaks }) {
         </button>
         <button className="tv-btn"
                 onClick={() => {
-                  // Force un rebuild immédiat avant la navigation : même si
-                  // le debounce (400ms) du useEffect persist n'a pas encore
-                  // tiré, l'écran de destination verra la compo à jour.
+                  // Rebuild immédiat + push cloud forcé avant navigation.
+                  // Garantit que (a) le Mode Vestiaire de CE tel voit la
+                  // compo à jour, (b) tous les autres comptes (adjoints,
+                  // parents) la verront aussi au prochain pull cloud.
                   if (window.CDD_REBUILD) window.CDD_REBUILD();
+                  try {
+                    const at = window.CDD?.getActiveTeam?.();
+                    if (at?.id && window.cddData?.saveLineupTemplate) {
+                      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+                      if (all[at.id]) {
+                        window.cddData.saveLineupTemplate(at.id, all[at.id])
+                          .catch(e => console.warn('[lineup] cloud push', e.message));
+                      }
+                    }
+                  } catch (e) {}
                   go("tv");
                 }}
                 style={{flex:1, fontSize:13}}>
