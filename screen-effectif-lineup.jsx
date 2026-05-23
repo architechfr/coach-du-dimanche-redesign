@@ -383,7 +383,13 @@ function ScreenLineup({ go, tweaks }) {
     return p ? `${p.first} ${p.last}` : 'Inconnu';
   })();
 
-  // Persist
+  // Persist + rebuild des globaux (CDD_CONVO etc.) pour que Mode Vestiaire,
+  // Convocations et tous les autres écrans voient IMMÉDIATEMENT la nouvelle
+  // compo. Sans ce rebuild, screen-tv affiche l'ancienne convoc tant que
+  // l'app n'a pas été rechargée (bug remonté 2026-05-23).
+  // Rebuild debounced à 400ms : évite la cascade de rebuilds pendant un
+  // drag (le user fait 10 mouvements de slider en 1 seconde → 1 seul rebuild
+  // après la dernière modif).
   useEffect(() => {
     const activeTeam = window.CDD?.getActiveTeam?.();
     if (!activeTeam) return;
@@ -392,8 +398,12 @@ function ScreenLineup({ go, tweaks }) {
       all[activeTeam.id] = { ...lineup, updatedAt: Date.now() };
       localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
       setSaved(true);
-      const t = setTimeout(() => setSaved(false), 1400);
-      return () => clearTimeout(t);
+      const t1 = setTimeout(() => setSaved(false), 1400);
+      const t2 = setTimeout(() => {
+        if (window.CDD_REBUILD) window.CDD_REBUILD();
+        window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+      }, 400);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     } catch (e) {}
   }, [lineup]);
 
@@ -532,7 +542,14 @@ function ScreenLineup({ go, tweaks }) {
                 style={{flex:1, fontSize:13}}>
           🎬 TACTIQUE
         </button>
-        <button className="tv-btn" onClick={() => go("tv")}
+        <button className="tv-btn"
+                onClick={() => {
+                  // Force un rebuild immédiat avant la navigation : même si
+                  // le debounce (400ms) du useEffect persist n'a pas encore
+                  // tiré, l'écran de destination verra la compo à jour.
+                  if (window.CDD_REBUILD) window.CDD_REBUILD();
+                  go("tv");
+                }}
                 style={{flex:1, fontSize:13}}>
           📷 VISUEL COMPO
         </button>
