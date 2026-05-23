@@ -363,6 +363,38 @@ function ScreenConvocations({ go, tweaks }) {
     const title = r.resp === 'yes' ? 'Parent : présent' : r.resp === 'no' ? 'Parent : absent' : 'Parent : peut-être';
     return <span className="cv-parent-resp" title={title} style={{marginLeft:6, fontSize:14, opacity:0.9}}>{label}</span>;
   };
+  // respCell — affichage unifié sur chaque ligne joueur (refonte 2026-05-23) :
+  //   • Parent a répondu → badge emoji (👍/👎/❓)
+  //   • Parent n'a PAS répondu → bouton « 💬 » WhatsApp inline cliquable
+  // Évite d'avoir 2 listes du même joueur (une dans Suivi présences, l'autre
+  // dans Titulaires/Remplaçants). Tout est sur la ligne du joueur.
+  const respCell = (p) => {
+    const r = parentResponses[p.id];
+    if (r) {
+      const label = r.resp === 'yes' ? '👍' : r.resp === 'no' ? '👎' : '❓';
+      const title = r.resp === 'yes' ? 'Parent : présent' : r.resp === 'no' ? 'Parent : absent' : 'Parent : peut-être';
+      return <span className="cv-parent-resp" title={title} style={{marginLeft:6, fontSize:14, opacity:0.9}}>{label}</span>;
+    }
+    const hasPhone = !!normalizePhone(p.parentPhone);
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); openRelanceWhatsApp(p); }}
+        title={hasPhone
+          ? `Relancer ${p.first} sur WhatsApp`
+          : `Pas de numéro parent enregistré — WhatsApp s'ouvrira vide`}
+        style={{
+          marginLeft: 8, padding: '3px 8px', borderRadius: 7,
+          background: hasPhone ? '#25D366' : 'rgba(255,170,40,0.15)',
+          color: hasPhone ? '#fff' : '#ffc788',
+          border: hasPhone ? 'none' : '1px solid rgba(255,170,40,0.35)',
+          fontSize: 11, fontWeight: 800, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          whiteSpace: 'nowrap', flexShrink: 0,
+        }}>
+        💬 {hasPhone ? '' : '?'}
+      </button>
+    );
+  };
   const respCounts = Object.values(parentResponses).reduce((acc, r) => {
     if (r?.resp === 'yes') acc.yes++;
     else if (r?.resp === 'no') acc.no++;
@@ -485,79 +517,27 @@ function ScreenConvocations({ go, tweaks }) {
             transition:"width .3s",
           }}/>
         </div>
-        <div style={{marginTop:6, fontSize:11, opacity:0.65, display:"flex", justifyContent:"space-between"}}>
-          <span>{responseRate}% des parents ont répondu</span>
+        <div style={{marginTop:6, fontSize:11, opacity:0.65}}>
+          {responseRate}% des parents ont répondu
           {pendingPlayers.length > 0 && (
-            <button
-              onClick={() => setPendingExpanded(e => !e)}
-              style={{
-                background:"transparent", border:"none", color:"#c8f169",
-                fontSize:11, fontWeight:700, cursor:"pointer", padding:0,
-              }}>
-              {pendingExpanded ? '▾' : '▸'} {pendingPlayers.length} à relancer
-            </button>
+            <span style={{marginLeft:8, color:"#ffc788"}}>
+              · {pendingPlayers.length} à relancer (boutons 💬 sur les lignes ci-dessous)
+            </span>
           )}
         </div>
-        {/* Liste des non-respondants — visibles par défaut quand il y en a */}
-        {pendingPlayers.length > 0 && pendingExpanded && (
-          <div style={{
-            marginTop:10, paddingTop:10,
-            borderTop:"1px solid rgba(255,255,255,0.08)",
-          }}>
-            <div style={{display:"flex", flexDirection:"column", gap:6}}>
-              {pendingPlayers.map(p => {
-                const hasPhone = !!normalizePhone(p.parentPhone);
-                return (
-                  <div key={p.id} style={{
-                    display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"6px 10px", background:"rgba(255,255,255,0.03)",
-                    border:"1px solid rgba(255,255,255,0.06)", borderRadius:8,
-                  }}>
-                    <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-                      <span style={{
-                        minWidth:24, height:24, borderRadius:12,
-                        background:"rgba(255,255,255,0.06)",
-                        display:"inline-flex", alignItems:"center", justifyContent:"center",
-                        fontWeight:900, fontSize:11, color:"rgba(255,255,255,0.7)",
-                      }}>{p.num}</span>
-                      <span style={{fontSize:13, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
-                        {p.first} {p.last && <span style={{opacity:0.6, fontWeight:500}}>{p.last.toUpperCase()}</span>}
-                      </span>
-                      {!hasPhone && (
-                        <span title="Numéro parent manquant — clic ouvre WhatsApp sans destinataire pré-rempli" style={{
-                          fontSize:9.5, padding:"2px 6px", borderRadius:6,
-                          background:"rgba(255,170,40,0.12)", color:"#ffc788",
-                          border:"1px solid rgba(255,170,40,0.25)", flexShrink:0,
-                        }}>📞 ?</span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => openRelanceWhatsApp(p)}
-                      title={hasPhone ? `Relancer ${p.first} sur WhatsApp` : "Aucun numéro parent — choisir le contact dans WhatsApp"}
-                      style={{
-                        flexShrink:0, padding:"5px 10px", borderRadius:7,
-                        background:"#25D366", color:"#fff", border:"none",
-                        fontSize:11, fontWeight:800, cursor:"pointer",
-                        display:"inline-flex", alignItems:"center", gap:4,
-                      }}>
-                      💬 Relancer
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-            <button
-              onClick={openRelanceAll}
-              style={{
-                marginTop:10, width:"100%", padding:"8px 12px", borderRadius:8,
-                background:"rgba(200,241,105,0.10)", color:"#c8f169",
-                border:"1px solid rgba(200,241,105,0.30)",
-                fontSize:11.5, fontWeight:700, cursor:"pointer",
-                letterSpacing:"0.04em",
-              }}>
-              📣 Relance groupée (message copié + page partage)
-            </button>
-          </div>
+        {/* Relance groupée — toujours accessible quand il reste des non-répondants */}
+        {pendingPlayers.length > 0 && (
+          <button
+            onClick={openRelanceAll}
+            style={{
+              marginTop:10, width:"100%", padding:"8px 12px", borderRadius:8,
+              background:"rgba(200,241,105,0.10)", color:"#c8f169",
+              border:"1px solid rgba(200,241,105,0.30)",
+              fontSize:11.5, fontWeight:700, cursor:"pointer",
+              letterSpacing:"0.04em",
+            }}>
+            📣 Relance groupée des {pendingPlayers.length} parent{pendingPlayers.length > 1 ? 's' : ''} (message copié + page partage)
+          </button>
         )}
         {pendingPlayers.length === 0 && convocPlayers.length > 0 && (
           <div style={{
@@ -639,7 +619,7 @@ function ScreenConvocations({ go, tweaks }) {
               <span className="cv-name">
                 <span className="cv-first">{p.first}</span>
                 {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
-                {respBadge(p.id)}
+                {respCell(p)}
               </span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               {canEdit && (
@@ -665,7 +645,7 @@ function ScreenConvocations({ go, tweaks }) {
               <span className="cv-name">
                 <span className="cv-first">{p.first}</span>
                 {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
-                {respBadge(p.id)}
+                {respCell(p)}
               </span>
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               {canEdit && (
