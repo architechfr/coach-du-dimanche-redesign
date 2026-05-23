@@ -39,11 +39,22 @@ function ScreenTV({ go, tweaks }) {
   const [showSponsorEditor, setShowSponsorEditor] = useStateTV(false);
   const [sponsors, setSponsors] = useStateTV(loadSponsors);
 
-  // Formation + positions des slots viennent de la compo type (le coach les a réglées là).
-  // Mais les joueurs affichés viennent de la CONVOCATION du match (CDD_CONVO), pas du
-  // template figé — c'est tout l'intérêt du Mode Vestiaire : voir la vraie compo du jour.
+  // SOURCE DE VÉRITÉ UNIQUE (refonte 2026-05-23) : on lit DIRECTEMENT le
+  // template du coach (cdd_lineup_template[teamId]) — la même donnée que
+  // celle affichée dans la Feuille de match (screen-effectif-lineup).
+  //
+  // On NE passe PLUS par CDD_CONVO qui appliquait une logique de
+  // « convocation adaptative » (complétion à 14/16, exclusion des indispos,
+  // remplacement automatique des titulaires absents). Cette logique
+  // produisait des divergences entre Feuille de match et Mode Vestiaire,
+  // déroutantes pour le coach.
+  //
+  // Principe : le coach a UNE compo type. Il l'édite à la main quand un
+  // joueur est blessé/indispo. Les deux écrans affichent EXACTEMENT ce
+  // qu'il a posé — pas de magie automatique.
   let formation = '4-3-3';
   let templateStartersMap = {};
+  let templateBench = [];
   try {
     const activeTeam = window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam();
     if (activeTeam) {
@@ -55,6 +66,7 @@ function ScreenTV({ go, tweaks }) {
         else if (s.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[s.basedOn]) formation = s.basedOn;
         templateStartersMap = s.starters;
       }
+      if (s && Array.isArray(s.bench)) templateBench = s.bench.slice();
     }
   } catch (e) {}
 
@@ -62,39 +74,23 @@ function ScreenTV({ go, tweaks }) {
                 (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
   const playerOf = (pid) => pid && window.CDD_PLAYERS && window.CDD_PLAYERS.find(p => p.id === pid);
 
-  // Titulaires convoqués (overlay-aware via data-bridge → CDD_CONVO.starters)
-  const convoStartersIds = (window.CDD_CONVO && window.CDD_CONVO.starters) || [];
-  const convoBenchIds    = (window.CDD_CONVO && window.CDD_CONVO.bench)    || [];
-  const hasMatchOverlay  = !!(window.CDD_CONVO && window.CDD_CONVO.hasMatchOverlay);
-
-  // Placement : on garde la position template d'un joueur convoqué, et on case les
-  // remplacés (joueur du template non convoqué pour ce match) dans les slots libres.
-  const convoSet = new Set(convoStartersIds);
-  const placedSet = new Set();
-  const effectiveStartersMap = {};
-  slots.forEach((_, i) => {
-    const tplPid = templateStartersMap[i];
-    if (tplPid && convoSet.has(tplPid)) {
-      effectiveStartersMap[i] = tplPid;
-      placedSet.add(tplPid);
-    }
-  });
-  const remaining = convoStartersIds.filter(pid => !placedSet.has(pid));
-  slots.forEach((_, i) => {
-    if (!effectiveStartersMap[i] && remaining.length > 0) {
-      effectiveStartersMap[i] = remaining.shift();
-    }
-  });
-  // Fallback ultime : si pas de convoc du tout, on retombe sur template.starters puis sur isStarter
+  // Titulaires : exactement le template du coach, slot par slot. Si un slot
+  // est vide (le coach n'a pas posé tous ses titulaires), fallback ultime
+  // sur les joueurs marqués isStarter dans le seed (n'arrive pas en prod).
   let starterPlayers = slots.map((slot, i) => {
-    let pid = effectiveStartersMap[i] || templateStartersMap[i];
+    let pid = templateStartersMap[i];
     if (!pid) {
       const fallback = (window.CDD_PLAYERS || []).filter(p => p.isStarter)[i];
       if (fallback) pid = fallback.id;
     }
     return playerOf(pid);
   });
-  const benchPlayers = convoBenchIds.map(playerOf).filter(Boolean);
+  // Banc : exactement le bench posé par le coach (3 ou 5 joueurs, jamais
+  // complété automatiquement avec des joueurs de la réserve).
+  const benchPlayers = templateBench.map(playerOf).filter(Boolean);
+  // hasMatchOverlay reste exposé pour ne pas casser les écrans dépendants
+  // mais il vaut désormais toujours false côté Mode Vestiaire.
+  const hasMatchOverlay = false;
 
   const club = window.CDD_CLUB || { name: 'MON CLUB', team: 'EQUIPE', colors: ['#22c55e', '#000'] };
   const match = window.CDD_NEXT_MATCH || {};
