@@ -1010,6 +1010,31 @@ function _currentMatchId() {
   return window.CDD_NEXT_MATCH?.id || 'placeholder';
 }
 function _getTeamTemplate(teamId) {
+  // Source de la compo type, priorité décroissante (fix 2026-05-23) :
+  //   1. cdd_lineup_template[teamId] — éditée par le coach (Feuille de match)
+  //   2. arb_teams[].lineupTemplate   — héritée FFF / seed historique
+  // Sans cette priorité, la création d'un overlay de convocation initialise
+  // à partir de la lineup FFF — les modifications de compo type du coach
+  // sont ignorées → l'écran Convocations affiche une équipe complètement
+  // différente la première fois qu'on touche au "-" sur un joueur.
+  try {
+    const allCoachLineups = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+    const coachLineup = teamId ? allCoachLineups[teamId] : null;
+    if (coachLineup && coachLineup.starters && typeof coachLineup.starters === 'object') {
+      const sortedStarters = Object.keys(coachLineup.starters)
+        .map(k => parseInt(k, 10))
+        .filter(k => !isNaN(k))
+        .sort((a, b) => a - b)
+        .map(k => coachLineup.starters[k])
+        .filter(Boolean);
+      if (sortedStarters.length > 0) {
+        return {
+          startersIds: sortedStarters,
+          benchIds: Array.isArray(coachLineup.bench) ? coachLineup.bench.slice() : [],
+        };
+      }
+    }
+  } catch (e) { /* fallback silencieux sur lineupTemplate FFF */ }
   try {
     const teams = JSON.parse(localStorage.getItem('arb_teams') || '[]');
     const team = teams.find(t => t.id === teamId);
