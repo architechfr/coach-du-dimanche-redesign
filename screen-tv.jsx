@@ -271,9 +271,15 @@ function ScreenTV({ go, tweaks }) {
                     <circle r="7.6" fill="rgba(0,0,0,.42)"/>
                     {/* fond couleur club */}
                     <circle r="6.4" fill={primary} stroke="#fff" strokeWidth=".5"/>
-                    {/* PHOTO si dispo, clip rond */}
+                    {/* PHOTO si dispo, clip rond. On pose href ET xlinkHref :
+                        href = forme moderne (SVG 2), xlinkHref = forme legacy
+                        (SVG 1.1). html2canvas ne capture que la forme xlink
+                        dans la plupart des versions — sans ce double attribut,
+                        les photos disparaissent dans l'export PNG (visibles
+                        à l'écran via href, invisibles sur l'image téléchargée). */}
                     {p.photo && (
-                      <image href={p.photo} x="-6.2" y="-6.2" width="12.4" height="12.4"
+                      <image href={p.photo} xlinkHref={p.photo}
+                             x="-6.2" y="-6.2" width="12.4" height="12.4"
                              preserveAspectRatio="xMidYMid slice"
                              clipPath="url(#tv-clip-photo)"
                              onError={(e) => { e.target.style.display = 'none'; }}/>
