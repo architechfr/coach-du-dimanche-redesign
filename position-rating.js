@@ -24,7 +24,7 @@
   // Les 6 emplacements de stats, dans l'ordre carte/radar.
   var STAT_KEYS = ['PAC', 'SHO', 'PAS', 'DRI', 'DEF', 'PHY'];
 
-  var STAT_MIN = 40, STAT_MAX = 95;
+  var STAT_MIN = 40, STAT_MAX = 99;
 
   // ---- Libellés des 6 emplacements ----
   // Joueur de champ
@@ -48,41 +48,77 @@
 
   // ---- 7 profils de notation ----
   // weights : pondération sur 100 des 6 emplacements PAC..PHY.
+  // labelsLong / labelsShort : libellés contextualisés selon le poste —
+  // un attaquant a « FINITION » au lieu de « TIR », un défenseur a
+  // « MARQUAGE » au lieu de « DÉFENSE », un milieu offensif a « VISION
+  // DU JEU » au lieu de « PASSE ». Si absents, fallback FIELD_LABELS.
   var PROFILES = {
     gk: {
       id: 'gk', label: 'Gardien', gk: true,
       // RÉFLEXES 24 · PLONGEON 22 · PLACEMENT 20 · DUEL 16 · DÉTENTE 10 · JEU AU PIED 8
       weights: { PAC: 10, SHO: 22, PAS: 8, DRI: 20, DEF: 16, PHY: 24 },
+      labelsLong:  GK_LABELS,
+      labelsShort: GK_SHORT,
     },
     dc: {
       id: 'dc', label: 'Défenseur central', gk: false,
       // DÉFENSE 30 · PHYSIQUE 25 · VITESSE 15 · PASSE 15 · DRIBBLE 10 · TIR 5
       weights: { PAC: 15, SHO: 5, PAS: 15, DRI: 10, DEF: 30, PHY: 25 },
+      labelsLong: {
+        PAC: 'VITESSE',     SHO: 'TIR LOINTAIN', PAS: 'RELANCE',
+        DRI: 'CONDUITE',    DEF: 'MARQUAGE',     PHY: 'DUEL AÉRIEN',
+      },
+      labelsShort: { PAC: 'VIT', SHO: 'TIR', PAS: 'REL', DRI: 'CDU', DEF: 'MAR', PHY: 'DUE' },
     },
     lat: {
       id: 'lat', label: 'Latéral', gk: false,
       // VITESSE 24 · DÉFENSE 22 · PHYSIQUE 16 · PASSE 16 · DRIBBLE 16 · TIR 6
       weights: { PAC: 24, SHO: 6, PAS: 16, DRI: 16, DEF: 22, PHY: 16 },
+      labelsLong: {
+        PAC: 'VITESSE',     SHO: 'FRAPPE',       PAS: 'CENTRE',
+        DRI: 'CONDUITE',    DEF: 'MARQUAGE',     PHY: 'ENDURANCE',
+      },
+      labelsShort: { PAC: 'VIT', SHO: 'FRP', PAS: 'CTR', DRI: 'CDU', DEF: 'MAR', PHY: 'END' },
     },
     mdef: {
       id: 'mdef', label: 'Milieu récupérateur', gk: false,
       // PASSE 24 · DÉFENSE 24 · PHYSIQUE 22 · DRIBBLE 14 · VITESSE 10 · TIR 6
       weights: { PAC: 10, SHO: 6, PAS: 24, DRI: 14, DEF: 24, PHY: 22 },
+      labelsLong: {
+        PAC: 'VITESSE',      SHO: 'FRAPPE LOINTAINE', PAS: 'DISTRIBUTION',
+        DRI: 'CONDUITE',     DEF: 'RÉCUPÉRATION',     PHY: 'ENGAGEMENT',
+      },
+      labelsShort: { PAC: 'VIT', SHO: 'FRP', PAS: 'DIS', DRI: 'CDU', DEF: 'RCP', PHY: 'ENG' },
     },
     moff: {
       id: 'moff', label: 'Milieu offensif', gk: false,
       // PASSE 26 · DRIBBLE 24 · VITESSE 16 · TIR 16 · PHYSIQUE 10 · DÉFENSE 8
       weights: { PAC: 16, SHO: 16, PAS: 26, DRI: 24, DEF: 8, PHY: 10 },
+      labelsLong: {
+        PAC: 'ACCÉLÉRATION', SHO: 'FRAPPE',       PAS: 'VISION DU JEU',
+        DRI: 'DRIBBLE COURT', DEF: 'REPLI',       PHY: 'ENDURANCE',
+      },
+      labelsShort: { PAC: 'ACC', SHO: 'FRP', PAS: 'VIS', DRI: 'DRI', DEF: 'RPL', PHY: 'END' },
     },
     ail: {
       id: 'ail', label: 'Ailier', gk: false,
       // VITESSE 26 · DRIBBLE 26 · PASSE 16 · TIR 16 · PHYSIQUE 10 · DÉFENSE 6
       weights: { PAC: 26, SHO: 16, PAS: 16, DRI: 26, DEF: 6, PHY: 10 },
+      labelsLong: {
+        PAC: 'POINTE DE VITESSE', SHO: 'FRAPPE',   PAS: 'CENTRE',
+        DRI: 'DRIBBLE',           DEF: 'REPLI DÉFENSIF', PHY: 'ENDURANCE',
+      },
+      labelsShort: { PAC: 'VIT', SHO: 'FRP', PAS: 'CTR', DRI: 'DRI', DEF: 'RPL', PHY: 'END' },
     },
     bu: {
       id: 'bu', label: 'Attaquant de pointe', gk: false,
       // TIR 33 · VITESSE 22 · DRIBBLE 20 · PHYSIQUE 12 · PASSE 9 · DÉFENSE 4
       weights: { PAC: 22, SHO: 33, PAS: 9, DRI: 20, DEF: 4, PHY: 12 },
+      labelsLong: {
+        PAC: 'DÉMARQUAGE', SHO: 'FINITION', PAS: 'REMISE',
+        DRI: 'CONTRÔLE',   DEF: 'PRESSING', PHY: 'DUEL',
+      },
+      labelsShort: { PAC: 'DMQ', SHO: 'FIN', PAS: 'REM', DRI: 'CTR', DEF: 'PRS', PHY: 'DUE' },
     },
   };
 
@@ -115,11 +151,16 @@
     return profileIdFor(posCode) === 'gk';
   }
 
-  // Libellés des 6 stats pour un poste (champ ou gardien).
+  // Libellés des 6 stats pour un poste. Chaque profil peut spécifier ses
+  // propres labelsLong / labelsShort contextualisés (FINITION pour un BU,
+  // MARQUAGE pour un DC, VISION DU JEU pour un MOC…). Si le profil n'en a
+  // pas, on retombe sur FIELD_LABELS (joueur de champ générique).
   function labelsFor(posCode) {
-    return isGK(posCode)
-      ? { long: GK_LABELS, short: GK_SHORT }
-      : { long: FIELD_LABELS, short: FIELD_SHORT };
+    var prof = profileFor(posCode);
+    return {
+      long:  (prof && prof.labelsLong)  || FIELD_LABELS,
+      short: (prof && prof.labelsShort) || FIELD_SHORT,
+    };
   }
 
   // Moyenne pondérée brute (non arrondie) d'un set de stats pour un poste.
