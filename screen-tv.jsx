@@ -167,9 +167,7 @@ function ScreenTV({ go, tweaks }) {
         border: `1px solid ${hasMatchOverlay ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.10)'}`,
         fontSize:11.5, color:'rgba(255,255,255,0.85)', letterSpacing:.2,
       }}>
-        {hasMatchOverlay
-          ? <><b style={{color:'#f97316'}}>Convocation adaptée pour ce match</b> · {convoStartersIds.length} titulaires · {benchPlayers.length} remplaçants</>
-          : <><b>Compo type saison</b> · aucune convocation spécifique pour ce match · {convoStartersIds.length} titulaires · {benchPlayers.length} remplaçants</>}
+        <><b>Compo type saison</b> · {starterPlayers.filter(Boolean).length} titulaires · {benchPlayers.length} remplaçants</>
       </div>
 
       {/* ─── Zone capturée pour l'export ─── */}
