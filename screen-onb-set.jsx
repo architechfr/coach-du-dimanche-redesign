@@ -770,6 +770,25 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           <div className="set-rows">
             <SetRow ic="☁️" t="Sauvegarder mon équipe" d="Envoie ta version actuelle en ligne, pour la retrouver sur tes autres appareils" go={cloudBackup}/>
             <SetRow ic="📥" t="Récupérer mon équipe" d="Remet sur cet appareil la dernière version enregistrée en ligne" go={cloudRestore}/>
+            <SetRow ic="🔄" t="Pousser mes données joueurs" d="Force la synchro stats / profils / notes vers le cloud (pour que adjoints + parents voient les mêmes valeurs)" go={async () => {
+              if (!window.cddData?.pushAllLocalOverrides) { alert('Service cloud indisponible.'); return; }
+              try {
+                const r = await window.cddData.pushAllLocalOverrides({ force: true });
+                if (r && r.ok && r.counts) {
+                  const c = r.counts;
+                  const total = (c.stats||0) + (c.profiles||0) + (c.notes||0) + (c.perfDeltas||0);
+                  alert('✓ Données poussées vers le cloud\n\n'
+                    + 'Stats : ' + (c.stats||0) + '\n'
+                    + 'Profils : ' + (c.profiles||0) + '\n'
+                    + 'Notes : ' + (c.notes||0) + '\n'
+                    + 'Historique match : ' + (c.perfDeltas||0)
+                    + (c.errors ? '\n\n⚠ ' + c.errors + ' erreur(s) — détail console (F12)' : '')
+                    + (total === 0 ? '\n\nAucune donnée locale à pousser (rien n\'a été édité sur cet appareil).' : ''));
+                } else {
+                  alert('✗ Push non effectué.\nRaison : ' + (r?.reason || 'inconnue'));
+                }
+              } catch (e) { alert('✗ Erreur : ' + ((e && e.message) || e)); }
+            }}/>
             <SetRow ic="📤" t="Exporter mes données" d="Télécharger toutes mes données (JSON)" go={exportData}/>
             {isAdmin && (
               <SetRow ic="🗑️" t="Vider le cache local" d="Efface toutes les données locales" go={clearCache} warn/>

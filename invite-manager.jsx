@@ -92,6 +92,17 @@ function InviteManager() {
     if (needsPlayer && !playerId) { setError('Choisis le joueur concerné.'); return; }
     setBusy(true);
     try {
+      // Push EN BLOC des overrides locaux du coach AVANT de créer le lien :
+      // l'invité (parent / adjoint / lecteur) va débarquer dans l'app — on
+      // s'assure que TOUS les overrides du coach (stats, profils, alt-postes,
+      // notes, perf deltas) sont à jour dans le cloud. Sans ça, l'invité
+      // pourrait voir un effectif décalé (overrides pre-v62 jamais syncés).
+      // Throttle de 5 min côté firebase-sync.js → pas de spam si générations
+      // en rafale. Fire-and-forget : la création du lien n'attend pas.
+      if (window.cddData && window.cddData.pushAllLocalOverrides) {
+        window.cddData.pushAllLocalOverrides()
+          .catch(e => console.warn('[invite] pushAllLocalOverrides', e));
+      }
       // Noms embarqués dans l'invite pour la page de validation publique :
       // l'invité non connecté peut voir « FCMH » au lieu d'un clubId opaque.
       const pickedPlayer = needsPlayer ? players.find(x => x.id === playerId) : null;

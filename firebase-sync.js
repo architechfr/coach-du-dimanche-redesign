@@ -769,6 +769,83 @@ async function savePlayerProfile(playerId, profileObj) {
   return { ok: true };
 }
 
+// Push EN BLOC de tous les overrides locaux (stats, profils, notes, perf
+// deltas) vers Firestore. Utile pour les cas où le coach a édité des
+// joueurs avant que la sync Firestore n'existe (overrides pre-v62) — ces
+// modifs n'ont jamais été propagées au cloud, donc les adjoints/parents
+// voient des données différentes.
+//
+// Déclenché automatiquement :
+//   • à la génération d'une invitation (le coach va partager → on s'assure
+//     que le cloud est à jour avant de donner accès à un nouveau membre)
+//   • manuellement depuis Réglages → DONNÉES → « Pousser mes données »
+//
+// Throttle : 5 minutes minimum entre 2 pushes globaux (anti-spam Firestore
+// quand le coach génère plusieurs invitations d'affilée). force=true pour
+// court-circuiter le throttle (bouton manuel).
+const PUSH_ALL_THROTTLE_MS = 5 * 60 * 1000;
+const PUSH_ALL_KEY = 'cdd_last_global_push_at';
+let _pushAllRunning = false;
+
+async function pushAllLocalOverrides(opts) {
+  const force = opts && opts.force === true;
+  if (!db) return { ok: false, reason: 'no-db' };
+  if (!auth || !auth.currentUser) return { ok: false, reason: 'not-signed-in' };
+  if (_pushAllRunning) return { ok: false, reason: 'already-running' };
+
+  // Throttle : sauf force, on saute si < 5 min depuis le dernier push.
+  if (!force) {
+    try {
+      const last = parseInt(localStorage.getItem(PUSH_ALL_KEY) || '0', 10);
+      if (last && Date.now() - last < PUSH_ALL_THROTTLE_MS) {
+        return { ok: true, skipped: 'throttled', lastAt: last };
+      }
+    } catch (e) {}
+  }
+
+  _pushAllRunning = true;
+  const counts = { stats: 0, profiles: 0, notes: 0, perfDeltas: 0, errors: 0 };
+  try {
+    // 1) Stats overrides
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_stats_override') || '{}');
+      for (const pid of Object.keys(all)) {
+        try { await savePlayerStats(pid, all[pid]); counts.stats++; }
+        catch (e) { counts.errors++; console.warn('[pushAll] stats', pid, e.message); }
+      }
+    } catch (e) {}
+    // 2) Profil overrides (poste, alt-positions, photo compressée, contacts…)
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_profile') || '{}');
+      for (const pid of Object.keys(all)) {
+        try { await savePlayerProfile(pid, all[pid]); counts.profiles++; }
+        catch (e) { counts.errors++; console.warn('[pushAll] profile', pid, e.message); }
+      }
+    } catch (e) {}
+    // 3) Notes / observations
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_notes') || '{}');
+      for (const pid of Object.keys(all)) {
+        try { await savePlayerNotes(pid, all[pid]); counts.notes++; }
+        catch (e) { counts.errors++; console.warn('[pushAll] notes', pid, e.message); }
+      }
+    } catch (e) {}
+    // 4) Performance deltas par match
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_player_perf_deltas') || '{}');
+      for (const pid of Object.keys(all)) {
+        try { await savePlayerPerfDeltas(pid, all[pid]); counts.perfDeltas++; }
+        catch (e) { counts.errors++; console.warn('[pushAll] perfDeltas', pid, e.message); }
+      }
+    } catch (e) {}
+    try { localStorage.setItem(PUSH_ALL_KEY, String(Date.now())); } catch (e) {}
+    console.info('%c[cddData] push global overrides terminé', 'color:#c8f169;font-weight:900', counts);
+    return { ok: true, counts };
+  } finally {
+    _pushAllRunning = false;
+  }
+}
+
 // Sauvegarde les notes/observations d'un joueur.
 async function savePlayerNotes(playerId, notesArr) {
   if (!db || !playerId) return { ok: false, reason: 'no-db' };
@@ -1701,6 +1778,7 @@ async function consumeInvite(token) {
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
+  pushAllLocalOverrides,
   saveClubLogoBase64,
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)
   saveMembership, removeTeamMembership,
