@@ -282,8 +282,12 @@ window.ScreenEffectif = ScreenEffectif;
    SCREEN — Lineup (Compo)
    ============================================================ */
 
-function ScreenLineup({ go, tweaks }) {
+function ScreenLineup({ go, tweaks, matchId }) {
   const formations = Object.keys(CDD_FORMATIONS);
+  // matchId optionnel : si fourni, on édite la COMPO DE MATCH (cdd_match_lineup),
+  // sinon on édite la COMPO TYPE saison (cdd_lineup_template). Phase 1B 2026-05-23.
+  // Permet de réutiliser le même composant pour les 2 cas sans dupliquer le code.
+  const isMatchMode = !!matchId;
 
   // ===== Initial state — 3 listes : starters (map slotIdx→pid), bench[], reserve[] =====
   // Règle banc foot amateur : strictement 3 OU 5 remplaçants, jamais 4, jamais autre chose.
@@ -315,28 +319,57 @@ function ScreenLineup({ go, tweaks }) {
     }
     return { bench: cleanBench, reserve: cleanReserve };
   };
+  // Helper de validation d'un lineup sauvegardé. Retourne un objet
+  // { formation, starters, bench, reserve } valide, ou null si KO.
+  const validateAndSnap = (s, activeTeam) => {
+    if (!s || !s.formation || !s.starters || !Array.isArray(s.bench) || !Array.isArray(s.reserve)) return null;
+    let formation = s.formation;
+    if (!CDD_FORMATIONS[formation]) {
+      formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : '4-3-3';
+    }
+    const snapped = snapBench(s.bench, s.reserve);
+    return { formation, starters: s.starters, bench: snapped.bench, reserve: snapped.reserve };
+  };
+
   const buildInitial = () => {
     const activeTeam = window.CDD?.getActiveTeam?.();
-    // 1. localStorage cdd_lineup_template (nouveau format avec starters/bench/reserve)
-    try {
-      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
-      const s = activeTeam && all[activeTeam.id];
-      if (s && s.formation && s.starters && Array.isArray(s.bench) && Array.isArray(s.reserve)) {
-        // ⚠️ Garde-fou : si la formation sauvée n'existe pas dans CDD_FORMATIONS
-        // (par ex. 'custom' venant de Compo libre), retomber sur basedOn ou 4-3-3.
-        let formation = s.formation;
-        if (!CDD_FORMATIONS[formation]) {
-          formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : '4-3-3';
-          // Auto-corrige le localStorage pour ne plus re-crasher au prochain reload
-          try {
-            all[activeTeam.id] = { ...s, formation };
-            localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
-          } catch (e) {}
+    // Mode MATCH : lire d'abord cdd_match_lineup[tid][mid]. Si vide, on
+    // HÉRITE de la compo type (cdd_lineup_template[tid]) — le coach n'a
+    // pas à tout refaire à la main, juste à ajuster pour ce match.
+    if (isMatchMode && activeTeam) {
+      try {
+        const allM = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+        const ml = allM[activeTeam.id] && allM[activeTeam.id][matchId];
+        const validated = validateAndSnap(ml, activeTeam);
+        if (validated) return validated;
+      } catch (e) {}
+      // Hériter de la compo type au premier accès à la compo match.
+      try {
+        const allT = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+        const s = allT[activeTeam.id];
+        const validated = validateAndSnap(s, activeTeam);
+        if (validated) return validated;
+      } catch (e) {}
+    }
+    // Mode COMPO TYPE (et fallback si match mode trouve rien) :
+    // 1. localStorage cdd_lineup_template
+    if (!isMatchMode) {
+      try {
+        const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+        const s = activeTeam && all[activeTeam.id];
+        const validated = validateAndSnap(s, activeTeam);
+        if (validated) {
+          // ⚠️ Auto-corrige le localStorage si formation invalide.
+          if (s.formation !== validated.formation) {
+            try {
+              all[activeTeam.id] = { ...s, formation: validated.formation };
+              localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
+            } catch (e) {}
+          }
+          return validated;
         }
-        const snapped = snapBench(s.bench, s.reserve);
-        return { formation, starters: s.starters, bench: snapped.bench, reserve: snapped.reserve };
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
     // 2. FFF lineupTemplate sinon isStarter
     const formation = '4-3-3';
     const slots = CDD_FORMATIONS[formation];
@@ -396,6 +429,26 @@ function ScreenLineup({ go, tweaks }) {
     const activeTeam = window.CDD?.getActiveTeam?.();
     if (!activeTeam) return;
     try {
+      if (isMatchMode) {
+        // Sauvegarde dans cdd_match_lineup[teamId][matchId] + push cloud
+        // via saveMatchLineup. La compo TYPE saison reste intacte.
+        const allM = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+        if (!allM[activeTeam.id]) allM[activeTeam.id] = {};
+        allM[activeTeam.id][matchId] = { ...lineup, updatedAt: Date.now() };
+        localStorage.setItem('cdd_match_lineup', JSON.stringify(allM));
+        setSaved(true);
+        const t1 = setTimeout(() => setSaved(false), 1400);
+        const t2 = setTimeout(() => {
+          if (window.CDD_REBUILD) window.CDD_REBUILD();
+          window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+          if (window.cddData && window.cddData.saveMatchLineup) {
+            window.cddData.saveMatchLineup(activeTeam.id, matchId, allM[activeTeam.id][matchId], activeTeam.clubId)
+              .catch(e => console.warn('[match-lineup] sync cloud', e.message));
+          }
+        }, 400);
+        return () => { clearTimeout(t1); clearTimeout(t2); };
+      }
+      // Mode COMPO TYPE (comportement existant)
       const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
       all[activeTeam.id] = { ...lineup, updatedAt: Date.now() };
       localStorage.setItem('cdd_lineup_template', JSON.stringify(all));

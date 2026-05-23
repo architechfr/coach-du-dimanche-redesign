@@ -368,6 +368,38 @@ function ScreenConvocations({ go, tweaks }) {
   //   • Parent n'a PAS répondu → bouton « 💬 » WhatsApp inline cliquable
   // Évite d'avoir 2 listes du même joueur (une dans Suivi présences, l'autre
   // dans Titulaires/Remplaçants). Tout est sur la ligne du joueur.
+  // Tri par numéro maillot croissant (refonte 2026-05-23). Les joueurs sans
+  // numéro tombent en queue (999). Plus lisible et conforme à l'usage foot.
+  const sortByNum = (arr) => [...(arr || [])].sort((a, b) => {
+    const na = (a && typeof a.num === 'number' && a.num) || 999;
+    const nb = (b && typeof b.num === 'number' && b.num) || 999;
+    return na - nb;
+  });
+  // Idem mais pour absentEntries qui sont des objets { p, reason, note }.
+  const sortAbsentByNum = (arr) => [...(arr || [])].sort((a, b) => {
+    const na = (a?.p?.num && typeof a.p.num === 'number') ? a.p.num : 999;
+    const nb = (b?.p?.num && typeof b.p.num === 'number') ? b.p.num : 999;
+    return na - nb;
+  });
+  // Avatar compact pour la liste (photo joueur ou initiales en fallback).
+  const renderAvatar = (p) => (
+    <span style={{
+      width: 28, height: 28, borderRadius: '50%', overflow: 'hidden',
+      background: 'rgba(255,255,255,0.05)', flexShrink: 0,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.6)',
+      border: '1px solid rgba(255,255,255,0.08)', marginRight: 6,
+    }}>
+      {(p && (p.photoDataUrl || p.photo)) ? (
+        <img src={p.photoDataUrl || p.photo} alt=""
+             style={{width:'100%', height:'100%', objectFit:'cover'}}
+             onError={(e) => { e.currentTarget.style.display = 'none'; }}/>
+      ) : (
+        <span>{((p && p.first) || '?')[0]}{((p && p.last) || '?')[0]}</span>
+      )}
+    </span>
+  );
+
   const respCell = (p) => {
     const r = parentResponses[p.id];
     if (r) {
@@ -469,9 +501,9 @@ function ScreenConvocations({ go, tweaks }) {
             <button className="btn-cta" onClick={() => go("share")}>
               ↗ PARTAGER AUX PARENTS
             </button>
-            <button className="btn-cta" onClick={() => go("tv")}
+            <button className="btn-cta" onClick={() => go("match-lineup")}
                     style={{background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.14)'}}>
-              🧥 MODE VESTIAIRE
+              🎯 COMPO DU MATCH
             </button>
           </div>
         </div>
@@ -611,10 +643,11 @@ function ScreenConvocations({ go, tweaks }) {
           <span className="cv-sec-d">Heure : 09h45 · vestiaire</span>
         </div>
         <div className="cv-list">
-          {starterPlayers.map(p => (
+          {sortByNum(starterPlayers).map(p => (
             <div className="cv-row cv-row-clickable" key={p.id}
                  onClick={() => setFicheModalPlayer(p)}
                  title="Toucher pour voir la fiche du joueur">
+              {renderAvatar(p)}
               <span className="cv-num num">#{p.num}</span>
               <span className="cv-name">
                 <span className="cv-first">{p.first}</span>
@@ -637,10 +670,11 @@ function ScreenConvocations({ go, tweaks }) {
           <span className="cv-sec-k">REMPLAÇANTS · {benchPlayers.length}</span>
         </div>
         <div className="cv-list">
-          {benchPlayers.map(p => (
+          {sortByNum(benchPlayers).map(p => (
             <div className="cv-row cv-row-clickable" key={p.id}
                  onClick={() => setFicheModalPlayer(p)}
                  title="Toucher pour voir la fiche du joueur">
+              {renderAvatar(p)}
               <span className="cv-num num">#{p.num}</span>
               <span className="cv-name">
                 <span className="cv-first">{p.first}</span>
@@ -667,8 +701,9 @@ function ScreenConvocations({ go, tweaks }) {
             <div className="cv-empty" style={{padding:'12px 14px', opacity:.6, fontSize:13}}>
               Aucun absent — personne en blessé / suspendu / indisponible.
             </div>
-          ) : absentEntries.map((a,i) => a.p && (
+          ) : sortAbsentByNum(absentEntries).map((a,i) => a.p && (
             <div className="cv-row abs cv-row-clickable" key={i}>
+              {renderAvatar(a.p)}
               <span className="cv-num num"
                     onClick={() => setFicheModalPlayer(a.p)}
                     style={{cursor:'pointer'}}>#{a.p.num}</span>
@@ -734,10 +769,11 @@ function ScreenConvocations({ go, tweaks }) {
             </span>
           </div>
           <div className="cv-list">
-            {reservePlayers.map(p => (
+            {sortByNum(reservePlayers).map(p => (
               <div className="cv-row cv-row-add cv-row-clickable" key={p.id}
                    onClick={() => setFicheModalPlayer(p)}
                    title="Toucher pour voir la fiche du joueur">
+                {renderAvatar(p)}
                 <span className="cv-num num">#{p.num}</span>
                 <span className="cv-name">
                   <span className="cv-first">{p.first}</span>

@@ -259,6 +259,7 @@ function App() {
       home: "",
       effectif: "EFFECTIF",
       lineup: "FEUILLE DE MATCH",
+      "match-lineup": "COMPO DU MATCH",
       convocations: "CONVOCATIONS",
       results: "CHAMPIONNAT",
       match: "MATCH LIVE",
@@ -376,6 +377,8 @@ function App() {
             {screen === "home"         && <ScreenHome go={go} tweaks={t}/>}
             {screen === "effectif"     && <ScreenEffectif go={go} tweaks={t}/>}
             {screen === "lineup"       && <ScreenLineup go={go} tweaks={t}/>}
+            {screen === "match-lineup" && <ScreenLineup go={go} tweaks={t}
+              matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}/>}
             {screen === "convocations" && <ScreenConvocations go={go} tweaks={t}/>}
             {screen === "results"      && <ScreenResults go={go} tweaks={t}/>}
             {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}
