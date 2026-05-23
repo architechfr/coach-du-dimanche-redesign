@@ -17,12 +17,16 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
   // ── Detection du contexte d'arrivée : un parent peut arriver via un lien
   // individuel (?carnet= ou ?p=) MAIS sans email saisi. On adapte le message
   // pour expliquer pourquoi il doit creer un compte avant de voir la fiche.
+  // Pour ?invite= : firebase-sync.js capture le token DÈS le chargement
+  // dans cdd_pending_invite et nettoie l'URL — on doit donc aussi regarder
+  // dans localStorage pour ne pas perdre l'info après le strip.
   const arrivalContext = (() => {
     try {
       const params = new URLSearchParams(window.location.search || '');
       const carnet = params.get('carnet') || params.get('joueur');
       const p      = params.get('p');
-      const invite = params.get('invite');
+      const invite = params.get('invite')
+                  || localStorage.getItem('cdd_pending_invite') || null;
       if (carnet) return { kind: 'carnet', playerId: carnet };
       if (p)      return { kind: 'convoc', playerId: p };
       if (invite) return { kind: 'invite', token: invite };
@@ -31,8 +35,44 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
   })();
 
   const hasIndividualToken = arrivalContext.kind === 'carnet' || arrivalContext.kind === 'convoc';
-  const initialMode = hasIndividualToken ? 'parent-signup' : 'home';
-  const [mode, setMode] = useLS(initialMode); // 'home' | 'coach-signup' | 'parent-signup' | 'paste-link'
+  const hasInvite = arrivalContext.kind === 'invite';
+  const initialMode = hasInvite ? 'invite-pending'
+                    : hasIndividualToken ? 'parent-signup' : 'home';
+  const [mode, setMode] = useLS(initialMode); // 'home' | 'coach-signup' | 'parent-signup' | 'paste-link' | 'invite-pending'
+
+  // ── Page de validation invitation : on charge les détails (clubName,
+  // playerName, role…) AVANT login. Les invites sont lisibles publique-
+  // ment côté Firestore (le token EST le secret d'accès).
+  const [invite, setInvite] = useLS(null);
+  const [inviteError, setInviteError] = useLS('');
+  const [inviteLoading, setInviteLoading] = useLS(hasInvite);
+  React.useEffect(() => {
+    if (!hasInvite || !arrivalContext.token) return;
+    let alive = true;
+    (async () => {
+      if (!window.cddData || !window.cddData.fetchInvite) {
+        if (alive) { setInviteLoading(false); setInviteError('Service cloud indisponible.'); }
+        return;
+      }
+      try {
+        const inv = await window.cddData.fetchInvite(arrivalContext.token);
+        if (!alive) return;
+        if (!inv) { setInviteError('Lien invalide ou supprimé.'); setInviteLoading(false); return; }
+        if (inv.consumed) { setInviteError('Ce lien a déjà été utilisé.'); setInviteLoading(false); return; }
+        if (inv.expiresAt && Date.now() > inv.expiresAt) {
+          setInviteError('Ce lien a expiré. Demande à ton coach un nouveau lien.');
+          setInviteLoading(false); return;
+        }
+        setInvite(inv);
+        setInviteLoading(false);
+      } catch (e) {
+        if (!alive) return;
+        setInviteError('Lecture impossible : ' + ((e && e.message) || e));
+        setInviteLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [hasInvite, arrivalContext.token]);
   const [email, setEmail] = useLS('');
   const [name, setName] = useLS('');
   const [linkInput, setLinkInput] = useLS('');
@@ -213,6 +253,177 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
 
       {/* Parcours d'entrée — masqués tant qu'un lien est en attente */}
       {!sentTo && (<>
+
+      {/* MODE INVITE-PENDING — page de validation d'invitation. L'utilisateur
+          a cliqué un lien WhatsApp/SMS : on lui montre AVANT login qui
+          l'invite, à quel club/équipe il rejoint, et pour quel rôle. */}
+      {mode === 'invite-pending' && (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          {inviteLoading && (
+            <div style={{
+              padding:'40px 16px', textAlign:'center',
+              fontSize:13, color:'rgba(255,255,255,0.6)',
+            }}>
+              <div style={{fontSize:42, marginBottom:14}}>⏳</div>
+              Chargement de l'invitation…
+            </div>
+          )}
+
+          {!inviteLoading && inviteError && (
+            <>
+              <div style={{
+                padding:'18px 18px', borderRadius:12,
+                background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.35)',
+              }}>
+                <div style={{fontSize:32, marginBottom:10, textAlign:'center'}}>⚠️</div>
+                <div style={{fontWeight:900, fontSize:15, color:'#ff8a8a', textAlign:'center', marginBottom:6}}>
+                  Invitation indisponible
+                </div>
+                <div style={{fontSize:12.5, opacity:0.85, lineHeight:1.6, textAlign:'center'}}>
+                  {inviteError}
+                </div>
+              </div>
+              <button onClick={() => {
+                try { localStorage.removeItem('cdd_pending_invite'); } catch (e) {}
+                setMode('home');
+              }} style={{
+                padding:'12px', borderRadius:10,
+                background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.15)',
+                color:'#fff', fontFamily:'inherit', fontSize:13, cursor:'pointer', fontWeight:700,
+              }}>
+                Revenir à l'accueil
+              </button>
+            </>
+          )}
+
+          {!inviteLoading && !inviteError && invite && (() => {
+            const ROLE_META = {
+              adjoint: { ic:'🎽', label:'Coach adjoint', desc:'Tu pourras éditer cette équipe (compo, convocations, statuts).' },
+              parent:  { ic:'👪', label:'Parent',        desc:'Tu suivras les convocations et la fiche de ton enfant.' },
+              joueur:  { ic:'⚽', label:'Joueur',        desc:'Tu verras ta fiche, tes stats et tes convocations.' },
+              lecteur: { ic:'👁️', label:'Lecteur',       desc:'Tu auras un accès lecture seule à cette équipe.' },
+            };
+            const meta = ROLE_META[invite.role] || { ic:'•', label: invite.role, desc:'' };
+            const clubName   = invite.clubName   || 'le club';
+            const teamName   = invite.teamName   || null;
+            const playerName = invite.playerName || null;
+            return (
+              <>
+                <div style={{
+                  padding:'4px 14px 6px', borderRadius:12,
+                  background:'rgba(200,241,105,0.06)',
+                  border:'1px solid rgba(200,241,105,0.28)',
+                  textAlign:'center',
+                }}>
+                  <div style={{fontSize:9, fontWeight:900, letterSpacing:'.16em',
+                               color:'#c8f169', textTransform:'uppercase', marginTop:10}}>
+                    Tu as été invité
+                  </div>
+                  <div style={{fontSize:54, marginTop:8}}>{meta.ic}</div>
+                  <div style={{
+                    fontSize:22, fontWeight:900, lineHeight:1.25,
+                    marginTop:4, padding:'0 8px',
+                  }}>
+                    Rejoindre {clubName}{teamName ? ' · ' + teamName : ''}
+                  </div>
+                  <div style={{fontSize:13, opacity:0.75, marginTop:10, lineHeight:1.5}}>
+                    en tant que <b style={{color:'#c8f169'}}>{meta.label}</b>
+                    {playerName && (
+                      <> de <b style={{color:'#fff'}}>{playerName}</b></>
+                    )}
+                  </div>
+                  {meta.desc && (
+                    <div style={{
+                      fontSize:11.5, opacity:0.6, lineHeight:1.5,
+                      marginTop:12, padding:'10px 14px 14px',
+                    }}>
+                      {meta.desc}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{
+                  fontSize:11, opacity:0.65, lineHeight:1.5, textAlign:'center',
+                  padding:'4px 8px',
+                }}>
+                  Connecte-toi pour accepter l'invitation.<br/>
+                  Ton rattachement sera créé automatiquement.
+                </div>
+
+                {googleButton(invite.role || 'lecteur')}
+                {orSep}
+
+                <label style={{display:'flex', flexDirection:'column', gap:6}}>
+                  <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
+                    TON NOM
+                  </span>
+                  <input value={name} onChange={e => setName(e.target.value)}
+                         placeholder="ex: Sarah HAMDAOUI" autoFocus
+                         style={{
+                           padding:'12px 14px', borderRadius:10, fontSize:14,
+                           background:'rgba(255,255,255,0.05)',
+                           border:'1px solid rgba(255,255,255,0.12)',
+                           color:'#fff', fontFamily:'inherit',
+                         }}/>
+                </label>
+
+                <label style={{display:'flex', flexDirection:'column', gap:6}}>
+                  <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
+                    TON EMAIL
+                  </span>
+                  <input value={email} onChange={e => setEmail(e.target.value)}
+                         type="email" placeholder="ex: sarah@gmail.com"
+                         style={{
+                           padding:'12px 14px', borderRadius:10, fontSize:14,
+                           background:'rgba(255,255,255,0.05)',
+                           border: `1px solid ${emailValid ? 'rgba(255,255,255,0.12)' : 'rgba(239,68,68,0.45)'}`,
+                           color:'#fff', fontFamily:'inherit',
+                         }}/>
+                  {!emailValid && (
+                    <span style={{fontSize:11, color:'#ff8a8a'}}>⚠ Format email invalide</span>
+                  )}
+                </label>
+
+                <button onClick={() => {
+                  const eClean = email.trim().toLowerCase();
+                  const nClean = name.trim();
+                  if (!eClean || !nClean) { alert('Email et nom requis.'); return; }
+                  if (!emailValid) { alert('Format email invalide.'); return; }
+                  sendMagicLink(eClean, nClean, invite.role || 'lecteur');
+                }}
+                        disabled={!email.trim() || !name.trim() || !emailValid || sending}
+                        className="btn-cta"
+                        style={{marginTop:4, opacity: (!email.trim() || !name.trim() || !emailValid || sending) ? 0.5 : 1}}>
+                  {sending ? 'ENVOI EN COURS…' : 'RECEVOIR MON LIEN DE CONNEXION →'}
+                </button>
+
+                <div style={{
+                  marginTop:6, padding:'10px 12px', borderRadius:10,
+                  background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+                  fontSize:10.5, opacity:0.65, lineHeight:1.55, textAlign:'center',
+                }}>
+                  🔒 Une fois connecté, ton rattachement à {clubName} est créé automatiquement.
+                  Aucune action supplémentaire à faire.
+                </div>
+
+                <button onClick={() => {
+                  if (!confirm('Annuler cette invitation ? Tu pourras la rouvrir en re-cliquant sur le lien WhatsApp/SMS.')) return;
+                  try { localStorage.removeItem('cdd_pending_invite'); } catch (e) {}
+                  setInvite(null);
+                  setMode('home');
+                }} style={{
+                  marginTop:4, padding:'10px', borderRadius:8,
+                  background:'transparent', border:'1px solid rgba(255,255,255,0.12)',
+                  color:'rgba(255,255,255,0.55)', fontFamily:'inherit', fontSize:12,
+                  cursor:'pointer',
+                }}>
+                  Annuler et revenir à l'accueil
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {/* MODE HOME : 3 chemins d'entrée */}
       {mode === 'home' && (

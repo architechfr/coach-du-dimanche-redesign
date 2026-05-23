@@ -79,12 +79,21 @@ function InviteManager() {
     if (needsPlayer && !playerId) { setError('Choisis le joueur concerné.'); return; }
     setBusy(true);
     try {
+      // Noms embarqués dans l'invite pour la page de validation publique :
+      // l'invité non connecté peut voir « FCMH » au lieu d'un clubId opaque.
+      const pickedPlayer = needsPlayer ? players.find(x => x.id === playerId) : null;
+      const playerName = pickedPlayer
+        ? ((pickedPlayer.first || '') + ' ' + (pickedPlayer.last || '')).trim() || null
+        : null;
       const r = await window.cddData.createInvite({
         clubId: club.id,
         teamId: team.id || null,
         role,
         playerId: needsPlayer ? playerId : null,
         label: (label.trim() || autoLabel()),
+        clubName:   club.name || club.short || null,
+        teamName:   team.name || team.category || null,
+        playerName: playerName,
       });
       setResult(r);
       setLabel('');

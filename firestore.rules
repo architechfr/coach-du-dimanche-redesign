@@ -239,13 +239,19 @@ service cloud.firestore {
     // ═══ /invites/{token} ═══════════════════════════════════════════
     // Liens d'invitation. Le token (id du doc) est un secret partagé.
     match /invites/{token} {
-      // Lecture : tout utilisateur signé (nécessaire pour consommer le lien).
-      allow read: if isSignedIn();
+      // Lecture : PUBLIQUE. Le token agit lui-même comme secret — l'invité
+      // ne peut consommer un lien que s'il connaît le token (envoyé via
+      // WhatsApp/SMS par le coach). Lecture publique permet d'afficher
+      // une vraie page de validation AVANT login (« Tu rejoins FCMH comme
+      // parent de Djibril TRAORE — Connecte-toi pour accepter »).
+      allow read: if true;
       // Création : selon la matrice — le rôle de l'invitant est lu sur
       // l'ÉQUIPE cible. canInviteRole exige une membership → pas de lien
-      // sans rattachement à cette équipe.
+      // sans rattachement à cette équipe. Limite 18 champs (place pour
+      // clubName / teamName / playerName stockés à la création — sert
+      // à afficher la page de validation sans dépendre d'autres lectures).
       allow create: if isSignedIn()
-        && request.resource.data.size() <= 15
+        && request.resource.data.size() <= 18
         && canInviteRole(request.resource.data.clubId,
                          request.resource.data.teamId,
                          request.resource.data.role);

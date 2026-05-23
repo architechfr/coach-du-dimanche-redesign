@@ -1601,6 +1601,11 @@ async function createInvite(opts) {
     }
   }
   const token = _inviteToken();
+  // Noms (clubName / teamName / playerName) embarqués DANS l'invite : la
+  // page de validation publique (screen-landing → mode invite-pending)
+  // peut ainsi afficher « Tu rejoins FCMH (Sénior) comme parent de
+  // Djibril TRAORE » SANS avoir besoin de lire les docs club/team/player
+  // (réservés aux membres). Le token reste l'unique gardien d'accès.
   await setDoc(doc(db, 'invites', token), {
     clubId: o.clubId,
     teamId: o.teamId || null,
@@ -1608,6 +1613,9 @@ async function createInvite(opts) {
     playerId: o.playerId || null,
     email: ((o.email || '').trim().toLowerCase()) || null,
     label: (o.label || '').toString().slice(0, 80) || null,
+    clubName:   (o.clubName   || '').toString().slice(0, 80) || null,
+    teamName:   (o.teamName   || '').toString().slice(0, 80) || null,
+    playerName: (o.playerName || '').toString().slice(0, 80) || null,
     createdBy: uid,
     createdByEmail: _email(),
     createdAt: serverTimestamp(),
