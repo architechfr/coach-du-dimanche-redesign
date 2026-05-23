@@ -1253,13 +1253,25 @@ function ProfileEditModal({ initialName, initialEmail, onClose, onSave }) {
   );
 }
 
-// ─── Panneau « Membres du club » (#C5) ───────────────────────────────
-// Liste les memberships du club actif : qui a rejoint, en quelle qualité,
-// et pour un parent quel joueur il suit. Réservé au coach principal / owner
-// / admin — firestore.rules → memberships read = canEditClub. Un adjoint ou
-// un autre rôle reçoit permission-denied, géré ici par un message clair.
+// ─── Panneau « Membres du club » (#C5 + refonte Phase D) ─────────────
+// Liste les memberships du club actif. Affiche pour CHAQUE membre :
+//   • l'email (identité réelle)
+//   • un BADGE par attribution (rôle + équipe), pas un seul badge global
+//     → en multi-équipes futur : un même utilisateur peut être coach
+//       sur U15 et adjoint sur U13. Chaque attribution s'affiche
+//       séparément, claire et auditable.
+//   • le joueur lié pour parent/joueur
+//
+// Cas spécial : archi.tech.fr@gmail.com = ADMIN de l'APPLICATION (pas
+// owner du club). Badge or « ADMIN APP » distinct des owners de club.
+//
+// Sécurité : firestore.rules → memberships.read = canEditClub (coach
+// principal/owner/admin). Adjoint, parent, joueur, lecteur ne peuvent
+// PAS ouvrir ce panel (permission-denied → message clair).
+const ADMIN_EMAIL_APP = 'archi.tech.fr@gmail.com';
+
 function ClubMembersPanel({ clubName, onClose }) {
-  const [state, setState] = React.useState({ phase: 'loading', members: [], error: '' });
+  const [state, setState] = React.useState({ phase: 'loading', members: [], teams: [], error: '' });
 
   React.useEffect(() => {
     let alive = true;
@@ -1267,23 +1279,48 @@ function ClubMembersPanel({ clubName, onClose }) {
       const activeClub = window.CDD?.getActiveClub?.() || null;
       const clubId = activeClub?.id || null;
       if (!window.cddData || !window.cddData.ready) {
-        if (alive) setState({ phase: 'error', members: [], error: 'Service cloud indisponible.' });
+        if (alive) setState(s => ({ ...s, phase: 'error', error: 'Service cloud indisponible.' }));
         return;
       }
       if (!clubId) {
-        if (alive) setState({ phase: 'error', members: [], error: 'Aucun club actif détecté.' });
+        if (alive) setState(s => ({ ...s, phase: 'error', error: 'Aucun club actif détecté.' }));
         return;
       }
       try {
-        const list = await window.cddData.fetchClubMemberships(clubId);
-        list.sort((a, b) => (window.CDD_ROLES?.roleWeight?.(b.role) || 0)
-                          - (window.CDD_ROLES?.roleWeight?.(a.role) || 0));
-        if (alive) setState({ phase: 'ready', members: list, error: '' });
+        // En parallèle : memberships du club + équipes du club (pour mapper teamId → nom).
+        const [list, teams] = await Promise.all([
+          window.cddData.fetchClubMemberships(clubId),
+          window.cddData.fetchTeams ? window.cddData.fetchTeams(clubId).catch(() => []) : Promise.resolve([]),
+        ]);
+        // Tri : admin app → owner → coach → adjoint → parent → joueur → lecteur.
+        const weightOf = (m) => {
+          if ((m.email || '').toLowerCase() === ADMIN_EMAIL_APP) return 1000;
+          if (m.clubRole === 'owner') return 900;
+          if (m.clubRole === 'coach') return 800;
+          const order = ['owner', 'coach', 'adjoint', 'parent', 'joueur', 'lecteur'];
+          if (m.teams && typeof m.teams === 'object') {
+            for (let i = 0; i < order.length; i++) {
+              if (Object.values(m.teams).some(t => t && t.role === order[i])) {
+                return 700 - i * 50;
+              }
+            }
+          }
+          // Legacy (pré-Phase D)
+          if (m.role === 'owner')   return 900;
+          if (m.role === 'coach')   return 800;
+          if (m.role === 'adjoint') return 650;
+          if (m.role === 'parent')  return 500;
+          if (m.role === 'joueur')  return 400;
+          if (m.role === 'lecteur') return 300;
+          return 0;
+        };
+        list.sort((a, b) => weightOf(b) - weightOf(a));
+        if (alive) setState({ phase: 'ready', members: list, teams, error: '' });
       } catch (e) {
         const msg = /permission|insufficient/i.test((e && e.message) || '')
           ? 'Accès refusé : seul le coach principal du club peut voir la liste des membres.'
           : 'Lecture impossible : ' + ((e && e.message) || e);
-        if (alive) setState({ phase: 'error', members: [], error: msg });
+        if (alive) setState(s => ({ ...s, phase: 'error', error: msg }));
       }
     })();
     return () => { alive = false; };
@@ -1291,8 +1328,13 @@ function ClubMembersPanel({ clubName, onClose }) {
 
   const players = window.CDD_PLAYERS || [];
   const playerName = (pid) => {
+    if (!pid) return null;
     const p = players.find(x => x.id === pid);
     return p ? ((p.first || '') + ' ' + (p.last || '')).trim() : null;
+  };
+  const teamLabel = (tid) => {
+    const t = state.teams.find(x => x.id === tid);
+    return (t?.name || t?.category || '').trim() || null;
   };
   const fmtDate = (ts) => {
     try {
@@ -1301,9 +1343,68 @@ function ClubMembersPanel({ clubName, onClose }) {
     } catch (e) {}
     return '';
   };
-  const roleColor = {
-    owner: '#f5c451', admin: '#f5c451', coach: '#c8f169', adjoint: '#7dd3fc',
-    parent: '#a78bfa', joueur: '#22c55e', lecteur: '#94a3b8',
+
+  // Métadonnées par rôle : icône, libellé, couleur du badge.
+  const ROLE_META = {
+    admin:   { ic: '🛡️', label: 'Admin App',      color: '#f5c451' },
+    owner:   { ic: '👑', label: 'Propriétaire',  color: '#f5c451' },
+    coach:   { ic: '📋', label: 'Coach principal', color: '#c8f169' },
+    adjoint: { ic: '🎽', label: 'Coach adjoint', color: '#7dd3fc' },
+    parent:  { ic: '👪', label: 'Parent',         color: '#a78bfa' },
+    joueur:  { ic: '⚽', label: 'Joueur',         color: '#22c55e' },
+    lecteur: { ic: '👁️', label: 'Lecteur',        color: '#94a3b8' },
+  };
+
+  // Décompose une membership en lignes d'attribution affichables.
+  // Une membership peut donner plusieurs lignes (un rôle par équipe).
+  const decomposeMembership = (m) => {
+    const lines = [];
+    const isAppAdmin = (m.email || '').toLowerCase() === ADMIN_EMAIL_APP;
+
+    if (isAppAdmin) {
+      lines.push({
+        role: 'admin',
+        scope: 'Toute l\'application',
+        sub: null,
+      });
+      return lines;
+    }
+
+    // Phase D — clubRole (owner ou coach club-wide) sans équipe spécifique.
+    if (m.clubRole === 'owner') {
+      lines.push({ role: 'owner', scope: 'Tout le club', sub: null });
+    } else if (m.clubRole === 'coach' && (!m.teams || Object.keys(m.teams).length === 0)) {
+      lines.push({ role: 'coach', scope: 'Tout le club', sub: null });
+    }
+
+    // Phase D — un rôle par équipe.
+    if (m.teams && typeof m.teams === 'object') {
+      Object.keys(m.teams).forEach(tid => {
+        const t = m.teams[tid];
+        if (!t || !t.role) return;
+        const tLabel = teamLabel(tid) || 'Équipe inconnue';
+        const pn = playerName(t.playerId);
+        let sub = null;
+        if (t.role === 'parent') sub = pn ? 'Suit ' + pn : 'Joueur lié manquant';
+        if (t.role === 'joueur') sub = pn ? 'Fiche : ' + pn : null;
+        lines.push({ role: t.role, scope: tLabel, sub });
+      });
+    }
+
+    // Legacy fallback (pré-Phase D : un seul rôle plat sur la membership).
+    if (lines.length === 0 && m.role) {
+      const pn = playerName(m.playerId);
+      let sub = null;
+      if (m.role === 'parent') sub = pn ? 'Suit ' + pn : 'Joueur lié manquant';
+      if (m.role === 'joueur') sub = pn ? 'Fiche : ' + pn : null;
+      lines.push({ role: m.role, scope: 'Tout le club', sub, legacy: true });
+    }
+
+    // Cas extrême : aucune info exploitable → ligne neutre.
+    if (lines.length === 0) {
+      lines.push({ role: 'lecteur', scope: '—', sub: 'Rattachement sans rôle défini' });
+    }
+    return lines;
   };
 
   return (
@@ -1312,7 +1413,7 @@ function ClubMembersPanel({ clubName, onClose }) {
       display:'flex', justifyContent:'center', alignItems:'flex-start', overflow:'auto', padding:20,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        width:'100%', maxWidth:520, background:'#0B1320', borderRadius:16,
+        width:'100%', maxWidth:540, background:'#0B1320', borderRadius:16,
         border:'1px solid rgba(255,255,255,0.12)', padding:20, color:'#fff',
       }}>
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
@@ -1348,33 +1449,71 @@ function ClubMembersPanel({ clubName, onClose }) {
         )}
 
         {state.phase === 'ready' && state.members.length > 0 && (
-          <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          <div style={{display:'flex', flexDirection:'column', gap:10}}>
             {state.members.map(m => {
-              const col = roleColor[m.role] || '#94a3b8';
-              const lbl = window.CDD_ROLES?.roleLabel?.(m.role) || m.role;
-              const pn = m.playerId ? playerName(m.playerId) : null;
-              const sub = [];
-              if (m.role === 'parent') sub.push(pn ? 'Suit ' + pn : 'Joueur lié manquant');
-              if (m.role === 'joueur' && pn) sub.push('Fiche : ' + pn);
-              if (fmtDate(m.createdAt)) sub.push('rattaché le ' + fmtDate(m.createdAt));
+              const lines = decomposeMembership(m);
+              const isAppAdmin = (m.email || '').toLowerCase() === ADMIN_EMAIL_APP;
               return (
                 <div key={m.id || m.uid} style={{
-                  padding:'11px 13px', borderRadius:10,
-                  background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+                  padding:'12px 14px', borderRadius:10,
+                  background: isAppAdmin
+                    ? 'rgba(245,196,81,0.05)'
+                    : 'rgba(255,255,255,0.03)',
+                  border: isAppAdmin
+                    ? '1px solid rgba(245,196,81,0.30)'
+                    : '1px solid rgba(255,255,255,0.08)',
                 }}>
-                  <div style={{display:'flex', alignItems:'center', gap:9}}>
-                    <span style={{
-                      fontSize:10, fontWeight:800, letterSpacing:'.04em', textTransform:'uppercase',
-                      color:'#0a0e14', background:col, padding:'3px 8px', borderRadius:6, flexShrink:0,
-                    }}>{lbl}</span>
-                    <span style={{
-                      flex:1, minWidth:0, fontSize:13, fontWeight:700,
-                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                    }}>{m.email || m.uid || '—'}</span>
+                  {/* Identité (email) en haut */}
+                  <div style={{
+                    fontSize:13.5, fontWeight:800, marginBottom:8,
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                  }}>
+                    {m.email || m.uid || '—'}
                   </div>
-                  {sub.length > 0 && (
-                    <div style={{fontSize:11, opacity:0.6, marginTop:5, lineHeight:1.5}}>
-                      {sub.join(' · ')}
+
+                  {/* Liste des attributions (rôle + équipe) */}
+                  <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                    {lines.map((ln, idx) => {
+                      const meta = ROLE_META[ln.role] || { ic:'•', label: ln.role, color:'#94a3b8' };
+                      return (
+                        <div key={idx} style={{display:'flex', alignItems:'flex-start', gap:8}}>
+                          <span style={{
+                            fontSize:9.5, fontWeight:800, letterSpacing:'.05em',
+                            textTransform:'uppercase',
+                            color:'#0a0e14', background: meta.color,
+                            padding:'3px 7px', borderRadius:5, flexShrink:0,
+                            whiteSpace:'nowrap',
+                          }}>{meta.ic} {meta.label}</span>
+                          <div style={{flex:1, minWidth:0}}>
+                            <div style={{fontSize:12, color:'rgba(255,255,255,0.85)'}}>
+                              {ln.scope}
+                              {ln.legacy && (
+                                <span title="Format legacy pré-Phase D — à migrer"
+                                      style={{
+                                  fontSize:9, fontWeight:700, marginLeft:6,
+                                  padding:'1px 5px', borderRadius:4,
+                                  background:'rgba(251,191,36,0.15)', color:'#fbbf24',
+                                }}>à migrer</span>
+                              )}
+                            </div>
+                            {ln.sub && (
+                              <div style={{
+                                fontSize:11, opacity:0.6, marginTop:2, lineHeight:1.4,
+                              }}>{ln.sub}</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Date de rattachement (info secondaire) */}
+                  {fmtDate(m.createdAt) && (
+                    <div style={{
+                      fontSize:10.5, opacity:0.45, marginTop:8,
+                      paddingTop:6, borderTop:'1px solid rgba(255,255,255,0.05)',
+                    }}>
+                      rattaché le {fmtDate(m.createdAt)}
                     </div>
                   )}
                 </div>
@@ -1384,7 +1523,8 @@ function ClubMembersPanel({ clubName, onClose }) {
         )}
 
         <div style={{fontSize:10.5, opacity:0.45, marginTop:14, lineHeight:1.5}}>
-          Liste des rattachements réels (Firestore). La révocation d'un membre
+          Liste des rattachements réels (Firestore). Un même utilisateur peut
+          avoir plusieurs rôles (un par équipe). La révocation d'un membre
           depuis cet écran arrivera dans une prochaine version.
         </div>
       </div>
