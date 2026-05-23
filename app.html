@@ -38,6 +38,14 @@
 <link rel="stylesheet" href="invite-manager.css">
 <link rel="stylesheet" href="debug-hud.css">
 
+<!-- Step 0: version courante de l'app — source de vérité unique pour
+     l'affichage « Version » dans Réglages → À PROPOS. À bumper à CHAQUE
+     push qui bump aussi un cache buster (convention 1 push = 1 numéro). -->
+<script>
+  window.CDD_APP_VERSION = 'v70';
+  window.CDD_APP_BUILD_DATE = '2026-05-23';
+</script>
+
 <!-- Step 1: seed data (synchronous) -->
 <script src="seed-inline.js"></script>
 
@@ -86,7 +94,7 @@
 <script type="text/babel" src="screen-match-fiche.jsx?v=61.0"></script>
 <script type="text/babel" src="screen-match-live-v2.jsx"></script>
 <script type="text/babel" src="screen-results-conv.jsx"></script>
-<script type="text/babel" src="screen-onb-set.jsx?v=69"></script>
+<script type="text/babel" src="screen-onb-set.jsx?v=70"></script>
 <script type="text/babel" src="screen-prep-arb-lec-vote.jsx?v=69"></script>
 <script type="text/babel" src="screen-transfert-sync-convp.jsx?v=59.0"></script>
 <script type="text/babel" src="screen-share.jsx"></script>

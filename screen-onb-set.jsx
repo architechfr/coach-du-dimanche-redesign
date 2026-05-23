@@ -853,7 +853,14 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       <div className="set-sec">
         <div className="set-sec-k">À PROPOS</div>
         <div className="set-rows">
-          <SetRow ic="ⓘ" t="Version" d="v44 · Build 2026.05.18" go={() => alert("Coach du Dimanche V2 redesign\nBuild 2026.05.18\nMode dev")}/>
+          <SetRow ic="ⓘ" t="Version"
+                  d={(window.CDD_APP_VERSION || 'v?') + ' · Build ' + (window.CDD_APP_BUILD_DATE || '—')}
+                  go={() => alert(
+                    'Coach du Dimanche\n'
+                    + 'Version : ' + (window.CDD_APP_VERSION || 'inconnue') + '\n'
+                    + 'Build : ' + (window.CDD_APP_BUILD_DATE || 'inconnu') + '\n'
+                    + 'L\'app du foot amateur'
+                  )}/>
           <SetRow ic="❤️" t="Soutenir le projet" d="Bientôt disponible" go={() => alert("Merci de soutenir Coach du Dimanche ❤️\n\nLe soutien au projet (don ponctuel) arrive très bientôt dans une prochaine mise à jour.")}/>
           <SetRow ic="↩️" t="Déconnexion" d="Repartir à zéro" warn go={logout}/>
         </div>
