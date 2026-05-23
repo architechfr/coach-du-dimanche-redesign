@@ -140,7 +140,7 @@ function deriveStats(player) {
     p.PHY = -2;
   }
 
-  const clamp = v => Math.max(40, Math.min(95, v));
+  const clamp = v => Math.max(40, Math.min(99, v));
   // Postes secondaires (Phase E) — le coach déclare les postes où le joueur
   // est polyvalent. Lus depuis le profil override coach. Stockés en tableau
   // de codes ('DM', 'MC'…). Le poste principal `pos` n'est jamais inclus.
@@ -197,7 +197,10 @@ function deriveStats(player) {
     let mutated = false;
     ['PAC','SHO','PAS','DRI','DEF','PHY'].forEach(k => {
       if (perfDelta[k]) {
-        stats[k] = clamp(stats[k] + perfDelta[k]);
+        // Arrondi obligatoire : les voteDelta (0,15) et goalsDelta (0,4)
+        // sont fractionnaires — sans arrondi le slider de notation hérite
+        // d'une valeur 82,15 et ne peut plus jamais retomber sur un entier.
+        stats[k] = clamp(Math.round(stats[k] + perfDelta[k]));
         mutated = true;
       }
     });
@@ -279,7 +282,7 @@ function buildViewPlayer(player, idx) {
     parentPhone:    profileOv.parentPhone    || player.parentPhone,
     email:          profileOv.email          || player.email,
     notes:          profileOv.notes          || player.notes,
-    photoDataUrl:   profileOv.photoDataUrl   || player.photoDataUrl,
+    photoDataUrl:   profileOv.photoUrl || profileOv.photoDataUrl || player.photoDataUrl,
   };
 
   // ─── Apply STATUS override (statut courant + métadonnées) ───
@@ -626,7 +629,35 @@ async function rebuildCDDGlobals() {
 
   // ─── Convoc : taille foot amateur, banc strict 3 à 5 (#51) ───
   // 14 par défaut (11 + 3), extensible jusqu'à 16 (11 + 5) via bouton +.
-  const lt = activeTeam?.lineupTemplate;
+  //
+  // SOURCE DE LA COMPO TYPE (priorité décroissante, fix 2026-05-23) :
+  //   1. cdd_lineup_template[teamId] — éditée par le coach (Feuille de match)
+  //   2. activeTeam.lineupTemplate    — héritée FFF / seed historique
+  // Avant le fix, on ne lisait QUE (2), donc les éditions du coach étaient
+  // ignorées par CDD_CONVO → le Mode Vestiaire affichait une compo différente
+  // de la Feuille de match. Maintenant (1) prend le dessus dès qu'elle existe.
+  let lt = activeTeam?.lineupTemplate;
+  try {
+    const allCoachLineups = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+    const coachLineup = activeTeam?.id ? allCoachLineups[activeTeam.id] : null;
+    if (coachLineup && coachLineup.starters && typeof coachLineup.starters === 'object') {
+      // starters = map slotIdx → playerId. On la convertit en liste ordonnée
+      // par slotIdx (1ère ligne du tableau = défense → milieu → attaque).
+      const sortedStarters = Object.keys(coachLineup.starters)
+        .map(k => parseInt(k, 10))
+        .filter(k => !isNaN(k))
+        .sort((a, b) => a - b)
+        .map(k => coachLineup.starters[k])
+        .filter(Boolean);
+      if (sortedStarters.length > 0) {
+        lt = {
+          ...(lt || {}),
+          startersIds: sortedStarters,
+          benchIds: Array.isArray(coachLineup.bench) ? coachLineup.bench.slice() : (lt?.benchIds || []),
+        };
+      }
+    }
+  } catch (e) { /* fallback silencieux sur activeTeam.lineupTemplate */ }
   // Overlay match (séparation Compo type ↔ Convocation match) : si une convoc spécifique
   // existe pour le prochain match, elle prend le pas sur lineupTemplate. Sinon, fallback
   // sur le template (comportement historique).
