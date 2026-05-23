@@ -569,25 +569,96 @@ function ScreenLecteur({ go, tweaks }) {
         );
       })()}
 
-      {tab === "effectif" && (
-        <div className="lec-effectif">
-          {CDD_PLAYERS.slice(0, 8).map(p => (
-            <div className="lec-pl" key={p.id}>
-              <div className="lec-pl-avatar">
-                {p.photo ? <img src={p.photo} alt=""/> : <span>{p.first[0]}{p.last[0]}</span>}
-              </div>
-              <div className="lec-pl-info">
-                <b>#{p.num} {p.first} {p.last}</b>
-                <em>{POSITION_LABEL[p.pos] || p.pos} · {p.age} ans</em>
-              </div>
-              <div className="lec-pl-stats">
-                <span><b className="num">{p.goals}</b><em>B</em></span>
-                <span><b className="num">{p.assists}</b><em>P</em></span>
-              </div>
+      {tab === "effectif" && (() => {
+        // Refonte 2026-05-23 : effectif EN 3 SECTIONS plutôt qu'une liste plate.
+        //   ⚽ Titulaires (les 11 convoqués pour le prochain match)
+        //   🪑 Banc       (les 3-5 remplaçants convoqués)
+        //   🛋️ Reste de l'effectif (les joueurs hors convoc — indispos ou réserve)
+        // Source : CDD_CONVO (recalculé depuis la compo type + statut joueurs +
+        // overlay match éventuel). Cohérent avec ce que le coach voit dans
+        // « Convocations » et « Mode Vestiaire ».
+        //
+        // Pas de stats privées (buts/passes) sur ces cartes — la page lecteur
+        // est consultée par parents/joueurs/lecteurs, leur sphère est la vie
+        // d'équipe (qui joue, qui est sur le banc), pas les perfs individuelles.
+        const convo = window.CDD_CONVO || { starters: [], bench: [] };
+        const startersIds = new Set(convo.starters || []);
+        const benchIds    = new Set(convo.bench    || []);
+        const findPlayer  = (id) => CDD_PLAYERS.find(p => p.id === id);
+        const startersList = (convo.starters || []).map(findPlayer).filter(Boolean);
+        const benchList    = (convo.bench    || []).map(findPlayer).filter(Boolean);
+        const restList = CDD_PLAYERS.filter(p =>
+          !startersIds.has(p.id) && !benchIds.has(p.id)
+        );
+
+        const renderPlayer = (p) => (
+          <div className="lec-pl" key={p.id}>
+            <div className="lec-pl-avatar">
+              {p.photoDataUrl ? (
+                <img src={p.photoDataUrl} alt=""/>
+              ) : p.photo ? (
+                <img src={p.photo} alt=""
+                     onError={(e) => { e.currentTarget.style.display = 'none'; }}/>
+              ) : (
+                <span>{(p.first || '?')[0]}{(p.last || '?')[0]}</span>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+            <div className="lec-pl-info">
+              <b>#{p.num || '?'} {p.first} {p.last}</b>
+              <em>{POSITION_LABEL[p.pos] || p.pos || '—'}</em>
+            </div>
+          </div>
+        );
+
+        const renderSection = (title, icon, color, players) => {
+          if (!players || players.length === 0) return null;
+          return (
+            <div key={title} style={{marginBottom: 16}}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '12px 14px 8px',
+                fontSize: 11, fontWeight: 800, letterSpacing: '.10em',
+                color, textTransform: 'uppercase',
+              }}>
+                <span style={{fontSize: 14}}>{icon}</span>
+                <span>{title}</span>
+                <span style={{
+                  marginLeft: 'auto', fontSize: 10, fontWeight: 700,
+                  padding: '2px 8px', borderRadius: 999,
+                  background: 'rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.7)',
+                }}>{players.length}</span>
+              </div>
+              {players.map(renderPlayer)}
+            </div>
+          );
+        };
+
+        return (
+          <div className="lec-effectif">
+            {/* Hint contextuel si une convoc spécifique existe pour ce match */}
+            {convo.hasMatchOverlay && (
+              <div style={{
+                margin: '0 14px 12px', padding: '8px 12px', borderRadius: 8,
+                background: 'rgba(200,241,105,0.06)',
+                border: '1px solid rgba(200,241,105,0.20)',
+                fontSize: 11, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5,
+              }}>
+                Convocation adaptée pour le prochain match (différente de la compo type).
+              </div>
+            )}
+            {renderSection('Titulaires',  '⚽', '#c8f169', startersList)}
+            {renderSection('Banc',        '🪑', '#7dd3fc', benchList)}
+            {renderSection('Reste de l\'effectif', '🛋️', '#94a3b8', restList)}
+            {startersList.length === 0 && benchList.length === 0 && restList.length === 0 && (
+              <div style={{
+                padding: '40px 16px', textAlign: 'center',
+                fontSize: 13, color: 'rgba(255,255,255,0.5)',
+              }}>Aucun joueur dans l'effectif pour l'instant.</div>
+            )}
+          </div>
+        );
+      })()}
 
       {tab === "cal" && (
         <div className="lec-cal">
