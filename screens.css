@@ -348,8 +348,13 @@
 .ef-banner-in {
   position: relative; z-index: 2;
   padding: 14px 16px;
-  display: flex; flex-direction: column;
-  justify-content: flex-end;
+  /* Layout horizontal : badge club à gauche, bloc texte (k/title/stats)
+     à droite. Avant : flex-direction column + justify-content flex-end
+     qui empilait verticalement le logo au-dessus du texte → le logo
+     dépassait le haut du banner (overflow:hidden) et était cropped. */
+  display: flex; flex-direction: row;
+  align-items: center;
+  gap: 14px;
   height: 100%;
 }
 .ef-banner-k {
