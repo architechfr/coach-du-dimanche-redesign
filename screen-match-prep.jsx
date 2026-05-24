@@ -215,16 +215,49 @@ function ScreenMatchPrep({ go, tweaks }) {
             );
           })()}
           {canEdit && next.isAmical && (
-            <button onClick={() => setFriendlyOpen('edit')}
-              style={{
-                marginTop:8, padding:'8px 14px', borderRadius:9, cursor:'pointer',
-                background:'rgba(168,85,247,0.10)', color:'#c4b5fd',
-                border:'1px solid rgba(168,85,247,0.40)',
-                fontSize:11.5, fontWeight:700, letterSpacing:'.04em',
-                alignSelf:'flex-start',
-              }}>
-              ✎ Éditer le match amical
-            </button>
+            <div style={{display:'flex', gap:8, marginTop:8, flexWrap:'wrap'}}>
+              <button onClick={() => setFriendlyOpen('edit')}
+                style={{
+                  padding:'8px 14px', borderRadius:9, cursor:'pointer',
+                  background:'rgba(168,85,247,0.10)', color:'#c4b5fd',
+                  border:'1px solid rgba(168,85,247,0.40)',
+                  fontSize:11.5, fontWeight:700, letterSpacing:'.04em',
+                  fontFamily:'inherit',
+                }}>
+                ✎ Éditer le match amical
+              </button>
+              {/* Bouton "Marquer joué" : permet de retirer un match de la
+                  liste "à venir" sans avoir à lancer + finir le live.
+                  Utile pour : match annulé, match joué sans l'app, match
+                  fictif de test à nettoyer. */}
+              <button onClick={() => {
+                if (!confirm("Marquer ce match comme joué / terminé ?\n\nIl disparaîtra de la liste \"à venir\" sur l'Accueil et les Convocations.")) return;
+                try {
+                  // Pour un amical : flag endedAt côté CDD_FRIENDLY (sync cloud)
+                  if (next.isAmical && teamId && next.id && window.CDD_FRIENDLY?.markEnded) {
+                    window.CDD_FRIENDLY.markEnded(teamId, next.id);
+                  }
+                  // Pour TOUS : pose dans cdd_match_last_finished pour
+                  // déclencher le filtre dans data-bridge / match-switcher.
+                  if (next.id) {
+                    localStorage.setItem('cdd_match_last_finished', next.id);
+                  }
+                  if (window.CDD_REBUILD) window.CDD_REBUILD();
+                } catch (e) {
+                  console.warn('[match-prep] markEnded failed', e);
+                  alert("Erreur — réessaie ou supprime le match via 'Éditer'.");
+                }
+              }}
+                style={{
+                  padding:'8px 14px', borderRadius:9, cursor:'pointer',
+                  background:'rgba(200,241,105,0.10)', color:'#c8f169',
+                  border:'1px solid rgba(200,241,105,0.40)',
+                  fontSize:11.5, fontWeight:700, letterSpacing:'.04em',
+                  fontFamily:'inherit',
+                }}>
+                ✓ Marquer comme joué
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -819,6 +819,14 @@ function ScreenMatchV2({ go, tweaks }) {
   // ─── Match controls ─────────────────────────────────
   const startMatch = () => {
     M.notStarted = false;
+    // CAPTURE FIABLE DU SCHEDULED ID : ici on est SÛRS d'avoir le bon
+    // CDD_NEXT_MATCH (le coach vient juste d'arriver depuis Convocations /
+    // Match-prep, où il a vu ce match précis). On override systématiquement
+    // pour couvrir le cas où M a été chargé depuis localStorage sans cet
+    // id (match repris en mémoire).
+    if (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) {
+      M.scheduledMatchId = window.CDD_NEXT_MATCH.id;
+    }
     M.tSt = Date.now();
     M.tOff = 0;
     M.st = 'live';
@@ -961,8 +969,17 @@ function ScreenMatchV2({ go, tweaks }) {
     // local 'm_xxx' généré par newMatch. Sans ça, le filtre ne reconnaît
     // pas le match comme terminé. M.id (= m_xxx) sert quand même au stockage
     // local du match pour la feuille post-match / vote.
-    const _scheduledId = M.scheduledMatchId || M.id;
-    console.info('[endMatch] scheduledId=' + _scheduledId + ' (local M.id=' + M.id + ')');
+    // FALLBACK : si scheduledMatchId pas capturé (ex: match repris depuis
+    // localStorage qui n'avait pas ce champ), on lit MAINTENANT
+    // CDD_NEXT_MATCH.id. Mieux que rien — généralement le match en cours
+    // EST encore le prochain (il ne devient terminé qu'à cette ligne).
+    const _scheduledId = M.scheduledMatchId
+      || (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id)
+      || M.id;
+    console.info('[endMatch] scheduledId=' + _scheduledId
+      + ' (M.scheduledMatchId=' + M.scheduledMatchId
+      + ', CDD_NEXT_MATCH.id=' + (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id)
+      + ', local M.id=' + M.id + ')');
     // Match terminé : cdd_match_current libéré pour qu'un nouveau match puisse être créé.
     // L'ID reste dans cdd_match_last_finished pour la page Vote post-match.
     try {
