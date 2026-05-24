@@ -399,9 +399,18 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
 // avec A (domicile) à gauche et B (extérieur) à droite.
 // Ergonomie testée terrain par le coach (V1).
 // ──────────────────────────────────────────────────────────
-function ActionsMatrix({ M, disabled, onGoal, onCard, onSub, onInjury }) {
+function ActionsMatrix({ M, disabled, onGoal, onCard, onSub, onInjury, isAtHome }) {
   const aName = M.tA?.n || 'Mon équipe';
   const bName = M.tB?.n || 'Adversaire';
+  // Convention recevant à gauche : si on joue à l'extérieur, mon équipe (A)
+  // passe à droite et l'adversaire (B) à gauche. Les `side` passés aux
+  // handlers restent 'A'/'B' (logique métier inchangée) — seul le rendu
+  // visuel est swappé pour aligner avec le scoreboard du haut.
+  const _atHome = isAtHome !== false; // défaut true si non précisé
+  const leftSide  = _atHome ? 'A' : 'B';
+  const rightSide = _atHome ? 'B' : 'A';
+  const leftName  = _atHome ? aName : bName;
+  const rightName = _atHome ? bName : aName;
 
   // Bouton réutilisable. taille du label adapte au nombre de boutons par ligne.
   const Btn = ({ kind, side, onClick, children, fontSize }) => (
@@ -445,59 +454,60 @@ function ActionsMatrix({ M, disabled, onGoal, onCard, onSub, onInjury }) {
   return (
     <div className="mv-actions-matrix">
 
-      {/* Entêtes des 2 côtés (rappel visuel) */}
+      {/* Entêtes des 2 côtés — alignés avec le scoreboard (recevant à gauche) */}
       <div style={{
         display:'flex', gap:8, marginBottom:6,
         fontSize:10.5, fontWeight:800, opacity:0.55, letterSpacing:'.06em',
       }}>
-        <div style={{flex:1, textAlign:'center'}}>{aName.toUpperCase()}</div>
+        <div style={{flex:1, textAlign:'center'}}>{leftName.toUpperCase()}</div>
         <div style={{width:1}}/>
-        <div style={{flex:1, textAlign:'center'}}>{bName.toUpperCase()}</div>
+        <div style={{flex:1, textAlign:'center'}}>{rightName.toUpperCase()}</div>
       </div>
 
-      {/* Ligne 1 — BUT A | BUT B  (action principale, le plus accessible) */}
+      {/* Ligne 1 — BUT gauche | BUT droite */}
       <div style={rowStyle}>
         <div style={sideStyle}>
-          <Btn kind="goal" side="A" onClick={onGoal}>
+          <Btn kind="goal" side={leftSide} onClick={onGoal}>
             {goalIc}<span className="mv-action-l">BUT</span>
           </Btn>
         </div>
         <div style={sepStyle}/>
         <div style={sideStyle}>
-          <Btn kind="goal" side="B" onClick={onGoal}>
+          <Btn kind="goal" side={rightSide} onClick={onGoal}>
             {goalIc}<span className="mv-action-l">BUT</span>
           </Btn>
         </div>
       </div>
 
-      {/* Ligne 2 — JAUNE A · ROUGE A | JAUNE B · ROUGE B */}
+      {/* Ligne 2 — JAUNE · ROUGE gauche | JAUNE · ROUGE droite */}
       <div style={rowStyle}>
         <div style={sideStyle}>
-          <Btn kind="yel" side="A" onClick={(s) => onCard(s, 'yellow')}>
+          <Btn kind="yel" side={leftSide} onClick={(s) => onCard(s, 'yellow')}>
             {yellowIc}<span className="mv-action-l">JAUNE</span>
           </Btn>
-          <Btn kind="red" side="A" onClick={(s) => onCard(s, 'red')}>
+          <Btn kind="red" side={leftSide} onClick={(s) => onCard(s, 'red')}>
             {redIc}<span className="mv-action-l">ROUGE</span>
           </Btn>
         </div>
         <div style={sepStyle}/>
         <div style={sideStyle}>
-          <Btn kind="yel" side="B" onClick={(s) => onCard(s, 'yellow')}>
+          <Btn kind="yel" side={rightSide} onClick={(s) => onCard(s, 'yellow')}>
             {yellowIc}<span className="mv-action-l">JAUNE</span>
           </Btn>
-          <Btn kind="red" side="B" onClick={(s) => onCard(s, 'red')}>
+          <Btn kind="red" side={rightSide} onClick={(s) => onCard(s, 'red')}>
             {redIc}<span className="mv-action-l">ROUGE</span>
           </Btn>
         </div>
       </div>
 
-      {/* Ligne 3 — CHANGE A | CHANGE B (+ BLESSÉ côté A car pas de feuille adv) */}
+      {/* Ligne 3 — CHANGE gauche | CHANGE droite. BLESSÉ uniquement côté
+          mon équipe (pas la feuille adverse → onInjury seulement si side==='A'). */}
       <div style={rowStyle}>
         <div style={sideStyle}>
-          <Btn kind="sub" side="A" onClick={onSub}>
+          <Btn kind="sub" side={leftSide} onClick={onSub}>
             {subIc}<span className="mv-action-l">CHANGE</span>
           </Btn>
-          {onInjury && (
+          {onInjury && leftSide === 'A' && (
             <Btn kind="injury" side="A" onClick={onInjury}>
               {injuryIc}<span className="mv-action-l">BLESSÉ</span>
             </Btn>
@@ -505,11 +515,11 @@ function ActionsMatrix({ M, disabled, onGoal, onCard, onSub, onInjury }) {
         </div>
         <div style={sepStyle}/>
         <div style={sideStyle}>
-          <Btn kind="sub" side="B" onClick={onSub}>
+          <Btn kind="sub" side={rightSide} onClick={onSub}>
             {subIc}<span className="mv-action-l">CHANGE</span>
           </Btn>
-          {onInjury && (
-            <Btn kind="injury" side="B" onClick={onInjury}>
+          {onInjury && rightSide === 'A' && (
+            <Btn kind="injury" side="A" onClick={onInjury}>
               {injuryIc}<span className="mv-action-l">BLESSÉ</span>
             </Btn>
           )}
@@ -700,6 +710,12 @@ function ScreenMatchV2({ go, tweaks }) {
   const [showFiche, setShowFiche] = useStateMV(false);
   const [editingEvent, setEditingEvent] = useStateMV(null);
   const [showSummaryShare, setShowSummaryShare] = useStateMV(false);
+  // Étape intermédiaire entre "PreMatchSetup → LANCER" et le démarrage
+  // réel du chrono : permet au coach de vérifier/ajuster les numéros de
+  // maillot avant le coup d'envoi. true = setup validé, en attente du
+  // bouton "Confirmer et démarrer" sur l'écran de vérification.
+  const [setupValidated, setSetupValidated] = useStateMV(false);
+  const [jerseyModalOpen, setJerseyModalOpen] = useStateMV(false);
 
   const Mref = useRefMV(null);
 
@@ -1145,10 +1161,53 @@ function ScreenMatchV2({ go, tweaks }) {
         onShowOnly={() => setActiveFlow({ kind:'show-only' })}
         onShowLineup={() => setShowLineup(true)}/>
 
-      {/* Pre-match setup adversaire (#14) */}
-      {M.notStarted && (
-        <PreMatchSetup M={M} onStart={startMatch} rerender={rerender} canEdit={canEdit}/>
+      {/* Pre-match setup adversaire (#14) — 1ère étape : réglages + couleurs */}
+      {M.notStarted && !setupValidated && (
+        <PreMatchSetup M={M}
+          onStart={() => { setSetupValidated(true); rerender(); }}
+          rerender={rerender} canEdit={canEdit}/>
       )}
+
+      {/* 2ème étape : vérification des numéros de maillot avant coup d'envoi.
+          Évite que le chrono démarre sans que le coach ait revu sa compo. */}
+      {M.notStarted && setupValidated && (
+        <PreMatchJerseyCheck M={M}
+          onConfirm={startMatch}
+          onBack={() => { setSetupValidated(false); rerender(); }}
+          onEditJerseys={() => setJerseyModalOpen(true)}
+          canEdit={canEdit}/>
+      )}
+
+      {/* Modale d'édition des numéros maillots match — réutilise le composant
+          existant utilisé depuis la page Compo/Convocations. */}
+      {jerseyModalOpen && window.JerseyNumbersModal && (() => {
+        const _teamId = window.CDD?.getActiveTeam?.()?.id;
+        const _matchId = window.CDD_NEXT_MATCH?.id || 'placeholder';
+        const _players = [...(M.tA?.p || []), ...(M.tA?.bench || [])]
+          .map(lbl => {
+            // p est une string "#N Prénom" ou un objet ; le composant attend
+            // des objets player. On reconstruit le minimum nécessaire à
+            // partir de CDD_PLAYERS si dispo.
+            if (typeof lbl === 'string') {
+              const m = lbl.match(/^#?(\d+)\s+(.+)$/);
+              if (m) {
+                const num = parseInt(m[1], 10);
+                const first = m[2];
+                const found = (window.CDD_PLAYERS || []).find(p => p.first === first);
+                return found ? { ...found, num } : { id: first, first, num };
+              }
+            }
+            return lbl;
+          });
+        return (
+          <window.JerseyNumbersModal
+            teamId={_teamId}
+            matchId={_matchId}
+            players={_players}
+            title="🔢 NUMÉROS MAILLOTS DU MATCH"
+            onClose={() => setJerseyModalOpen(false)}/>
+        );
+      })()}
 
       {/* Vue Composition en match (#17) */}
       {showLineup && (
@@ -1201,6 +1260,7 @@ function ScreenMatchV2({ go, tweaks }) {
 
           {canEdit && (
             <ActionsMatrix M={M} disabled={disabled}
+              isAtHome={(window.CDD_NEXT_MATCH?.venue === 'Domicile')}
               onGoal={(side) => setActiveFlow({ kind:'goal', side })}
               onCard={handleCard}
               onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
@@ -1561,7 +1621,9 @@ function PreMatchSetup({ M, onStart, rerender, canEdit }) {
       </div>
 
       {canEdit ? (
-        <button className="mv-prematch-btn" onClick={applyAndStart}><span>▶ LANCER LE MATCH</span></button>
+        <button className="mv-prematch-btn" onClick={applyAndStart}>
+          <span>▶ VALIDER ET VÉRIFIER LES NUMÉROS</span>
+        </button>
       ) : (
         <div style={{
           margin:'12px 14px 0', padding:'11px 14px', borderRadius:10, fontSize:12,
@@ -1569,6 +1631,123 @@ function PreMatchSetup({ M, onStart, rerender, canEdit }) {
           color:'#7dd3fc', textAlign:'center',
         }}>👁 Lecture seule — seul un coach peut lancer le match.</div>
       )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// Étape intermédiaire : vérification des numéros de maillot avant
+// le coup d'envoi (entre PreMatchSetup et le démarrage du chrono).
+// Évite le démarrage automatique trop brutal et donne une dernière
+// chance d'ajuster la compo / les numéros.
+// ──────────────────────────────────────────────────────────
+function PreMatchJerseyCheck({ M, onConfirm, onBack, onEditJerseys, canEdit }) {
+  // Lit la compo titulaires + remplaçants depuis M.tA (= mon équipe).
+  const starters = (M.tA?.p || []);
+  const bench    = (M.tA?.bench || []);
+  // Détermine le numéro affiché pour chaque entrée. M.tA.p[i] est typiquement
+  // une chaîne "#N Prénom" — on extrait le numéro et le nom proprement.
+  const parsePlayer = (lbl) => {
+    if (lbl && typeof lbl === 'object') {
+      return { num: lbl.num || '?', name: `${lbl.first || ''} ${lbl.last || ''}`.trim() };
+    }
+    const s = String(lbl || '').trim();
+    const m = s.match(/^#?(\d+)\s+(.+)$/);
+    if (m) return { num: parseInt(m[1], 10), name: m[2] };
+    return { num: '?', name: s };
+  };
+
+  const row = (lbl, i, isStarter) => {
+    const p = parsePlayer(lbl);
+    return (
+      <div key={i} style={{
+        display:'flex', alignItems:'center', gap:10, padding:'8px 10px',
+        background:'rgba(255,255,255,0.03)',
+        border:'1px solid rgba(255,255,255,0.08)',
+        borderRadius:8, marginBottom:4,
+      }}>
+        <span style={{
+          minWidth:36, height:36, borderRadius:'50%',
+          background: isStarter ? 'rgba(200,241,105,0.18)' : 'rgba(125,211,252,0.18)',
+          border: `1px solid ${isStarter ? 'rgba(200,241,105,0.45)' : 'rgba(125,211,252,0.45)'}`,
+          color: isStarter ? '#c8f169' : '#7dd3fc',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontWeight:900, fontSize:14,
+        }}>{p.num}</span>
+        <span style={{flex:1, fontSize:13, fontWeight:600}}>{p.name}</span>
+        <span style={{
+          fontSize:10, fontWeight:800, letterSpacing:'.06em',
+          opacity:0.6, textTransform:'uppercase',
+        }}>{isStarter ? 'Titulaire' : 'Banc'}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="mv-prematch" style={{padding:'14px'}}>
+      <div className="mv-prematch-glow"/>
+      <div className="mv-prematch-k">PRÉ-MATCH · VÉRIFICATION</div>
+      <div className="mv-prematch-t" style={{marginBottom:12}}>Numéros de maillot</div>
+      <div style={{
+        fontSize:12.5, color:'rgba(255,255,255,0.75)', textAlign:'center',
+        marginBottom:14, padding:'0 8px',
+      }}>
+        Dernière vérification avant le coup d'envoi. Tu peux ajuster les numéros
+        de maillot si nécessaire (ex : maillot perdu, échange dernière minute).
+      </div>
+
+      <div style={{
+        width:'min(420px, 92%)', background:'rgba(0,0,0,.35)',
+        borderRadius:12, padding:'12px 14px', marginBottom:12,
+        border:'1px solid rgba(255,255,255,.08)',
+      }}>
+        <div style={{
+          fontSize:11, fontWeight:800, letterSpacing:'.08em',
+          color:'#c8f169', marginBottom:8, textTransform:'uppercase',
+        }}>⚽ Titulaires · {starters.length}</div>
+        {starters.length === 0 ? (
+          <div style={{padding:'10px', fontSize:12, opacity:0.6, textAlign:'center'}}>
+            Aucun titulaire défini.
+          </div>
+        ) : starters.map((lbl, i) => row(lbl, i, true))}
+
+        {bench.length > 0 && (
+          <>
+            <div style={{
+              fontSize:11, fontWeight:800, letterSpacing:'.08em',
+              color:'#7dd3fc', marginTop:14, marginBottom:8, textTransform:'uppercase',
+            }}>🪑 Remplaçants · {bench.length}</div>
+            {bench.map((lbl, i) => row(lbl, i, false))}
+          </>
+        )}
+      </div>
+
+      {canEdit && (
+        <button type="button" onClick={onEditJerseys} style={{
+          width:'min(420px, 92%)', padding:'10px 14px', marginBottom:10,
+          borderRadius:10, cursor:'pointer', fontFamily:'inherit',
+          background:'rgba(255,255,255,0.06)',
+          border:'1px solid rgba(255,255,255,0.15)',
+          color:'#fff', fontSize:13, fontWeight:700,
+        }}>
+          🔢 Modifier les numéros
+        </button>
+      )}
+
+      <div style={{display:'flex', gap:8, width:'min(420px, 92%)'}}>
+        <button type="button" onClick={onBack} style={{
+          flex:1, padding:'12px', borderRadius:10, cursor:'pointer',
+          background:'rgba(255,255,255,0.06)',
+          border:'1px solid rgba(255,255,255,0.15)',
+          color:'#fff', fontSize:13, fontWeight:700, fontFamily:'inherit',
+        }}>← Retour réglages</button>
+        {canEdit && (
+          <button type="button" onClick={onConfirm} className="mv-prematch-btn"
+                  style={{flex:2}}>
+            <span>▶ COUP D'ENVOI</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
