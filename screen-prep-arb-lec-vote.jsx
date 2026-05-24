@@ -539,6 +539,21 @@ function ScreenLecteur({ go, tweaks }) {
                 {rightName}
               </div>
             </div>
+            {/* Bouton CTA pour ouvrir la page match en lecture seule.
+                Le coach garde l'édition (canEdit=true sur ScreenMatch),
+                parent/lecteur/joueur voient juste le scoreboard + timeline. */}
+            <button type="button"
+              onClick={() => go && go('match')}
+              style={{
+                width:'100%', padding:'9px 14px', borderRadius:8,
+                background: isPaused ? 'rgba(251,191,36,0.18)' : 'rgba(239,68,68,0.18)',
+                border: `1px solid ${isPaused ? 'rgba(251,191,36,0.50)' : 'rgba(239,68,68,0.50)'}`,
+                color: isPaused ? '#fbbf24' : '#fca5a5',
+                fontSize:12, fontWeight:800, fontFamily:'inherit',
+                cursor:'pointer', letterSpacing:'.04em',
+              }}>
+              ▶ SUIVRE LE MATCH EN DÉTAIL →
+            </button>
           </div>
         );
       })()}
@@ -894,21 +909,30 @@ function ScreenLecteur({ go, tweaks }) {
             </div>
           );
         }
+        // Helper unifié : normalise les 2 formats possibles d'un match.
+        //  - CDD_NEXT_MATCH : { opponentName, venue: 'Domicile'|'Extérieur', home, away }
+        //  - CDD_MATCH_SWITCHER.listUpcoming() : { opponent, venue: 'H'|'E', kind:'fff'|'amical' }
+        // Sans cette normalisation, le calendrier affichait "? vs FCMH" car
+        // les champs n'étaient pas alignés avec ce que fmtVs attendait.
+        const _isHomeOf = (m) => (m.venue === 'H' || m.venue === 'Domicile');
+        const _oppOf = (m) =>
+          m.opponent || m.opponentName
+          || (_isHomeOf(m) ? m.away : m.home)
+          || m.away || '?';
+        const _meName = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.team) || 'FCMH';
         // Convention recevant à gauche pour l'affichage VS
         const fmtVs = (m) => {
-          const opp = m.opponentName
-            || (m.venue === 'Domicile' ? m.away : m.home)
-            || m.away || '?';
-          const me = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.team) || 'FCMH';
-          return m.venue === 'Domicile' ? `${me} vs ${opp}` : `${opp} vs ${me}`;
+          const opp = _oppOf(m);
+          return _isHomeOf(m) ? `${_meName} vs ${opp}` : `${opp} vs ${_meName}`;
         };
         const nextM = upcoming[0];
         const rest = upcoming.slice(1);
         // Infos pratiques du prochain match (stade, RDV, coup d'envoi)
         const nextInfo = (_calTeamId && nextM?.id && window.CDD_MATCH_INFO?.get)
           ? window.CDD_MATCH_INFO.get(_calTeamId, nextM.id) : null;
-        const venueLabel = nextM.venue === 'Domicile' ? 'DOMICILE' : 'EXTÉRIEUR';
-        const venueColor = nextM.venue === 'Domicile' ? '#c8f169' : '#fbbf24';
+        const _nextIsHome = _isHomeOf(nextM);
+        const venueLabel = _nextIsHome ? 'DOMICILE' : 'EXTÉRIEUR';
+        const venueColor = _nextIsHome ? '#c8f169' : '#fbbf24';
         const dayLabel = (() => {
           if (typeof nextM.daysLeft !== 'number') return null;
           if (nextM.daysLeft === 0) return 'AUJOURD\'HUI';
@@ -939,7 +963,7 @@ function ScreenLecteur({ go, tweaks }) {
                     border:'1px solid rgba(255,255,255,0.18)',
                   }}>{dayLabel}</span>
                 )}
-                {nextM.isAmical && (
+                {(nextM.isAmical || nextM.kind === 'amical') && (
                   <span style={{
                     fontSize:10.5, fontWeight:800, letterSpacing:'.06em',
                     padding:'3px 8px', borderRadius:5,
@@ -991,10 +1015,9 @@ function ScreenLecteur({ go, tweaks }) {
                   <span className="t">À suivre · {rest.length}</span>
                 </div>
                 {rest.map((m, i) => {
-                  const opp = m.opponentName
-                    || (m.venue === 'Domicile' ? m.away : m.home)
-                    || m.away || '?';
-                  const vL = m.venue === 'Domicile' ? 'DOMICILE' : 'EXTÉRIEUR';
+                  const opp = _oppOf(m);
+                  const vL = _isHomeOf(m) ? 'DOMICILE' : 'EXTÉRIEUR';
+                  const isAmi = m.isAmical || m.kind === 'amical';
                   return (
                     <div className="lec-cal-row" key={m.id || i}
                          style={{background:'rgba(255,255,255,0.03)'}}>
@@ -1002,7 +1025,7 @@ function ScreenLecteur({ go, tweaks }) {
                       <span className="lec-cal-opp">
                         <em>{vL}</em>
                         {opp}
-                        {m.isAmical && (
+                        {isAmi && (
                           <span style={{marginLeft:6, fontSize:10, fontWeight:700, color:'#a78bfa',
                             background:'rgba(167,139,250,0.12)', padding:'1px 6px', borderRadius:4}}>
                             AMICAL
