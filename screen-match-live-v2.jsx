@@ -780,18 +780,32 @@ function ScreenMatchV2({ go, tweaks }) {
     return () => clearInterval(t);
   }, [M, M && M.st, M && M.notStarted]);
 
+  // Push cloud fire-and-forget : permet aux parents/adjoints/joueurs absents
+  // de suivre le LIVE en temps réel via watchMatchFromCloud. Ne bloque pas
+  // l'UX coach si Firestore est lent ou indisponible.
+  const _pushLive = (M) => {
+    if (!M || M.notStarted || M.st === 'finished') return;
+    if (!window.cddSync?.saveMatchToCloud) return;
+    window.cddSync.saveMatchToCloud(M)
+      .catch(e => console.warn('[match-live] cloud push:', e.message));
+  };
+
   const rerender = () => {
     forceRender({});
     if (M) M.savedAt = Date.now();
     MATCH_HELPERS.saveMatch(M);
+    _pushLive(M);
   };
 
   // Auto-save toutes les 10 secondes pendant le match (#20)
+  // + push cloud → maintient le live à jour pour les viewers même si le
+  // coach n'a pas tapé d'action récemment (chrono qui avance, pause, etc.).
   useEffectMV(() => {
     if (!M || M.notStarted || M.st === 'finished') return;
     const tick = setInterval(() => {
       M.savedAt = Date.now();
       MATCH_HELPERS.saveMatch(M);
+      _pushLive(M);
     }, 10000);
     return () => clearInterval(tick);
   }, [M, M && M.st, M && M.notStarted]);

@@ -463,8 +463,85 @@ function ScreenLecteur({ go, tweaks }) {
   };
 
 
+  // Live match watcher : si un match est en cours côté coach et qu'il pousse
+  // dans Firestore (cdd_v2_matches/{matchId}), le parent voit le score en
+  // direct. Pas besoin d'être coach ni d'avoir un statut particulier.
+  const [_liveData, _setLiveData] = useState(null);
+  useEffect(() => {
+    const _mid = (window.cddSync && window.cddSync.matchId) || null;
+    if (!_mid || _mid === 'demo' || _mid === 'demo_default') return;
+    if (!window.cddSync?.watchMatchFromCloud) return;
+    const unsub = window.cddSync.watchMatchFromCloud(_mid, (data) => {
+      // Filtre : on n'affiche que les matchs lancés (live / paused, pas finished).
+      if (data && (data.status === 'live' || data.status === 'paused')) {
+        _setLiveData(data);
+      } else {
+        _setLiveData(null);
+      }
+    });
+    return () => { try { unsub?.(); } catch (e) {} };
+  }, []);
+
   return (
     <div className="scr scr-lecteur fade-in" data-screen-label="12 Lecteur public">
+
+      {/* Bandeau LIVE — visible pour TOUS (parent, lecteur, joueur, coach
+          quand il consulte la page Lecteur). Convention recevant à gauche. */}
+      {_liveData && (() => {
+        const _isAtHome = (window.CDD_NEXT_MATCH?.venue === 'Domicile');
+        const meName  = (_liveData.teamA && _liveData.teamA.n) || 'Mon club';
+        const oppName = (_liveData.teamB && _liveData.teamB.n) || 'Adversaire';
+        const sA = _liveData.teamA?.score ?? 0;
+        const sB = _liveData.teamB?.score ?? 0;
+        const leftName  = _isAtHome ? meName  : oppName;
+        const rightName = _isAtHome ? oppName : meName;
+        const leftScore  = _isAtHome ? sA : sB;
+        const rightScore = _isAtHome ? sB : sA;
+        const isPaused = _liveData.status === 'paused';
+        return (
+          <div style={{
+            margin:'10px 14px', padding:'12px 14px', borderRadius:12,
+            background: isPaused
+              ? 'linear-gradient(135deg, rgba(251,191,36,0.10), rgba(0,0,0,0.3))'
+              : 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(0,0,0,0.3))',
+            border: `1px solid ${isPaused ? 'rgba(251,191,36,0.45)' : 'rgba(239,68,68,0.45)'}`,
+            display:'flex', flexDirection:'column', gap:8,
+          }}>
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
+              <span style={{
+                width:8, height:8, borderRadius:'50%',
+                background: isPaused ? '#fbbf24' : '#ef4444',
+                boxShadow: isPaused ? 'none' : '0 0 8px #ef4444',
+                animation: isPaused ? 'none' : 'pulse 1.5s ease-in-out infinite',
+              }}/>
+              <span style={{
+                fontSize:11, fontWeight:900, letterSpacing:'.1em',
+                color: isPaused ? '#fbbf24' : '#fca5a5',
+              }}>{isPaused ? 'PAUSE · MI-TEMPS' : 'EN DIRECT'}</span>
+              <span style={{flex:1}}/>
+              <span style={{
+                fontSize:11, fontWeight:700, opacity:0.7,
+              }}>{(_liveData.events || []).length} événement{(_liveData.events || []).length > 1 ? 's' : ''}</span>
+            </div>
+            <div style={{
+              display:'grid', gridTemplateColumns:'1fr auto 1fr',
+              alignItems:'center', gap:14,
+            }}>
+              <div style={{textAlign:'right', fontSize:13, fontWeight:700}}>
+                {leftName}
+              </div>
+              <div style={{
+                fontSize:28, fontWeight:900, color:'#fff', letterSpacing:'.02em',
+                fontVariantNumeric:'tabular-nums',
+                padding:'0 10px',
+              }}>{leftScore} – {rightScore}</div>
+              <div style={{textAlign:'left', fontSize:13, fontWeight:700}}>
+                {rightName}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {(() => {
         const clubName = (window.CDD_CLUB?.name) || (window.CDD_CLUB?.short) || 'Mon club';
