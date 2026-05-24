@@ -607,7 +607,19 @@ async function rebuildCDDGlobals() {
   // Si applyFFFData a déjà rempli CDD_NEXT_MATCH avec un vrai match, on le préserve
   // (sinon un simple rebuild écraserait le contexte FFF et casserait l'overlay convoc).
   const prevNext = window.CDD_NEXT_MATCH;
-  const hasRealNext = prevNext && !prevNext.noUpcoming && prevNext.away && prevNext.away !== 'À déterminer';
+  // Si le match précédemment retenu est en réalité TERMINÉ (cdd_match_last_finished
+  // pointe sur lui), on ne le préserve PAS → laisse le placeholder noUpcoming
+  // prendre le relais. Sans ce check, le match fini restait coincé en "prochain match"
+  // tant qu'un autre match ne venait pas le remplacer (bug remonté Florian 27/05).
+  const _lastFinishedIdGate = (() => {
+    try { return localStorage.getItem('cdd_match_last_finished') || null; }
+    catch (e) { return null; }
+  })();
+  const hasRealNext = prevNext
+    && !prevNext.noUpcoming
+    && prevNext.away
+    && prevNext.away !== 'À déterminer'
+    && (!_lastFinishedIdGate || prevNext.id !== _lastFinishedIdGate);
   window.CDD_NEXT_MATCH = hasRealNext ? prevNext : {
     // ⚠ id sûr pour Firestore : les ids encadrés par '__..__' sont RÉSERVÉS et
     // refusés à l'écriture. Ne jamais revenir à '__placeholder__'.

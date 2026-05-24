@@ -809,8 +809,18 @@ function ScreenConvocations({ go, tweaks }) {
               }}>🤝 MATCH AMICAL</span>
             )}
           </div>
-          <div className="cv-hero-title">{next.home}<br/>VS {next.away}</div>
           {(() => {
+            const _placeholder = !!(next && (next.noUpcoming || !next.away || next.away === 'À déterminer'));
+            if (_placeholder) {
+              return (
+                <>
+                  <div className="cv-hero-title">Aucun match programmé</div>
+                  <div className="cv-hero-meta" style={{opacity:0.7}}>
+                    <span>Le coach annoncera le prochain.</span>
+                  </div>
+                </>
+              );
+            }
             // Heure affichée = priorité au coup d'envoi saisi dans
             // "Infos du match" (kickoff), fallback sur l'heure d'origine
             // FFF/amical (next.time). Cohérent avec screen-match-prep.jsx.
@@ -818,10 +828,13 @@ function ScreenConvocations({ go, tweaks }) {
               ? window.CDD_MATCH_INFO.get(teamId, matchId) : null;
             const _eff = (_mInfo && _mInfo.kickoff) || next.time || '';
             return (
-              <div className="cv-hero-meta">
-                <span>📅 {next.date}{_eff ? ` · ${_eff}` : ''}</span>
-                <span>🏟️ {next.venue}</span>
-              </div>
+              <>
+                <div className="cv-hero-title">{next.home}<br/>VS {next.away}</div>
+                <div className="cv-hero-meta">
+                  <span>📅 {next.date}{_eff ? ` · ${_eff}` : ''}</span>
+                  <span>🏟️ {next.venue}</span>
+                </div>
+              </>
             );
           })()}
           {/* CTA unique dynamique selon l'état de la convocation.

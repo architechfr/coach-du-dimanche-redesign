@@ -604,7 +604,17 @@ function ScreenLecteur({ go, tweaks }) {
         ))}
       </div>
 
-      {tab === "prochain" && (() => {
+      {tab === "prochain" && next?.noUpcoming && (
+        <div style={{padding:'36px 18px', textAlign:'center'}}>
+          <div style={{fontSize:48, marginBottom:14, opacity:0.7}}>📅</div>
+          <div style={{fontSize:17, fontWeight:800, marginBottom:8}}>Aucun match annoncé</div>
+          <div style={{fontSize:13, opacity:0.65, maxWidth:300, margin:'0 auto', lineHeight:1.5}}>
+            Le coach n'a pas encore programmé le prochain match. Tu seras
+            notifié dès qu'une convocation arrive.
+          </div>
+        </div>
+      )}
+      {tab === "prochain" && !next?.noUpcoming && (() => {
         const myShort = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
         // Adversaire calculé selon venue (fix 'FCMH vs FCMH' quand à l'extérieur).
         const oppShort = (() => {

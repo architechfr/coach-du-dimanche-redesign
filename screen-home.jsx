@@ -207,14 +207,43 @@ function ScreenHome({ go, tweaks }) {
         <div className="home-hero-noise" />
 
         <div className="home-hero-top">
+          {!next.noUpcoming && (
           <div className="chip live">{`J-${next.daysLeft} · À VENIR`}</div>
+          )}
+          {next.noUpcoming && (
+            <div className="chip" style={{
+              background:'rgba(255,255,255,0.08)',
+              border:'1px solid rgba(255,255,255,0.18)',
+              color:'rgba(255,255,255,0.85)',
+              padding:'4px 10px', borderRadius:999,
+              fontSize:10.5, fontWeight:800, letterSpacing:'.08em',
+            }}>PAS DE MATCH PROGRAMMÉ</div>
+          )}
+          {!next.noUpcoming && (
           <button className="hero-share" aria-label="Partager" onClick={() => go("share")}>↗</button>
+          )}
         </div>
 
         {/* Convention football : le club RECEVANT est toujours à gauche.
             - À domicile → mon club à gauche, adversaire à droite.
             - À l'extérieur → adversaire (recevant) à gauche, mon club à droite. */}
-        {(() => {
+        {next.noUpcoming && (
+          <div style={{
+            padding:'24px 18px 14px', textAlign:'center',
+            display:'flex', flexDirection:'column', gap:8, alignItems:'center',
+          }}>
+            <div style={{fontSize:36, opacity:0.8}}>📅</div>
+            <div style={{fontSize:16, fontWeight:800, color:'#fff'}}>
+              {isCoachLike ? 'Aucun match à préparer' : 'Pas de match annoncé'}
+            </div>
+            <div style={{fontSize:12.5, color:'rgba(255,255,255,0.65)', maxWidth:280, lineHeight:1.4}}>
+              {isCoachLike
+                ? "Le calendrier FFF n'a rien de prévu. Tu peux créer un amical."
+                : "Le coach n'a rien programmé pour le moment. Reviens un peu plus tard."}
+            </div>
+          </div>
+        )}
+        {!next.noUpcoming && (() => {
           const isHome = next.venue === 'Domicile';
           const myClubLabel = club.short || club.name || next.myClubName || 'MON CLUB';
           const oppLabel = next.opponentName
@@ -265,14 +294,24 @@ function ScreenHome({ go, tweaks }) {
           );
         })()}
 
-        <div className="home-hero-meta">
-          <span>{next.venue}</span>
-          <span className="sep">•</span>
-          <span>{next.weather}</span>
-        </div>
+        {!next.noUpcoming && (
+          <div className="home-hero-meta">
+            <span>{next.venue}</span>
+            <span className="sep">•</span>
+            <span>{next.weather}</span>
+          </div>
+        )}
 
         <div className="home-hero-cta">
-          {isCoachLike ? (
+          {next.noUpcoming ? (
+            // Pas de match : coach a un CTA pour en créer un, parent rien (rien à voir).
+            isCoachLike ? (
+              <button className="btn-cta" onClick={() => go("match-prep")}>
+                <span>🤝 CRÉER UN MATCH AMICAL</span>
+                <span className="arr">→</span>
+              </button>
+            ) : null
+          ) : isCoachLike ? (
             <button className="btn-cta" onClick={() => go("match-prep")}>
               <span>PRÉPARER LE MATCH</span>
               <span className="arr">→</span>
@@ -294,7 +333,9 @@ function ScreenHome({ go, tweaks }) {
           <button className="tile tile-prep" onClick={() => go("prep")}>
             <span className="tile-ic">🧠</span>
             <span className="tile-t">Prépa match</span>
-            <span className="tile-s">J-{next.daysLeft} · adversaire</span>
+            <span className="tile-s">
+              {next.noUpcoming ? 'Aucun match à venir' : `J-${next.daysLeft} · adversaire`}
+            </span>
           </button>
         )}
         {isCoachLike && (
@@ -302,7 +343,9 @@ function ScreenHome({ go, tweaks }) {
             <span className="tile-ic">📋</span>
             <span className="tile-t">Convocations</span>
             <span className="tile-s">
-              {convocIds.length > 0
+              {next.noUpcoming
+                ? 'En attente du prochain match'
+                : convocIds.length > 0
                 ? <>{respondedCount}/{convocIds.length} répondus{pendingCount > 0 ? <span style={{color:'#f97316', fontWeight:700}}> · {pendingCount} à relancer</span> : null}</>
                 : `${CDD_CONVO?.starters.length + CDD_CONVO?.bench.length || 0} convoqués`}
             </span>
