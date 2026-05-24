@@ -1151,14 +1151,32 @@ function ScreenVote({ go, tweaks }) {
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
+  const [restoredFromPrevious, setRestoredFromPrevious] = useState(false);
 
-  // Reset des états quand on change de match
+  // Reset + RESTAURATION : quand on change de match, on remet à zéro PUIS
+  // on tente de recharger un vote déjà soumis pour ce match (depuis le cache
+  // localStorage écrit par sendVote). Permet à l'utilisateur de revoir ses
+  // notes et de les modifier au lieu de croire qu'elles n'ont pas été sauvées.
   React.useEffect(() => {
     setVotes({});
     setMotm(null);
     setNsSet(new Set());
     setSubmitted(false);
     setSendError(null);
+    setRestoredFromPrevious(false);
+    if (!selectedMatchId) return;
+    const voterId = window.cddSync?.voterId;
+    if (!voterId) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(`cdd_v2_vote_${selectedMatchId}_${voterId}`) || 'null');
+      if (stored && stored.ratings && Object.keys(stored.ratings).length > 0) {
+        setVotes(stored.ratings);
+        if (stored.motm) setMotm(stored.motm);
+        if (Array.isArray(stored.ns)) setNsSet(new Set(stored.ns));
+        setRestoredFromPrevious(true);
+        console.log(`[vote] vote précédent restauré pour matchId=${selectedMatchId} (${Object.keys(stored.ratings).length} notes)`);
+      }
+    } catch (e) {}
   }, [selectedMatchId]);
 
   // Charge le match sélectionné depuis localStorage
@@ -1203,24 +1221,34 @@ function ScreenVote({ go, tweaks }) {
   const submitVote = async () => {
     setSending(true);
     setSendError(null);
+    // Garde-fou : sans cddSync, on ne peut pas sauver → erreur explicite
+    // au lieu d'afficher faussement "Notes envoyées !".
+    if (!window.cddSync || !window.cddSync.sendVote) {
+      console.error('[vote] cddSync.sendVote indisponible — vote non sauvé');
+      setSendError('Service de vote indisponible (cddSync manquant)');
+      setSending(false);
+      return;
+    }
+    // Le vote pointe sur le match SÉLECTIONNÉ dans le picker.
+    const targetMatchId = selectedMatchId
+                       || window.cddSync.lastFinishedMatchId
+                       || window.cddSync.matchId;
+    if (!targetMatchId || targetMatchId === 'demo' || targetMatchId === 'demo_default') {
+      console.error('[vote] targetMatchId invalide:', targetMatchId);
+      setSendError('Aucun match valide à noter');
+      setSending(false);
+      return;
+    }
     try {
-      if (window.cddSync?.sendVote) {
-        // Le vote pointe sur le match SÉLECTIONNÉ dans le picker (qui defaulte
-        // au dernier match terminé). Permet de noter n'importe quel match passé.
-        const targetMatchId = selectedMatchId
-                           || window.cddSync.lastFinishedMatchId
-                           || window.cddSync.matchId;
-        await window.cddSync.sendVote(
-          targetMatchId,
-          window.cddSync.voterId,
-          votes,
-          { motm, ns: [...nsSet] }
-        );
-      }
+      console.log(`[vote] envoi → matchId=${targetMatchId} voterId=${window.cddSync.voterId} notes=${Object.keys(votes).length} motm=${motm || '∅'} ns=${nsSet.size}`);
+      await window.cddSync.sendVote(
+        targetMatchId,
+        window.cddSync.voterId,
+        votes,
+        { motm, ns: [...nsSet] }
+      );
+      console.log(`[vote] ✓ sauvé Firestore matchId=${targetMatchId}`);
       // Applique les deltas OVR avec le vote du coach comme signal qualitatif.
-      // Le match a déjà appliqué les deltas "perf brute" (buts/passes/cartons) à la fin ;
-      // ici on RE-applique avec le voteAggregate pour intégrer la note coach (la dernière
-      // applique écrase la précédente pour ce matchId, idempotent).
       // Normalisation /2 pour ramener l'échelle 0-10 vers l'équivalent 0-5 attendu.
       if (lastFinishedMatch && window.CDD_COACH?.applyMatchPerformanceDeltas) {
         const voteAggregate = {};
@@ -1231,9 +1259,11 @@ function ScreenVote({ go, tweaks }) {
       }
       setSubmitted(true);
     } catch (err) {
-      console.warn('[vote] submit failed:', err.message);
-      setSendError(err.message || 'Erreur envoi');
-      setSubmitted(true);
+      // Pas de setSubmitted(true) en cas d'erreur : on garde le formulaire
+      // pour que l'utilisateur puisse réessayer. L'erreur est affichée
+      // sous le bouton + loggée pour diagnostic.
+      console.error('[vote] échec sauvegarde:', err);
+      setSendError(err.message || 'Erreur lors de l\'envoi — réessaie');
     } finally {
       setSending(false);
     }
@@ -1380,6 +1410,19 @@ function ScreenVote({ go, tweaks }) {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {restoredFromPrevious && (
+        <div style={{
+          margin:'0 14px 10px', padding:'8px 12px',
+          background:'rgba(200,241,105,.08)',
+          border:'1px solid rgba(200,241,105,.25)',
+          borderRadius:10, fontSize:11,
+          color:'var(--acc, #c8f169)', fontWeight:700,
+          textAlign:'center',
+        }}>
+          ✓ Vote précédent restauré — modifie et resoumets pour mettre à jour
         </div>
       )}
 
