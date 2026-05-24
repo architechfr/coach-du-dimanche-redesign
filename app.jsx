@@ -186,8 +186,10 @@ function App() {
     try {
       const params = new URLSearchParams(window.location.search || '');
       const email = (localStorage.getItem('cdd_user_email') || '').trim();
-      // Lecteur public (vue collective neutre) — toujours OK sans auth
-      if (params.get('t')) return 'lecteur';
+      // Lecteur partagé (vue collective) : EXIGE email sinon landing dédiée.
+      // Décision Florian : pas de mode visiteur public, tout le monde se logge
+      // pour voir les données privées du club (présences parents, convocations…).
+      if (params.get('t')) return email ? 'lecteur' : 'landing';
       // Invitation — toujours OK (la landing gere)
       if (params.get('invite')) return 'landing';
       // Carnet / convoc individuels : EXIGE email sinon landing avec contexte
@@ -216,10 +218,25 @@ function App() {
     const sync = () => {
       try {
         const params = new URLSearchParams(window.location.search || '');
-        const hasToken = params.get('carnet') || params.get('joueur')
-                      || params.get('p') || params.get('t') || params.get('invite');
-        if (hasToken) return; // un lien magique en cours, on ne touche pas
+        const tShare = params.get('t');
+        const tCarnet = params.get('carnet') || params.get('joueur');
+        const tConvoc = params.get('p');
+        const tInvite = params.get('invite');
         const email = (localStorage.getItem('cdd_user_email') || '').trim();
+        // Si on a un token et qu'on vient de se connecter depuis la landing →
+        // on route vers la page que le token désigne (lecteur, carnet, convoc).
+        // L'invite est géré ailleurs (consumeInvite → home).
+        if (email && screen === 'landing') {
+          if (tShare)       { setScreen('lecteur'); setStack(['lecteur']); return; }
+          if (tCarnet)      { setScreen('carnet');  setStack(['carnet']);  return; }
+          if (tConvoc)      { setScreen('convoP');  setStack(['convoP']);  return; }
+          if (!tInvite)     { setScreen('home');    setStack(['home']); }
+          return;
+        }
+        // Token magique présent et utilisateur pas encore loggé → on laisse la landing gérer.
+        const hasToken = tShare || tCarnet || tConvoc || tInvite;
+        if (hasToken) return;
+        // Pas de token : bascule landing/home selon présence email.
         if (!email && screen !== 'landing' && screen !== 'onb') {
           setScreen('landing');
           setStack(['landing']);
@@ -309,7 +326,17 @@ function App() {
         <div className="phone">
           <div className="phone-screen" style={{padding:0}}>
             <window.ScreenLanding
-              onLoggedIn={() => { setScreen('home'); setStack(['home']); }}
+              onLoggedIn={() => {
+                // Après login, on route vers la page que le lien voulait montrer
+                // (lecteur partagé, carnet, convoc parent) — sinon home par défaut.
+                try {
+                  const params = new URLSearchParams(window.location.search || '');
+                  if (params.get('t')) { setScreen('lecteur'); setStack(['lecteur']); return; }
+                  if (params.get('carnet') || params.get('joueur')) { setScreen('carnet'); setStack(['carnet']); return; }
+                  if (params.get('p'))      { setScreen('convoP');  setStack(['convoP']);  return; }
+                } catch (e) {}
+                setScreen('home'); setStack(['home']);
+              }}
               onOpenLink={(targetScreen) => { setScreen(targetScreen); setStack([targetScreen]); }}
             />
           </div>

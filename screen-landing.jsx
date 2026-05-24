@@ -25,20 +25,24 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
       const params = new URLSearchParams(window.location.search || '');
       const carnet = params.get('carnet') || params.get('joueur');
       const p      = params.get('p');
+      const t      = params.get('t');
       const invite = params.get('invite')
                   || localStorage.getItem('cdd_pending_invite') || null;
       if (carnet) return { kind: 'carnet', playerId: carnet };
       if (p)      return { kind: 'convoc', playerId: p };
+      if (t)      return { kind: 'share',  token: t };
       if (invite) return { kind: 'invite', token: invite };
     } catch (e) {}
     return { kind: 'none' };
   })();
 
   const hasIndividualToken = arrivalContext.kind === 'carnet' || arrivalContext.kind === 'convoc';
+  const hasShareToken = arrivalContext.kind === 'share';
   const hasInvite = arrivalContext.kind === 'invite';
   const initialMode = hasInvite ? 'invite-pending'
+                    : hasShareToken ? 'share-signup'
                     : hasIndividualToken ? 'parent-signup' : 'home';
-  const [mode, setMode] = useLS(initialMode); // 'home' | 'coach-signup' | 'parent-signup' | 'paste-link' | 'invite-pending'
+  const [mode, setMode] = useLS(initialMode); // 'home' | 'coach-signup' | 'parent-signup' | 'share-signup' | 'paste-link' | 'invite-pending'
 
   // ── Page de validation invitation : on charge les détails (clubName,
   // playerName, role…) AVANT login. Les invites sont lisibles publique-
@@ -662,6 +666,81 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
               Annuler
             </button>
           )}
+        </div>
+      )}
+
+      {/* MODE SHARE SIGNUP — arrivée depuis un lien ?t= (partage convocation/équipe).
+           Le contenu est privé : on impose une connexion. Si l'user n'a pas encore
+           de compte rattaché au club, le coach devra lui envoyer un lien
+           d'invitation séparé. */}
+      {mode === 'share-signup' && (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+
+          <div style={{
+            padding:'14px 16px', borderRadius:12, marginBottom:4,
+            background:'rgba(125,211,252,0.08)', border:'1px solid rgba(125,211,252,0.30)',
+          }}>
+            <div style={{fontWeight:900, fontSize:14, marginBottom:6, color:'#7dd3fc'}}>
+              🔗 Lien de convocation reçu
+            </div>
+            <div style={{fontSize:12, opacity:0.85, lineHeight:1.5}}>
+              Ton coach a partagé une convocation avec toi. Les données de l'équipe
+              sont privées — connecte-toi pour les voir.
+            </div>
+          </div>
+
+          <div style={{fontSize:20, fontWeight:900, marginBottom:2}}>Connecte-toi</div>
+          <div style={{fontSize:12, opacity:0.65, lineHeight:1.5, marginBottom:6}}>
+            Utilise le compte que ton coach a déjà rattaché au club. Si c'est
+            la 1ère fois, ton coach doit t'envoyer un <b>lien d'invitation</b>
+            personnel (différent de ce lien de convocation).
+          </div>
+
+          {googleButton('lecteur')}
+          {orSep}
+
+          <label style={{display:'flex', flexDirection:'column', gap:6}}>
+            <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
+              TON EMAIL
+            </span>
+            <input value={email} onChange={e => setEmail(e.target.value)}
+                   type="email" placeholder="ex: parent@gmail.com" autoFocus
+                   style={{
+                     padding:'12px 14px', borderRadius:10, fontSize:14,
+                     background:'rgba(255,255,255,0.05)',
+                     border: `1px solid ${emailValid ? 'rgba(255,255,255,0.12)' : 'rgba(239,68,68,0.45)'}`,
+                     color:'#fff', fontFamily:'inherit',
+                   }}/>
+            {!emailValid && (
+              <span style={{fontSize:11, color:'#ff8a8a'}}>⚠ Format email invalide</span>
+            )}
+          </label>
+
+          <button onClick={() => {
+                    const eClean = email.trim().toLowerCase();
+                    if (!eClean) { alert('Email requis.'); return; }
+                    if (!emailValid) { alert('Format email invalide.'); return; }
+                    // role='lecteur' par défaut. Le bon rôle viendra du membership existant
+                    // si l'user est déjà rattaché au club par le coach.
+                    sendMagicLink(eClean, eClean.split('@')[0], 'lecteur');
+                  }}
+                  disabled={!email.trim() || !emailValid || sending}
+                  className="btn-cta"
+                  style={{marginTop:4, opacity: (!email.trim() || !emailValid || sending) ? 0.5 : 1}}>
+            {sending ? 'ENVOI EN COURS…' : 'RECEVOIR MON LIEN DE CONNEXION →'}
+          </button>
+
+          <div style={{
+            marginTop:10, padding:'10px 12px', borderRadius:9,
+            background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+            fontSize:11, opacity:0.75, lineHeight:1.55,
+          }}>
+            💡 <b>Pas encore membre du club ?</b><br/>
+            Ce lien sert uniquement à <i>voir</i> une convocation. Pour rejoindre
+            le club et voir la fiche de ton enfant, demande à ton coach un <b>lien
+            d'invitation personnel</b> (commence par <code>?invite=</code>).
+          </div>
+
         </div>
       )}
 
