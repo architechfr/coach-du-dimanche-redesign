@@ -39,10 +39,25 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
   const hasIndividualToken = arrivalContext.kind === 'carnet' || arrivalContext.kind === 'convoc';
   const hasShareToken = arrivalContext.kind === 'share';
   const hasInvite = arrivalContext.kind === 'invite';
+  // Mode initial depuis l'onboarding émotionnel (intent stocké).
+  // Permet de basculer directement sur 'coach-signup' / 'paste-link' /
+  // 'returning-signin' au lieu d'afficher 'home' à un user qui vient de
+  // finir le parcours et a cliqué sur sa carte d'intention.
+  const fromOnbIntent = (() => {
+    try {
+      const v = (localStorage.getItem('cdd_landing_initial_mode') || '').trim();
+      if (v) {
+        localStorage.removeItem('cdd_landing_initial_mode'); // one-shot
+        return v;
+      }
+    } catch (e) {}
+    return null;
+  })();
   const initialMode = hasInvite ? 'invite-pending'
                     : hasShareToken ? 'share-signup'
-                    : hasIndividualToken ? 'parent-signup' : 'home';
-  const [mode, setMode] = useLS(initialMode); // 'home' | 'coach-signup' | 'parent-signup' | 'share-signup' | 'paste-link' | 'invite-pending'
+                    : hasIndividualToken ? 'parent-signup'
+                    : (fromOnbIntent || 'home');
+  const [mode, setMode] = useLS(initialMode);
 
   // ── Page de validation invitation : on charge les détails (clubName,
   // playerName, role…) AVANT login. Les invites sont lisibles publique-

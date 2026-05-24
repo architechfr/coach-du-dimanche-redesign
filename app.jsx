@@ -186,13 +186,18 @@ function App() {
     try {
       const params = new URLSearchParams(window.location.search || '');
       const email = (localStorage.getItem('cdd_user_email') || '').trim();
+      const emoOnbDone = localStorage.getItem('cdd_emo_onb_done') === 'true';
       // Carte de coach publique (?coach=UID) — pas besoin d'être connecté.
-      // C'est une carte de visite par nature publique (le coach choisit ce
-      // qu'il met dedans).
       if (params.get('coach')) return 'coach-profile-public';
+      // Liens magiques : bypass de l'onboarding émotionnel (le user vient
+      // pour un truc précis, on ne l'embête pas avec un parcours intro).
+      const _hasAnyToken = params.get('t') || params.get('invite')
+                       || params.get('carnet') || params.get('joueur')
+                       || params.get('p');
+      // Premier contact : pas connecté + pas de token + onboarding pas encore fait
+      // → on lance l'onboarding émotionnel.
+      if (!email && !_hasAnyToken && !emoOnbDone) return 'emo-onb';
       // Lecteur partagé (vue collective) : EXIGE email sinon landing dédiée.
-      // Décision Florian : pas de mode visiteur public, tout le monde se logge
-      // pour voir les données privées du club (présences parents, convocations…).
       if (params.get('t')) return email ? 'lecteur' : 'landing';
       // Invitation — toujours OK (la landing gere)
       if (params.get('invite')) return 'landing';
@@ -326,7 +331,41 @@ function App() {
       return !!(p.get('t') || p.get('carnet') || p.get('joueur') || p.get('p') || p.get('invite') || p.get('coach'));
     } catch (e) { return false; }
   })();
-  const _forceLanding = !_authedNow && !_hasMagicToken && screen !== 'onb';
+  const _forceLanding = !_authedNow && !_hasMagicToken && screen !== 'onb' && screen !== 'emo-onb';
+
+  // Onboarding émotionnel (premier contact) — prioritaire sur la landing.
+  // Plein écran, parcours en 5 étapes, pas de header app, pas de phone-frame
+  // pour une expérience plus immersive.
+  if (screen === 'emo-onb' && window.ScreenEmoOnb) {
+    return (
+      <div className="app-stage" data-screen-label="Phone — emotional onboarding">
+        <div className="phone">
+          <div className="phone-screen" style={{padding:0}}>
+            <window.ScreenEmoOnb
+              onDone={(intent) => {
+                // intent : 'coach' | 'link' | 'signin' | 'skip' | 'home'
+                // On bascule sur la landing au mode adapté (la landing gère ses modes).
+                setScreen('landing');
+                setStack(['landing']);
+                // Stocke l'intention pour que la landing puisse la lire au montage.
+                try {
+                  if (intent && intent !== 'skip' && intent !== 'home') {
+                    localStorage.setItem('cdd_landing_initial_mode',
+                      intent === 'coach' ? 'coach-signup'
+                      : intent === 'link' ? 'paste-link'
+                      : intent === 'signin' ? 'returning-signin'
+                      : '');
+                  } else {
+                    localStorage.removeItem('cdd_landing_initial_mode');
+                  }
+                } catch (e) {}
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if ((screen === 'landing' || _forceLanding) && window.ScreenLanding) {
     return (
