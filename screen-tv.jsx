@@ -109,6 +109,20 @@ function ScreenTV({ go, tweaks, source, matchId }) {
   const benchPlayers = templateBench.map(playerOf).filter(Boolean);
   const hasMatchOverlay = false; // gardé pour compatibilité
 
+  // Affichage du num : en mode MATCH (source='match'), on lit les overrides
+  // match-specific. En mode compo type saison, num saison classique.
+  const _activeTeamIdTV = window.CDD?.getActiveTeam?.()?.id;
+  const _matchIdTV = matchId || ((window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder');
+  const displayNum = (p) => {
+    if (!p) return null;
+    if (isMatchSource && _activeTeamIdTV && window.CDD_JERSEY?.getNum) {
+      return window.CDD_JERSEY.getNum(_activeTeamIdTV, _matchIdTV, p.id, p.num);
+    }
+    return p.num;
+  };
+  // État modale numéros maillots
+  const [jerseyModalOpen, setJerseyModalOpen] = useStateTV(false);
+
   const club = window.CDD_CLUB || { name: 'MON CLUB', team: 'EQUIPE', colors: ['#22c55e', '#000'] };
   const match = window.CDD_NEXT_MATCH || {};
   const noUpcoming = match.noUpcoming || !match.away || match.away === 'À déterminer';
@@ -158,6 +172,14 @@ function ScreenTV({ go, tweaks, source, matchId }) {
       <div className="tv-toolbar">
         <div className="tv-tb-title">MODE VESTIAIRE</div>
         <div className="tv-tb-actions">
+          {isMatchSource && (
+            <button className="tv-btn" onClick={() => setJerseyModalOpen(true)}
+                    title="Éditer les numéros maillots pour ce match"
+                    style={{background:'rgba(249,115,22,0.10)', color:'#f97316',
+                            border:'1px solid rgba(249,115,22,0.35)'}}>
+              🔢 NUMÉROS
+            </button>
+          )}
           <button className="tv-btn" onClick={() => setShowSponsorEditor(true)}
                   title="Configurer les sponsors">
             🏷 SPONSORS
@@ -322,7 +344,7 @@ function ScreenTV({ go, tweaks, source, matchId }) {
                           fontSize="3.2" fontWeight="900"
                           fill={primary === '#000000' || primary === '#000' ? '#fff' : '#fff'}
                           fontFamily="Inter, sans-serif">
-                      {p.num}
+                      {displayNum(p)}
                     </text>
                   </g>
                 );
@@ -360,7 +382,7 @@ function ScreenTV({ go, tweaks, source, matchId }) {
                     background: primary, color: secondary,
                     display:'inline-flex', alignItems:'center', justifyContent:'center',
                     fontWeight:900, fontSize:11, padding:'0 5px',
-                  }}>{p.num}</span>
+                  }}>{displayNum(p)}</span>
                   <span style={{fontWeight:700, color:'#fff'}}>{p.first}</span>
                   {p.pos && <span style={{
                     fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.55)',
@@ -410,6 +432,17 @@ function ScreenTV({ go, tweaks, source, matchId }) {
                          setShowSponsorEditor(false);
                        }}
                        onClose={() => setShowSponsorEditor(false)}/>
+      )}
+
+      {/* Modale numéros maillots — uniquement mode vestiaire match */}
+      {jerseyModalOpen && isMatchSource && window.JerseyNumbersModal && (
+        <window.JerseyNumbersModal
+          teamId={_activeTeamIdTV}
+          matchId={_matchIdTV}
+          players={[...starterPlayers.filter(Boolean), ...benchPlayers]}
+          title="🔢 NUMÉROS MAILLOTS DU MATCH"
+          onClose={() => setJerseyModalOpen(false)}
+        />
       )}
     </div>
   );

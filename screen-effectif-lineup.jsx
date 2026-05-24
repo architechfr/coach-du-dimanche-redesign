@@ -392,6 +392,9 @@ function ScreenLineup({ go, tweaks, matchId }) {
   const [showFormationPicker, setShowFormationPicker] = useState(false);
   const [reserveSearch, setReserveSearch] = useState('');
 
+  // Modale numéros maillots match-specific (visible seulement en mode match)
+  const [jerseyModalOpen, setJerseyModalOpen] = useState(false);
+
   // Phase 1D — détecte si la compo TYPE saison est plus récente que la compo
   // de MATCH. Dans ce cas on affiche une bannière d'avertissement.
   const [templateNewer, setTemplateNewer] = useState(() => {
@@ -420,6 +423,18 @@ function ScreenLineup({ go, tweaks, matchId }) {
   const starterPlayers = slots.map((_, i) => playerOf(lineup.starters[i])).filter(Boolean);
   const benchPlayers = lineup.bench.map(pid => playerOf(pid)).filter(Boolean);
   const reservePlayers = lineup.reserve.map(pid => playerOf(pid)).filter(Boolean);
+
+  // Affichage du num : en mode MATCH, on lit l'override match-specific.
+  // En mode COMPO TYPE SAISON, on garde le num saison (les overrides ne
+  // doivent jamais "polluer" l'édition de la compo type).
+  const _activeTeamId = window.CDD?.getActiveTeam?.()?.id;
+  const displayNum = (p) => {
+    if (!p) return null;
+    if (isMatchMode && matchId && _activeTeamId && window.CDD_JERSEY?.getNum) {
+      return window.CDD_JERSEY.getNum(_activeTeamId, matchId, p.id, p.num);
+    }
+    return p.num;
+  };
   const teamOvr = starterPlayers.length ? Math.round(starterPlayers.reduce((s,p)=>s+(p.stats?.ovr||0),0)/starterPlayers.length) : 0;
   const allFilled = starterPlayers.length === slots.length;
   const selectedPlayerName = (() => {
@@ -735,6 +750,23 @@ function ScreenLineup({ go, tweaks, matchId }) {
             }}>
             ↻ Reset depuis compo type
           </button>
+          <button
+            onClick={() => setJerseyModalOpen(true)}
+            title="Éditer les numéros maillots pour ce match"
+            style={{
+              flex:'1 1 100%', padding:'8px 10px', borderRadius:9, cursor:'pointer',
+              background:'rgba(249,115,22,0.10)', color:'#f97316',
+              border:'1px solid rgba(249,115,22,0.35)',
+              fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+            }}>
+            🔢 Numéros maillots du match
+            {_activeTeamId && window.CDD_JERSEY?.hasOverrides?.(_activeTeamId, matchId) && (
+              <span style={{
+                fontSize:10, padding:'2px 7px', borderRadius:10,
+                background:'rgba(249,115,22,0.25)', fontWeight:800,
+              }}>modifiés ✓</span>
+            )}
+          </button>
         </div>
       )}
 
@@ -881,7 +913,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
                 onClick={() => handleTap({type:'slot', idx:i})}>
                 {p ? (
                   <>
-                    <div className="lu-slot-num num">{p.num}</div>
+                    <div className="lu-slot-num num">{displayNum(p)}</div>
                     <div className="lu-slot-name">{p.first}</div>
                     <div className="lu-slot-pos">{POSITION_LABEL[s.pos]||s.pos}</div>
                     <div className="lu-slot-ovr num">{p.stats.ovr}</div>
@@ -909,7 +941,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
             className={`lu-bench-card ${isPidSelected(p.id)?"on":""}`}
             style={isPidSelected(p.id) ? {outline:"2px solid var(--acc, #c8f169)", outlineOffset:2} : null}
             onClick={() => handleTap({type:'bench', pid:p.id})}>
-            <span className="lu-bench-num num">{p.num}</span>
+            <span className="lu-bench-num num">{displayNum(p)}</span>
             <span className="lu-bench-name">{p.first}</span>
             <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
@@ -972,7 +1004,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
             className={`lu-bench-card reserve ${isPidSelected(p.id)?"on":""}`}
             style={isPidSelected(p.id) ? {outline:"2px solid var(--acc, #c8f169)", outlineOffset:2} : null}
             onClick={() => handleTap({type:'reserve', pid:p.id})}>
-            <span className="lu-bench-num num">{p.num}</span>
+            <span className="lu-bench-num num">{displayNum(p)}</span>
             <span className="lu-bench-name">{p.first}</span>
             <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
@@ -990,6 +1022,17 @@ function ScreenLineup({ go, tweaks, matchId }) {
           <span className="arr">⚽</span>
         </button>
       </div>
+
+      {/* Modale numéros maillots — mode match seulement */}
+      {jerseyModalOpen && isMatchMode && window.JerseyNumbersModal && (
+        <window.JerseyNumbersModal
+          teamId={_activeTeamId}
+          matchId={matchId}
+          players={[...starterPlayers, ...benchPlayers]}
+          title="🔢 NUMÉROS MAILLOTS DU MATCH"
+          onClose={() => setJerseyModalOpen(false)}
+        />
+      )}
 
     </div>
   );

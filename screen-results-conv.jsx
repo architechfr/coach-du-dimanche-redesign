@@ -371,17 +371,31 @@ function ScreenConvocations({ go, tweaks }) {
   //   • Parent n'a PAS répondu → bouton « 💬 » WhatsApp inline cliquable
   // Évite d'avoir 2 listes du même joueur (une dans Suivi présences, l'autre
   // dans Titulaires/Remplaçants). Tout est sur la ligne du joueur.
-  // Tri par numéro maillot croissant (refonte 2026-05-23). Les joueurs sans
-  // numéro tombent en queue (999). Plus lisible et conforme à l'usage foot.
+  // Affichage du num : on applique l'override match-specific si défini, sinon
+  // num saison. C'est l'écran Convocations, donc match-context permanent.
+  const _matchIdForJersey = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+  const displayNum = (p) => {
+    if (!p) return null;
+    if (window.CDD_JERSEY?.getNum && teamId) {
+      return window.CDD_JERSEY.getNum(teamId, _matchIdForJersey, p.id, p.num);
+    }
+    return p.num;
+  };
+  // Tri par numéro maillot du match croissant (refonte 2026-05-24).
+  // On utilise displayNum pour que l'ordre suive le num qu'on voit afficher.
   const sortByNum = (arr) => [...(arr || [])].sort((a, b) => {
-    const na = (a && typeof a.num === 'number' && a.num) || 999;
-    const nb = (b && typeof b.num === 'number' && b.num) || 999;
+    const dna = displayNum(a);
+    const dnb = displayNum(b);
+    const na = (typeof dna === 'number' && dna) || 999;
+    const nb = (typeof dnb === 'number' && dnb) || 999;
     return na - nb;
   });
   // Idem mais pour absentEntries qui sont des objets { p, reason, note }.
   const sortAbsentByNum = (arr) => [...(arr || [])].sort((a, b) => {
-    const na = (a?.p?.num && typeof a.p.num === 'number') ? a.p.num : 999;
-    const nb = (b?.p?.num && typeof b.p.num === 'number') ? b.p.num : 999;
+    const dna = displayNum(a?.p);
+    const dnb = displayNum(b?.p);
+    const na = (typeof dna === 'number' && dna) || 999;
+    const nb = (typeof dnb === 'number' && dnb) || 999;
     return na - nb;
   });
   // Avatar compact pour la liste (photo joueur ou initiales en fallback).
@@ -703,7 +717,7 @@ function ScreenConvocations({ go, tweaks }) {
                  onClick={() => setFicheModalPlayer(p)}
                  title="Toucher pour voir la fiche du joueur">
               {renderAvatar(p)}
-              <span className="cv-num num">#{p.num}</span>
+              <span className="cv-num num">#{displayNum(p)}</span>
               <span className="cv-name">
                 <span className="cv-first">{p.first}</span>
                 {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
@@ -730,7 +744,7 @@ function ScreenConvocations({ go, tweaks }) {
                  onClick={() => setFicheModalPlayer(p)}
                  title="Toucher pour voir la fiche du joueur">
               {renderAvatar(p)}
-              <span className="cv-num num">#{p.num}</span>
+              <span className="cv-num num">#{displayNum(p)}</span>
               <span className="cv-name">
                 <span className="cv-first">{p.first}</span>
                 {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
@@ -761,7 +775,7 @@ function ScreenConvocations({ go, tweaks }) {
               {renderAvatar(a.p)}
               <span className="cv-num num"
                     onClick={() => setFicheModalPlayer(a.p)}
-                    style={{cursor:'pointer'}}>#{a.p.num}</span>
+                    style={{cursor:'pointer'}}>#{displayNum(a.p)}</span>
               <span className="cv-name"
                     onClick={() => setFicheModalPlayer(a.p)}
                     style={{cursor:'pointer'}}>
@@ -829,7 +843,7 @@ function ScreenConvocations({ go, tweaks }) {
                    onClick={() => setFicheModalPlayer(p)}
                    title="Toucher pour voir la fiche du joueur">
                 {renderAvatar(p)}
-                <span className="cv-num num">#{p.num}</span>
+                <span className="cv-num num">#{displayNum(p)}</span>
                 <span className="cv-name">
                   <span className="cv-first">{p.first}</span>
                   {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
