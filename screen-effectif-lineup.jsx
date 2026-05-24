@@ -392,6 +392,22 @@ function ScreenLineup({ go, tweaks, matchId }) {
   const [showFormationPicker, setShowFormationPicker] = useState(false);
   const [reserveSearch, setReserveSearch] = useState('');
 
+  // Phase 1D — détecte si la compo TYPE saison est plus récente que la compo
+  // de MATCH. Dans ce cas on affiche une bannière d'avertissement.
+  const [templateNewer, setTemplateNewer] = useState(() => {
+    if (!isMatchMode || !matchId) return false;
+    try {
+      const activeTeam = window.CDD?.getActiveTeam?.();
+      if (!activeTeam) return false;
+      const allM = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+      const ml = allM[activeTeam.id]?.[matchId];
+      const allT = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      const tpl = allT[activeTeam.id];
+      if (!ml || !tpl) return false;
+      return (tpl.updatedAt || 0) > (ml.updatedAt || 0);
+    } catch (e) { return false; }
+  });
+
   // #C5 — composer l'équipe = capacité 'compo'. Parent / joueur / lecteur
   // consultent la compo sans pouvoir la modifier. Fallback éditable si le
   // module rôles n'est pas chargé (ne jamais bloquer le coach).
@@ -583,6 +599,46 @@ function ScreenLineup({ go, tweaks, matchId }) {
     setSelection(null);
   };
 
+  // Phase 1D — Adopter la compo de match comme compo type saison
+  const adoptAsTemplate = () => {
+    if (!canEdit) return;
+    if (!confirm('Adopter cette compo de match comme compo type saison ?\n\nLa compo type actuelle sera remplacée par cette version.')) return;
+    const activeTeam = window.CDD?.getActiveTeam?.();
+    if (!activeTeam) return;
+    try {
+      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      all[activeTeam.id] = { ...lineup, updatedAt: Date.now() };
+      localStorage.setItem('cdd_lineup_template', JSON.stringify(all));
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+      window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+      if (window.cddData?.saveLineupTemplate) {
+        window.cddData.saveLineupTemplate(activeTeam.id, all[activeTeam.id])
+          .catch(e => console.warn('[lineup] cloud push adopt', e.message));
+      }
+      setTemplateNewer(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1400);
+    } catch (e) {}
+  };
+
+  // Phase 1D — Réinitialiser la compo de match depuis la compo type saison
+  const resetFromTemplate = () => {
+    if (!canEdit) return;
+    if (!confirm('Réinitialiser la compo de match depuis la compo type ?\n\nTes modifications pour ce match seront perdues.')) return;
+    const activeTeam = window.CDD?.getActiveTeam?.();
+    if (!activeTeam) return;
+    try {
+      const allT = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      const s = allT[activeTeam.id];
+      const validated = validateAndSnap(s, activeTeam);
+      if (validated) {
+        setLineup(validated);
+        setTemplateNewer(false);
+        setSelection(null);
+      }
+    } catch (e) {}
+  };
+
   // Selection helpers
   const isSlotSelected = (i) => selection?.type === 'slot' && selection.idx === i;
   const isPidSelected  = (pid) => (selection?.type === 'bench' || selection?.type === 'reserve') && selection?.pid === pid;
@@ -626,6 +682,62 @@ function ScreenLineup({ go, tweaks, matchId }) {
           📷 VISUEL COMPO
         </button>
       </div>
+
+      {/* Phase 1D — Barre d'actions compo match (visible seulement en mode match) */}
+      {isMatchMode && canEdit && (
+        <div style={{
+          display:'flex', gap:8, padding:'8px 14px 0', flexWrap:'wrap',
+        }}>
+          <button
+            onClick={adoptAsTemplate}
+            title="Copier cette compo de match → compo type saison"
+            style={{
+              flex:1, padding:'8px 10px', borderRadius:9, cursor:'pointer',
+              background:'rgba(200,241,105,0.10)', color:'#c8f169',
+              border:'1px solid rgba(200,241,105,0.35)',
+              fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+            }}>
+            📌 Adopter comme compo type
+          </button>
+          <button
+            onClick={resetFromTemplate}
+            title="Réinitialiser depuis la compo type saison"
+            style={{
+              flex:1, padding:'8px 10px', borderRadius:9, cursor:'pointer',
+              background:'rgba(255,255,255,0.05)', color:'rgba(255,255,255,0.75)',
+              border:'1px solid rgba(255,255,255,0.15)',
+              fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+            }}>
+            ↻ Reset depuis compo type
+          </button>
+        </div>
+      )}
+
+      {/* Phase 1D — Bannière : la compo type a évolué APRÈS la compo match */}
+      {isMatchMode && templateNewer && (
+        <div style={{
+          margin:'8px 14px 0', padding:'10px 14px', borderRadius:10,
+          background:'rgba(249,115,22,0.10)', border:'1px solid rgba(249,115,22,0.40)',
+          fontSize:12, color:'#f97316', display:'flex', alignItems:'flex-start', gap:10,
+        }}>
+          <span style={{fontSize:16, flexShrink:0}}>💡</span>
+          <div style={{flex:1}}>
+            <b>La compo type a évolué depuis que tu as posé ta compo match.</b>
+            <div style={{marginTop:4, display:'flex', gap:8, flexWrap:'wrap'}}>
+              <button onClick={() => setTemplateNewer(false)}
+                      style={{padding:'4px 10px', borderRadius:6, border:'1px solid rgba(249,115,22,.4)',
+                              background:'transparent', color:'#f97316', fontSize:11, cursor:'pointer', fontWeight:700}}>
+                Garder ma compo match
+              </button>
+              <button onClick={resetFromTemplate}
+                      style={{padding:'4px 10px', borderRadius:6, border:'none',
+                              background:'rgba(249,115,22,.20)', color:'#f97316', fontSize:11, cursor:'pointer', fontWeight:700}}>
+                ↻ Mettre à jour depuis la compo type
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* #C5 — bandeau lecture seule pour les rôles sans capacité 'compo'. */}
       {!canEdit && (
