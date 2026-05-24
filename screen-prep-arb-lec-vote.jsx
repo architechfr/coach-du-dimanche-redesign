@@ -23,12 +23,31 @@ function ScreenPrep({ go, tweaks }) {
               || (next.venue === 'Domicile' ? next.awayLogoDataUrl : next.homeLogoDataUrl)
               || null;
   const noUpcoming = !oppName || next.noUpcoming;
-  const opp = standings.find(s => s.club === oppName) || standings.find(s => !s.me) || null;
+  // Cherche l'adversaire dans le classement EXACTEMENT par nom. PAS de fallback
+  // sur "premier autre" : pour un amical contre une équipe hors championnat
+  // (Ferrières par ex.), aucun match dans standings → on n'affiche PAS la
+  // section stats. Évite le bug "Ferrières → V.F.F.A 77 par défaut".
+  const opp = (oppName && !next.isAmical)
+    ? (standings.find(s => s.club === oppName) || null)
+    : null;
   const me  = standings.find(s => s.me) || null;
   const lastMatch = lastMatches[0] || null;
-  const allerMatch = { date:"22/09", opp: oppName, venue:"E", score:[1,2], result:"L" };
+  // Match aller : on cherche un vrai match dans l'historique contre cet
+  // adversaire. PAS de placeholder hardcodé (le "22/09 défaite 1-2" qui
+  // dormait ici depuis le proto n'a jamais correspondu à rien de réel).
+  const allerMatch = (() => {
+    if (!oppName || !lastMatches.length || next.isAmical) return null;
+    const found = lastMatches.find(m => {
+      const matchOpp = m.opp || (m.home === (CDD_CLUB?.short || CDD_CLUB?.name) ? m.away : m.home);
+      return matchOpp === oppName;
+    });
+    return found || null;
+  })();
   const convoCount = (convo.starters?.length || 0) + (convo.bench?.length || 0);
   const absCount = convo.absent?.length || 0;
+
+  // Convention football : le RECEVANT est toujours à gauche.
+  const isHome = next.venue === 'Domicile';
 
   return (
     <div className="scr scr-prep fade-in" data-screen-label="10 Preparation match">
@@ -40,31 +59,45 @@ function ScreenPrep({ go, tweaks }) {
         <div className="prep-hero-in">
           <div className="prep-hero-k">PRÉPARATION · J-{next.daysLeft}</div>
           <div className="prep-hero-title">{next.competition}</div>
-          <div className="prep-hero-vs">
-            <span className="prep-team me">
-              {window.ClubBadge ? (
-                <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
-                                  clubName={CDD_CLUB?.short || CDD_CLUB?.name || 'F'}
-                                  colors={CDD_CLUB?.colors} size={48} shape="circle"/>
-              ) : (
-                <i className="prep-badge me">{(CDD_CLUB?.short || 'F').charAt(0)}</i>
-              )}
-              <em>{CDD_CLUB?.short || 'MON CLUB'}</em>
-            </span>
-            <span className="prep-vs-l">VS</span>
-            <span className="prep-team them">
-              <em>{noUpcoming ? 'À DÉTERMINER' : oppName}</em>
-              {window.ClubBadge ? (
-                <window.ClubBadge clubId={null}
-                                  clubName={noUpcoming ? '?' : (oppName || '?')}
-                                  colors={['#3b82f6','#fff']}
-                                  forceLogo={oppLogo}
-                                  size={48} shape="circle"/>
-              ) : (
-                <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>
-              )}
-            </span>
-          </div>
+          {(() => {
+            // Convention recevant à gauche : si on joue à domicile, "me" à
+            // gauche ; sinon adversaire à gauche, "me" à droite. Les classes
+            // CSS .me / .them sont conservées (logique d'identité, pas de
+            // position) — la position est déterminée par l'ordre dans le DOM.
+            const renderMe = (
+              <span className="prep-team me">
+                {window.ClubBadge ? (
+                  <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                    clubName={CDD_CLUB?.short || CDD_CLUB?.name || 'F'}
+                                    colors={CDD_CLUB?.colors} size={48} shape="circle"/>
+                ) : (
+                  <i className="prep-badge me">{(CDD_CLUB?.short || 'F').charAt(0)}</i>
+                )}
+                <em>{CDD_CLUB?.short || 'MON CLUB'}</em>
+              </span>
+            );
+            const renderOpp = (
+              <span className="prep-team them">
+                <em>{noUpcoming ? 'À DÉTERMINER' : oppName}</em>
+                {window.ClubBadge ? (
+                  <window.ClubBadge clubId={null}
+                                    clubName={noUpcoming ? '?' : (oppName || '?')}
+                                    colors={['#3b82f6','#fff']}
+                                    forceLogo={oppLogo}
+                                    size={48} shape="circle"/>
+                ) : (
+                  <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>
+                )}
+              </span>
+            );
+            return (
+              <div className="prep-hero-vs">
+                {isHome ? renderMe : renderOpp}
+                <span className="prep-vs-l">VS</span>
+                {isHome ? renderOpp : renderMe}
+              </div>
+            );
+          })()}
           <div className="prep-hero-when">
             <span>📅 {next.date}</span>
             <span className="sep">·</span>
@@ -132,17 +165,32 @@ function ScreenPrep({ go, tweaks }) {
                 <b className="num">{opp.ga||0} <span>en {opp.pl||0}</span></b>
               </div>
             </div>
-            <div className="prep-aller">
-              <div className="prep-aller-k">MATCH ALLER · {allerMatch.date}</div>
-              <div className="prep-aller-line">
-                <span className="prep-aller-team">FCMH</span>
-                <span className="prep-aller-sc num">{allerMatch.score[0]}–{allerMatch.score[1]}</span>
-                <span className="prep-aller-team">{oppName}</span>
+            {/* Match aller : affiché UNIQUEMENT si un vrai match existe dans
+                CDD_LAST_MATCHES contre cet adversaire. Plus de placeholder
+                "22/09 défaite 1-2" inventé. */}
+            {allerMatch && (
+              <div className="prep-aller">
+                <div className="prep-aller-k">MATCH ALLER · {allerMatch.date}</div>
+                <div className="prep-aller-line">
+                  <span className="prep-aller-team">{CDD_CLUB?.short || 'FCMH'}</span>
+                  <span className="prep-aller-sc num">
+                    {(allerMatch.score && allerMatch.score[0]) ?? '–'}
+                    –
+                    {(allerMatch.score && allerMatch.score[1]) ?? '–'}
+                  </span>
+                  <span className="prep-aller-team">{oppName}</span>
+                </div>
+                {allerMatch.result && (
+                  <div className={`prep-aller-tag rs-${String(allerMatch.result).toLowerCase()}`}>
+                    {allerMatch.result === "L" || allerMatch.result === "l"
+                      ? (allerMatch.venue === "E" ? "DÉFAITE EXT." : "DÉFAITE")
+                      : allerMatch.result === "W" || allerMatch.result === "w"
+                      ? (allerMatch.venue === "E" ? "VICTOIRE EXT." : "VICTOIRE")
+                      : "NUL"}
+                  </div>
+                )}
               </div>
-              <div className={`prep-aller-tag rs-${allerMatch.result.toLowerCase()}`}>
-                {allerMatch.result === "L" ? "DÉFAITE EXT." : "VICTOIRE EXT."}
-              </div>
-            </div>
+            )}
           </div>
         </>
       )}
