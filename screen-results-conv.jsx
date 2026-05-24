@@ -503,7 +503,7 @@ function ScreenConvocations({ go, tweaks }) {
                 ↗ PARTAGER AUX PARENTS
               </button>
               <button className="btn-cta" onClick={() => go("match-lineup")}
-                      style={{background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.14)'}}>
+                      style={{background:'rgba(249,115,22,.12)', border:'1px solid rgba(249,115,22,.40)', color:'#f97316'}}>
                 🎯 COMPO DU MATCH
               </button>
               <button className="btn-cta" onClick={() => go("tv-match")}

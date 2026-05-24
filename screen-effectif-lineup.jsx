@@ -652,6 +652,20 @@ function ScreenLineup({ go, tweaks, matchId }) {
   return (
     <div className="scr scr-lineup fade-in" data-screen-label="03 Lineup">
 
+      {/* Bandeau d'identité écran : orange en mode match, neutre en mode compo type */}
+      {isMatchMode && (
+        <div style={{
+          margin:'10px 14px 0', padding:'9px 13px', borderRadius:10,
+          background:'linear-gradient(135deg, rgba(249,115,22,0.14) 0%, rgba(249,115,22,0.06) 100%)',
+          border:'1px solid rgba(249,115,22,0.40)', color:'#f97316',
+          fontSize:12, fontWeight:700, letterSpacing:'.04em',
+          display:'flex', alignItems:'center', gap:8,
+        }}>
+          <span style={{fontSize:14}}>🎯</span>
+          <span>COMPO DU MATCH — spécifique à ce match (la compo type saison n'est pas modifiée)</span>
+        </div>
+      )}
+
       <div className="cl-quick-actions" style={{
         display:'flex', gap:8, padding:'10px 14px 0',
       }}>
@@ -668,7 +682,10 @@ function ScreenLineup({ go, tweaks, matchId }) {
                   if (window.CDD_REBUILD) window.CDD_REBUILD();
                   try {
                     const at = window.CDD?.getActiveTeam?.();
-                    if (at?.id && window.cddData?.saveLineupTemplate) {
+                    if (isMatchMode) {
+                      // Mode match : la sauvegarde est faite en continu par le useEffect
+                      // sur 'cdd_match_lineup'. Pas besoin de push template ici.
+                    } else if (at?.id && window.cddData?.saveLineupTemplate) {
                       const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
                       if (all[at.id]) {
                         window.cddData.saveLineupTemplate(at.id, all[at.id])
@@ -676,9 +693,17 @@ function ScreenLineup({ go, tweaks, matchId }) {
                       }
                     }
                   } catch (e) {}
-                  go("tv");
+                  // Mode match → Vestiaire match. Mode saison → Vestiaire compo type.
+                  go(isMatchMode ? "tv-match" : "tv");
                 }}
-                style={{flex:1, fontSize:13}}>
+                style={{
+                  flex:1, fontSize:13,
+                  ...(isMatchMode ? {
+                    background:'rgba(249,115,22,0.12)',
+                    border:'1px solid rgba(249,115,22,0.40)',
+                    color:'#f97316',
+                  } : {}),
+                }}>
           📷 VISUEL COMPO
         </button>
       </div>
