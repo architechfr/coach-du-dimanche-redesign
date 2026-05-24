@@ -418,6 +418,10 @@ function ScreenConvocations({ go, tweaks }) {
   const [matchInfoOpen, setMatchInfoOpen] = useState(false);
   // Modale création/édition d'un match amical
   const [friendlyModalMode, setFriendlyModalMode] = useState(null); // null | 'create' | 'edit'
+  // Modale "Remplacer un joueur" : { player, role: 'starter'|'bench' }
+  // Au lieu de "retirer puis voir un joueur monter au hasard", le coach
+  // choisit explicitement le remplaçant via cette modale.
+  const [swapModal, setSwapModal] = useState(null);
   // Tick pour re-render quand on sauvegarde les infos match (event listener).
   const [, forceMatchInfoUpdate] = useState({});
   const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
@@ -517,6 +521,14 @@ function ScreenConvocations({ go, tweaks }) {
     console.info('[convocs] removePlayer →', _diag);
     window.CDD_CONVOC.removeFromConvoc(teamId, pid);
     console.info('[convocs] removePlayer terminé');
+  };
+  // Exécute le swap (out descend, in monte). Appelée depuis la modale.
+  const doSwap = (outPid, inPid) => {
+    if (!canEdit || !teamId || !window.CDD_CONVOC?.swapPlayers) return;
+    const ok = window.CDD_CONVOC.swapPlayers(teamId, outPid, inPid);
+    console.info('[convocs] swap', { outPid, inPid, ok });
+    if (!ok) alert('Impossible de faire ce changement — réessaie.');
+    setSwapModal(null);
   };
   // Marque la présence d'un joueur côté coach (cas parent sans app ou
   // info reçue par texto/oral). Écrit dans Firestore comme une réponse
@@ -1248,8 +1260,9 @@ function ScreenConvocations({ go, tweaks }) {
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               {canEdit && (
                 <button className="cv-action"
-                        onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
-                        title="Retirer de la convocation">−</button>
+                        onClick={(e) => { e.stopPropagation(); setSwapModal({player:p, role:'starter'}); }}
+                        title="Changer ce titulaire (choisir un remplaçant)"
+                        style={{fontSize:14}}>↔</button>
               )}
             </div>
           ))}
@@ -1275,8 +1288,9 @@ function ScreenConvocations({ go, tweaks }) {
               <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
               {canEdit && (
                 <button className="cv-action"
-                        onClick={(e) => { e.stopPropagation(); removePlayer(p.id); }}
-                        title="Retirer de la convocation">−</button>
+                        onClick={(e) => { e.stopPropagation(); setSwapModal({player:p, role:'bench'}); }}
+                        title="Changer ce remplaçant (choisir un joueur de la réserve)"
+                        style={{fontSize:14}}>↔</button>
               )}
             </div>
           ))}
@@ -1395,6 +1409,97 @@ function ScreenConvocations({ go, tweaks }) {
           </div>
         </div>
       )}
+
+      {/* Modale "Remplacer" : le coach choisit explicitement qui descend ↔ qui monte.
+          Ouverte au clic sur le bouton ↔ d'un titulaire ou d'un remplaçant. */}
+      {swapModal && (() => {
+        const out = swapModal.player;
+        const isStarter = swapModal.role === 'starter';
+        // Candidats pour entrer à la place :
+        // - Si out=titulaire → candidats = remplaçants actuels (+ option "retirer")
+        // - Si out=remplaçant → candidats = joueurs de la réserve (+ option "retirer")
+        const candidates = isStarter
+          ? sortByNum(benchPlayers)
+          : sortByNum(reservePlayers);
+        const sectionLabel = isStarter ? 'Promouvoir un REMPLAÇANT' : 'Faire monter de la RÉSERVE';
+        return (
+          <div className="fi-sp-overlay" onClick={() => setSwapModal(null)}>
+            <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}
+                 style={{maxWidth:420, maxHeight:'80vh', overflow:'auto'}}>
+              <div className="fi-sp-h">
+                <span className="fi-sp-t">
+                  REMPLACER {(out.first||'').toUpperCase()} {(out.last||'').toUpperCase()}
+                </span>
+                <button className="fi-sp-x" onClick={() => setSwapModal(null)}>✕</button>
+              </div>
+              <div style={{padding:'8px 14px', fontSize:12, opacity:0.7}}>
+                {isStarter
+                  ? `${out.first} part au banc. Choisis qui prend sa place de titulaire :`
+                  : `${out.first} sort de la convocation. Choisis qui prend sa place au banc :`}
+              </div>
+              {candidates.length === 0 ? (
+                <div style={{padding:'20px 14px', textAlign:'center', opacity:0.6, fontSize:13}}>
+                  Aucun joueur disponible {isStarter ? 'sur le banc' : 'en réserve'}.
+                </div>
+              ) : (
+                <>
+                  <div style={{
+                    padding:'8px 14px', fontSize:10.5, fontWeight:800,
+                    letterSpacing:'.08em', opacity:0.5, textTransform:'uppercase',
+                  }}>{sectionLabel} · {candidates.length}</div>
+                  <div className="cv-list" style={{padding:'0 8px 8px'}}>
+                    {candidates.map(c => (
+                      <button key={c.id} type="button"
+                        onClick={() => doSwap(out.id, c.id)}
+                        style={{
+                          display:'flex', alignItems:'center', gap:10,
+                          width:'100%', padding:'10px 12px', borderRadius:8,
+                          background:'rgba(255,255,255,0.04)',
+                          border:'1px solid rgba(255,255,255,0.08)',
+                          color:'#fff', fontFamily:'inherit', cursor:'pointer',
+                          marginBottom:4, textAlign:'left',
+                        }}>
+                        <span className="cv-num num">#{displayNum(c)}</span>
+                        <span style={{flex:1, fontSize:13}}>
+                          <b>{c.first}</b> {c.last && c.last.toUpperCase()}
+                        </span>
+                        <span className="cv-pos">{POSITION_LABEL[c.pos]||c.pos}</span>
+                        <span style={{color:'#c8f169', fontSize:14, fontWeight:800}}>↑</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={{
+                padding:'10px 14px', borderTop:'1px solid rgba(255,255,255,0.08)',
+                display:'flex', gap:8,
+              }}>
+                <button type="button"
+                  onClick={() => setSwapModal(null)}
+                  style={{
+                    flex:1, padding:'10px', borderRadius:8,
+                    background:'rgba(255,255,255,0.06)',
+                    border:'1px solid rgba(255,255,255,0.12)',
+                    color:'#fff', fontFamily:'inherit', cursor:'pointer',
+                    fontSize:13, fontWeight:700,
+                  }}>Annuler</button>
+                <button type="button"
+                  onClick={() => {
+                    setSwapModal(null);
+                    removePlayer(out.id);
+                  }}
+                  style={{
+                    flex:1, padding:'10px', borderRadius:8,
+                    background:'rgba(239,68,68,0.12)',
+                    border:'1px solid rgba(239,68,68,0.4)',
+                    color:'#fca5a5', fontFamily:'inherit', cursor:'pointer',
+                    fontSize:13, fontWeight:700,
+                  }}>Retirer sans remplacer</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* #44 Picker statut rapide */}
       {statusPickerPlayer && (

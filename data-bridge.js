@@ -1376,6 +1376,60 @@ window.CDD_CONVOC = {
     if (window.CDD_REBUILD) window.CDD_REBUILD();
     return true;
   },
+  // Échange explicite de 2 joueurs dans la convoc. Le coach choisit qui
+  // descend et qui monte → pas de promotion automatique surprise.
+  // Cas gérés :
+  //  - out=titulaire, in=remplaçant   → in monte titulaire, out descend banc
+  //  - out=titulaire, in=réserve      → in monte titulaire, out part en réserve
+  //  - out=remplaçant, in=réserve     → in monte banc, out part en réserve
+  //  - out=remplaçant, in=titulaire   → swap (rare mais cohérent)
+  swapPlayers(teamId, outPid, inPid) {
+    if (!teamId || !outPid || !inPid || outPid === inPid) return false;
+    const matchId = _currentMatchId();
+    const ml = _ensureMatchLineup(teamId, matchId);
+    // Position actuelle de out
+    let outSlot = null;
+    for (const k of Object.keys(ml.starters)) {
+      if (ml.starters[k] === outPid) { outSlot = k; break; }
+    }
+    const outInBench   = ml.bench.indexOf(outPid);
+    const outInReserve = ml.reserve.indexOf(outPid);
+    // Position actuelle de in
+    let inSlot = null;
+    for (const k of Object.keys(ml.starters)) {
+      if (ml.starters[k] === inPid) { inSlot = k; break; }
+    }
+    const inInBench   = ml.bench.indexOf(inPid);
+    const inInReserve = ml.reserve.indexOf(inPid);
+
+    if (outSlot !== null && inInBench >= 0) {
+      // titulaire ↔ remplaçant
+      ml.starters[outSlot] = inPid;
+      ml.bench[inInBench]  = outPid;
+    } else if (outSlot !== null && inInReserve >= 0) {
+      // titulaire ↔ réserve
+      ml.starters[outSlot] = inPid;
+      ml.reserve.splice(inInReserve, 1);
+      if (!ml.reserve.includes(outPid)) ml.reserve.push(outPid);
+    } else if (outInBench >= 0 && inInReserve >= 0) {
+      // remplaçant ↔ réserve
+      ml.bench[outInBench] = inPid;
+      ml.reserve.splice(inInReserve, 1);
+      if (!ml.reserve.includes(outPid)) ml.reserve.push(outPid);
+    } else if (outInBench >= 0 && inSlot !== null) {
+      // remplaçant ↔ titulaire (symétrique)
+      ml.starters[inSlot] = outPid;
+      ml.bench[outInBench] = inPid;
+    } else {
+      console.warn('[CDD_CONVOC.swapPlayers] cas non géré',
+        { outPid, inPid, outSlot, outInBench, outInReserve, inSlot, inInBench, inInReserve });
+      return false;
+    }
+    ml.updatedAt = Date.now();
+    _writeMatchLineup(teamId, matchId, ml);
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+    return true;
+  },
   // Retire un joueur de la convoc (starters ou bench) → va en réserve.
   removeFromConvoc(teamId, playerId) {
     if (!teamId) return;
