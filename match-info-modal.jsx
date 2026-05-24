@@ -15,7 +15,7 @@
 
 function MatchInfoModal({ teamId, matchId, matchLabel, onClose, onSaved }) {
   const [data, setData] = React.useState(() => {
-    return window.CDD_MATCH_INFO?.get?.(teamId, matchId) || {
+    const stored = window.CDD_MATCH_INFO?.get?.(teamId, matchId) || {
       opponent: { name: '', city: '' },
       stadium:  { name: '', address: '' },
       kickoff:  '',
@@ -23,6 +23,24 @@ function MatchInfoModal({ teamId, matchId, matchLabel, onClose, onSaved }) {
       carpool:  { enabled: false, place: '', time: '', note: '' },
       notes:    '',
     };
+    // Pré-remplir le stade depuis le club si match à domicile ET stade vide.
+    // Heuristique simple : on regarde CDD_NEXT_MATCH.venue (Domicile/Extérieur).
+    try {
+      const nextMatch = window.CDD_NEXT_MATCH || {};
+      const isHome = (nextMatch.venue === 'Domicile')
+                  || (nextMatch.isAmical && nextMatch.venue === 'Domicile');
+      const clubStadium = window.CDD_CLUB?.stadium;
+      if (isHome && clubStadium && !stored.stadium.name && !stored.stadium.address) {
+        return {
+          ...stored,
+          stadium: {
+            name:    clubStadium.name    || '',
+            address: clubStadium.address || '',
+          },
+        };
+      }
+    } catch (e) {}
+    return stored;
   });
   const [savedFlash, setSavedFlash] = React.useState(false);
 

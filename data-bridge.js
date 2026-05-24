@@ -538,6 +538,13 @@ async function rebuildCDDGlobals() {
     form: [],
     coach: "Coach",
     fff: fffCfg,
+    // Page Club — référentiel central (2026-05-24) : stade + contacts +
+    // fédération/district + réseaux sociaux. Édité via screen-club.jsx.
+    stadium:     activeClub?.stadium     || null,
+    contacts:    Array.isArray(activeClub?.contacts) ? activeClub.contacts : [],
+    federation:  activeClub?.federation  || '',
+    district:    activeClub?.district    || '',
+    socialMedia: activeClub?.socialMedia || null,
   };
 
   window.CDD_PLAYERS = players;

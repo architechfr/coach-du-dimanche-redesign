@@ -289,6 +289,11 @@ function ScreenHome({ go, tweaks }) {
           <span className="tile-t">Vote post-match</span>
           <span className="tile-s">Notes joueurs</span>
         </button>
+        <button className="tile tile-club" onClick={() => go("club")}>
+          <span className="tile-ic">🏢</span>
+          <span className="tile-t">Mon club</span>
+          <span className="tile-s">Stade · contacts</span>
+        </button>
       </div>
 
       {/* SECONDARY tiles — share + admin */}
