@@ -1,11 +1,70 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-26 (session UX coach/adjoint + LIVE + parent signal)** (cache buster **v118**).
+> Document de reprise. Dernière mise à jour : **2026-05-27 (post-match cleanup + audit vote V1)** (cache buster **v122**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
 
 ## ⚡ Priorité absolue pour la PROCHAINE session
+
+### 🗳️ CHANTIER EN BACKLOG — Refonte vote post-match (parité avec V1)
+
+**Demande Florian (27 mai)** : la V1 avait un système de vote post-match
+"très bien pensé" qu'il aimerait porter en V2. La V2 actuelle a un vote
+ultra basique (étoiles 1-5, MVP = max notes, pas de live, pas de partage).
+
+**Comparaison V1 ↔ V2** (audit complet réalisé) :
+
+| Capacité V1 | État V2 |
+|---|---|
+| Étoiles 0-10 demi-points | ❌ V2 = 1-5 entières |
+| Vote MOTM explicite (bouton ★ dédié) | ❌ V2 = déduit max notes |
+| Statut "NS / Pas vu jouer" (skip) | ❌ V2 = forcé de tout noter |
+| 10 critères détaillés (engagement, technique...) + variante GK | ❌ Manquant |
+| Synthèse live (🔴 onSnapshot pendant vote) | 🟠 `watchVotes` existe mais jamais branché |
+| Récap collectif post-vote (MOTM élu, top 3) | 🟠 V2 = MVP perso seulement |
+| Page Résultats + Équipe-type 4-3-3 | ❌ Manquant |
+| Activation coach explicite + fenêtre 48h auto | ❌ Manquant |
+| URL partageable `?vote=matchId` + QR + WhatsApp | ❌ Manquant |
+| Anti-fraude Google sign-in (1 compte = 1 vote) | ❌ V2 = UUID local (vider cookies = revoter) |
+| Stats saison (MOTM cumulés, moyennes) | ❌ Manquant |
+| Vue terrain / vue liste togglable | ❌ V2 = liste seule |
+| Onglets équipes (vote pour les 2 équipes) | ❌ Manquant |
+| Application vote → stats OVR joueur | ✅ V2-only (innovation V2) |
+
+**Plan d'attaque proposé (3 vagues, à exécuter sur plusieurs sessions)** :
+
+- **Vague V1 — Quick wins (3-4 jours)** :
+  1. Échelle 0-10 demi-points (refactor boutons étoiles ScreenVote l. 1290+)
+  2. Vote MOTM explicite (bouton dédié, choix unique)
+  3. Statut "Pas vu / NS" (lève le blocage `allRated` l. 1156)
+  4. Brancher `watchVotes` dans ScreenVote → synthèse live
+  5. Activation coach : modèle `voteOpen` + `voteClosesAt` 48h + bouton "Activer les votes"
+
+- **Vague V2 — Parité V1 (5-7 jours)** :
+  6. URL partageable `?vote=matchId` + QR + page publique standalone
+  7. Récap collectif post-vote (vrai MOTM élu, top 3, nb votants)
+  8. Page Résultats post-clôture avec Équipe-type 4-3-3
+  9. Cartes joueurs enrichies (minutes, passes, cartons en plus des buts)
+  10. Anti-fraude Phase D : auth Firebase pour membres, Google sign-in pour public
+
+- **Vague V3 — Premium (optionnel)** :
+  11. 10 critères détaillés + variante GK (en bottom sheet)
+  12. Vue terrain togglable
+  13. Onglets équipes (vote pour adversaire aussi)
+  14. Stats saison agrégées (MOTM cumulés, moyenne saisonnière)
+
+**Risques** :
+- Limite Firestore 1MB/doc → migrer vers sous-collection `votes/{matchId}/voters/{uid}` quand on ajoute critères.
+- `firestore.rules` à étendre : write autorisé seulement si `voteOpen===true && now < voteClosesAt` et `request.auth.uid === voterId`.
+- Cohérence parent : ne pas surcharger — présenter le vote comme notification post-match unique, pas onglet permanent.
+
+**Pointeurs fichiers** :
+- V1 référence : `index.html` lignes 6595-9370 (composant complet)
+- V2 composant : `Version/V2/screen-prep-arb-lec-vote.jsx` lignes 1130-1319
+- V2 backend : `Version/V2/firebase-sync.js` lignes 160-193
+
+---
 
 ### 🆕 GROS CHANTIER EN BACKLOG — Multi-formats (foot 5/8/11) + multi-équipes par groupe
 
@@ -266,9 +325,65 @@ numéros (`screen-match-live-v2.jsx`) :
   V2 est déjà gérée en lecture seule pour non-coach (`canEdit` retourne
   false → scoreboard + timeline visibles, boutons d'action cachés).
 
-**Bilan v105 → v118** : 14 commits, ~24h de session continue. UX coach/
-adjoint et parent considérablement améliorée. Nouvelle feature LIVE
-opérationnelle. Reste à tester E2E en prod.
+**v119** (commit `bd23999`) — Post-match cleanup (côté coach + parent)
+(`friendly-matches.js`, `match-switcher.js`, `data-bridge.js`,
+`screen-match-live-v2.jsx`, `screen-prep-arb-lec-vote.jsx`) :
+- **Bug remonté Florian** : un amical joué dans la journée continuait à
+  apparaître "J-0 · À VENIR · 15 parents pas encore répondu" partout.
+- `CDD_FRIENDLY.list()` filtre par défaut les `endedAt` + nouvelle fonction
+  `markEnded(teamId, matchId)`.
+- `match-switcher.listUpcoming()` exclut `cdd_match_last_finished`.
+- `hasExplicitChoice()` retourne false si le choix pointe sur un match
+  qui n'est plus dans la liste (= terminé).
+- `data-bridge.js` FFF : filtre `upcoming` pour exclure `last_finished`.
+- `endMatch` : `markEnded` l'amical + `CDD_REBUILD` + push cloud final.
+- Watcher cloud côté parent : si snapshot `status='finished'` → pose
+  `cdd_match_last_finished` localement → bascule auto via REBUILD.
+
+**v120** (commit `02aec8a`) — Capture `scheduledMatchId` au lancement
+(`screen-match-live-v2.jsx`) :
+- **Bug v119 incomplet** : `M.id` créé par newMatch (`'m_'+timestamp`) ≠
+  `CDD_NEXT_MATCH.id` (= id de l'amical `fr_xxx` ou FFF). Du coup le
+  filtre cdd_match_last_finished cherchait le bon id mais on stockait
+  le mauvais → match toujours affiché.
+- Capture `M.scheduledMatchId = CDD_NEXT_MATCH.id` au moment de la
+  création du M (newMatch).
+
+**v121** (commit `d384bdf`) — Re-capture à startMatch + bouton
+"✓ Marquer comme joué" (`screen-match-live-v2.jsx`, `screen-match-prep.jsx`) :
+- **Bug v120 incomplet** : si M était repris depuis localStorage
+  (`cdd_match_current` valide), le bloc `if (!Mref.current)` ne tournait
+  pas → scheduledMatchId jamais posé.
+- Capture systématique dans `startMatch` (à chaque clic LANCER).
+- Fallback dans `endMatch` : si scheduledMatchId absent → relit
+  `CDD_NEXT_MATCH.id` au moment de la fin (généralement encore le bon).
+- **Bouton "✓ Marquer comme joué"** sur Prépa Match à côté de
+  "✎ Éditer le match amical" : permet de retirer un match de "à venir"
+  sans avoir à le re-jouer (cas annulé, joué sans l'app, fictif de test).
+
+**v122** (commit `93c6084`) — Vrai bascule noUpcoming + écrans propres
+(`data-bridge.js`, `screen-home.jsx`, `screen-results-conv.jsx`,
+`screen-prep-arb-lec-vote.jsx`) :
+- **Cause racine** : data-bridge ligne 610 `hasRealNext` préservait
+  `prevNext` même quand c'était le match terminé (car son adversaire
+  n'était pas littéralement 'À déterminer'). Du coup `noUpcoming`
+  restait à false → tous les écrans continuaient à afficher l'ancien match.
+- Fix : ajout `&& (!lastFinishedId || prevNext.id !== lastFinishedId)`.
+- **Accueil** : hero adapté `noUpcoming` (badge "PAS DE MATCH PROGRAMMÉ"
+  + emoji 📅 + message + CTA "🤝 CRÉER UN MATCH AMICAL" coach). Tiles
+  "Prépa match" et "Convocations" → message "Aucun match à venir" /
+  "En attente du prochain match".
+- **Convocations** hero : "Aucun match programmé" + "Le coach annoncera
+  le prochain" au lieu de "FCMH vs À déterminer".
+- **Lecteur onglet Prochain** : message "Aucun match annoncé" + "Tu
+  seras notifié dès qu'une convocation arrive."
+
+**Bilan v119 → v122** : 4 commits, post-match enfin propre. Le cycle
+complet (créer match → préparer → jouer → finir → bascule sur le suivant)
+fonctionne sans laisser de fantôme. Le match terminé reste accessible via
+`cdd_match_${id}` et `cdd_v2_matches/${id}` (page Vote, feuille de match).
+
+**Bilan v105 → v122** : 18 commits sur cette grosse session (~26h).
 
 ---
 
