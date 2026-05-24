@@ -31,29 +31,42 @@ function applyAccent(hex) {
 }
 
 // ----- Nav model -----
+// `cap` = capacité requise pour voir l'entrée. Si absent → visible par tous.
+//   'compo' → coach / adjoint / owner / admin
+//   'club'  → admin uniquement
+// Les écrans sans cap restent visibles aux parents/lecteurs/joueurs.
 const NAV = [
   { id:"home",         label:"Accueil",       ic:"⌂",   icon:HomeIcon,   bottom:true },
   { id:"effectif",     label:"Effectif",      ic:"◧",   icon:SquadIcon,  bottom:true },
   { id:"lineup",       label:"Compo",         ic:"◉",   icon:PitchIcon,  bottom:true },
   { id:"convocations", label:"Convocs",       ic:"☷",   icon:ConvocIcon, bottom:true },
   { id:"results",      label:"Champ",         ic:"♛",   icon:CupIcon,    bottom:true },
-  { id:"prep",         label:"Prépa J-7",     ic:"◈",   icon:CardIcon,   bottom:false },
-  { id:"match",        label:"Live",          ic:"●",   icon:LiveIcon,   bottom:false },
+  { id:"prep",         label:"Prépa J-7",     ic:"◈",   icon:CardIcon,   bottom:false, cap:'compo' },
+  { id:"match",        label:"Live",          ic:"●",   icon:LiveIcon,   bottom:false, cap:'compo' },
   { id:"fiche",        label:"Fiche",         ic:"◌",   icon:CardIcon,   bottom:false },
-  { id:"fiche-match",  label:"Feuille match", ic:"⊞",   icon:ConvocIcon, bottom:false },
+  { id:"fiche-match",  label:"Feuille match", ic:"⊞",   icon:ConvocIcon, bottom:false, cap:'compo' },
   { id:"vote",         label:"Vote",          ic:"☆",   icon:CupIcon,    bottom:false },
-  { id:"arb",          label:"Arbitre",       ic:"⚑",   icon:LiveIcon,   bottom:false },
+  { id:"arb",          label:"Arbitre",       ic:"⚑",   icon:LiveIcon,   bottom:false, cap:'compo' },
   { id:"lecteur",      label:"Lecteur",       ic:"△",   icon:SquadIcon,  bottom:false },
-  { id:"convoP",       label:"Convoc parent", ic:"¤",   icon:ConvocIcon, bottom:false },
-  { id:"share",        label:"Partager",      ic:"↗",   icon:ConvocIcon, bottom:false },
-  { id:"transfert",    label:"Transfert",     ic:"⇄",   icon:ConvocIcon, bottom:false },
-  { id:"sync",         label:"Sync cloud",    ic:"☁",   icon:GearIcon,   bottom:false },
+  { id:"convoP",       label:"Convoc parent", ic:"¤",   icon:ConvocIcon, bottom:false, cap:'compo' },
+  { id:"share",        label:"Partager",      ic:"↗",   icon:ConvocIcon, bottom:false, cap:'compo' },
+  { id:"transfert",    label:"Transfert",     ic:"⇄",   icon:ConvocIcon, bottom:false, cap:'compo' },
+  { id:"sync",         label:"Sync cloud",    ic:"☁",   icon:GearIcon,   bottom:false, cap:'compo' },
   { id:"set",          label:"Réglages",      ic:"⚙",   icon:GearIcon,   bottom:false },
   { id:"onb",          label:"Onboarding",    ic:"✦",   icon:SparkIcon,  bottom:false },
-  { id:"tv",           label:"Visuel compo",  ic:"📷",  icon:PitchIcon,  bottom:false },
-  { id:"tactique",     label:"Tactique",      ic:"🎬",  icon:PitchIcon,  bottom:false },
-  { id:"carnet",       label:"Carnet joueur", ic:"🎴",  icon:CardIcon,   bottom:false },
+  { id:"tv",           label:"Visuel compo",  ic:"📷",  icon:PitchIcon,  bottom:false, cap:'compo' },
+  { id:"tactique",     label:"Tactique",      ic:"🎬",  icon:PitchIcon,  bottom:false, cap:'compo' },
+  { id:"carnet",       label:"Carnet joueur", ic:"🎴",  icon:CardIcon,   bottom:false, cap:'compo' },
 ];
+
+// Helper : un item est-il visible pour l'utilisateur courant ?
+// Pas de cap → visible. Cap présente → vrai si canDo(cap) répond true.
+function _navAllowed(item) {
+  if (!item.cap) return true;
+  const R = window.CDD_ROLES;
+  if (!R || !R.canDo) return true; // tant que les rôles ne sont pas prêts → permissif
+  return !!R.canDo(item.cap);
+}
 
 function HomeIcon() {
   return (
@@ -511,7 +524,7 @@ function App() {
                   <button className="sm-close" onClick={() => setScreenMenuOpen(false)}>✕</button>
                 </div>
                 <div className="sm-grid">
-                  {NAV.map(n => {
+                  {NAV.filter(_navAllowed).map(n => {
                     const Icon = n.icon;
                     return (
                       <button key={n.id}
