@@ -258,7 +258,7 @@ function App() {
     const map = {
       home: "",
       effectif: "EFFECTIF",
-      lineup: "FEUILLE DE MATCH",
+      lineup: "ÉQUIPE TYPE",
       "match-lineup": "COMPO DU MATCH",
       convocations: "CONVOCATIONS",
       results: "CHAMPIONNAT",

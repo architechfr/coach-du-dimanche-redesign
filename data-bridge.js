@@ -1263,7 +1263,13 @@ window.CDD_CONVOC = {
 
 // Expose
 window.CDD_REBUILD = rebuildCDDGlobals;
-window.CDD_HELPERS = { normalizePosition, deriveRarity, deriveStats, resolvePhoto, buildViewPlayer };
+// Helper texte : normalise une chaîne pour comparaison insensible aux accents
+// et à la casse. "Léonis" et "leonis" deviennent tous les deux "leonis".
+// Évite que la recherche échoue quand l'utilisateur oublie un accent.
+function deburr(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+window.CDD_HELPERS = { normalizePosition, deriveRarity, deriveStats, resolvePhoto, buildViewPlayer, deburr };
 
 // Auto-rebuild on club/team change
 window.addEventListener('cdd-active-club-changed', rebuildCDDGlobals);

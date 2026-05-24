@@ -46,10 +46,13 @@ function ScreenEffectif({ go, tweaks }) {
   let list = CDD_PLAYERS.filter(POS_GROUPS.find(g=>g.id===filter).match);
 
   if (search.trim()) {
-    const q = search.toLowerCase().trim();
+    // Recherche insensible aux accents : "Leonis" trouve "Léonis", "clement" trouve "Clément".
+    const deburr = (window.CDD_HELPERS && window.CDD_HELPERS.deburr)
+      || ((s) => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase());
+    const q = deburr(search.trim());
     list = list.filter(p =>
-      (p.first || '').toLowerCase().includes(q) ||
-      (p.last  || '').toLowerCase().includes(q) ||
+      deburr(p.first).includes(q) ||
+      deburr(p.last).includes(q) ||
       String(p.num).includes(q) ||
       (p.license || '').includes(q)
     );
@@ -658,17 +661,21 @@ function ScreenLineup({ go, tweaks, matchId }) {
   const isSlotSelected = (i) => selection?.type === 'slot' && selection.idx === i;
   const isPidSelected  = (pid) => (selection?.type === 'bench' || selection?.type === 'reserve') && selection?.pid === pid;
 
-  // Reserve search filter
-  const reserveFiltered = !reserveSearch.trim() ? reservePlayers : reservePlayers.filter(p => {
-    const q = reserveSearch.toLowerCase();
-    return (p.first + ' ' + p.last + ' ' + (p.num||'')).toLowerCase().includes(q);
-  });
+  // Reserve search filter — insensible aux accents
+  const reserveFiltered = !reserveSearch.trim() ? reservePlayers : (() => {
+    const _deburr = (window.CDD_HELPERS && window.CDD_HELPERS.deburr)
+      || ((s) => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase());
+    const q = _deburr(reserveSearch);
+    return reservePlayers.filter(p =>
+      _deburr(p.first + ' ' + p.last + ' ' + (p.num||'')).includes(q)
+    );
+  })();
 
   return (
     <div className="scr scr-lineup fade-in" data-screen-label="03 Lineup">
 
-      {/* Bandeau d'identité écran : orange en mode match, neutre en mode compo type */}
-      {isMatchMode && (
+      {/* Bandeau d'identité écran : orange en mode match, vert en mode compo type. */}
+      {isMatchMode ? (
         <div style={{
           margin:'10px 14px 0', padding:'9px 13px', borderRadius:10,
           background:'linear-gradient(135deg, rgba(249,115,22,0.14) 0%, rgba(249,115,22,0.06) 100%)',
@@ -678,6 +685,17 @@ function ScreenLineup({ go, tweaks, matchId }) {
         }}>
           <span style={{fontSize:14}}>🎯</span>
           <span>COMPO DU MATCH — spécifique à ce match (la compo type saison n'est pas modifiée)</span>
+        </div>
+      ) : (
+        <div style={{
+          margin:'10px 14px 0', padding:'9px 13px', borderRadius:10,
+          background:'linear-gradient(135deg, rgba(200,241,105,0.14) 0%, rgba(200,241,105,0.05) 100%)',
+          border:'1px solid rgba(200,241,105,0.40)', color:'#c8f169',
+          fontSize:12, fontWeight:700, letterSpacing:'.04em',
+          display:'flex', alignItems:'center', gap:8,
+        }}>
+          <span style={{fontSize:14}}>🗓️</span>
+          <span>ÉQUIPE TYPE — utilisée par défaut pour toute la saison. Adapte-la pour un match spécifique via Convocations → Compo du match.</span>
         </div>
       )}
 

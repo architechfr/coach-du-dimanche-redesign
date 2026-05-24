@@ -267,7 +267,7 @@ function ScreenHome({ go, tweaks }) {
         <button className="tile tile-lineup" onClick={() => go("lineup")}>
           <span className="tile-ic">⚽</span>
           <span className="tile-t">Compo</span>
-          <span className="tile-s">Feuille de match</span>
+          <span className="tile-s">Équipe type saison</span>
         </button>
         <button className="tile tile-match" onClick={() => go("match")}>
           <span className="tile-ic" style={{color:"#ef4444"}}>●</span>

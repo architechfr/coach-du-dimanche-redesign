@@ -333,9 +333,12 @@ function ScreenLecteur({ go, tweaks }) {
   // puis includes pour tolérer la frappe partielle au milieu.
   const searchResults = (searchQuery.trim().length >= 1 && !selectedPlayerId)
     ? CDD_PLAYERS.filter(p => {
-        const q = searchQuery.trim().toLowerCase();
-        const first = (p.first || '').toLowerCase();
-        const last = (p.last || '').toLowerCase();
+        // Recherche insensible aux accents (Léonis ↔ leonis, Clément ↔ clement).
+        const _deburr = (window.CDD_HELPERS && window.CDD_HELPERS.deburr)
+          || ((s) => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase());
+        const q = _deburr(searchQuery.trim());
+        const first = _deburr(p.first);
+        const last = _deburr(p.last);
         return first.startsWith(q) || last.startsWith(q)
             || first.includes(q) || last.includes(q);
       }).slice(0, 8)
