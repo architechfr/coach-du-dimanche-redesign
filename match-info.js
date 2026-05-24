@@ -74,15 +74,23 @@
   }
 
   // Écriture en masse (utilisée par la modale d'édition).
+  // Push cloud fire-and-forget : adjoints, parents et lecteurs verront les
+  // infos au prochain pullCloudData.
   function set(teamId, matchId, info) {
     if (!teamId || !matchId) return;
     const all = _read();
     if (!all[teamId]) all[teamId] = {};
-    all[teamId][matchId] = { ...info, updatedAt: Date.now() };
+    const stored = { ...info, updatedAt: Date.now() };
+    all[teamId][matchId] = stored;
     _write(all);
     try { window.dispatchEvent(new CustomEvent('cdd-match-info-changed', { detail: { teamId, matchId } })); } catch (e) {}
-    // Force un rebuild des globaux pour que CDD_NEXT_MATCH soit enrichi.
     if (window.CDD_REBUILD) window.CDD_REBUILD();
+    // Push cloud
+    if (window.cddData?.saveMatchInfo) {
+      const activeTeam = window.CDD?.getActiveTeam?.();
+      window.cddData.saveMatchInfo(teamId, matchId, stored, activeTeam?.clubId)
+        .catch(e => console.warn('[match-info] cloud push', e.message));
+    }
   }
 
   // Reset complet pour un match.
@@ -95,6 +103,11 @@
       _write(all);
       try { window.dispatchEvent(new CustomEvent('cdd-match-info-changed', { detail: { teamId, matchId, cleared: true } })); } catch (e) {}
       if (window.CDD_REBUILD) window.CDD_REBUILD();
+      // Cloud delete
+      if (window.cddData?.deleteMatchInfo) {
+        window.cddData.deleteMatchInfo(teamId, matchId)
+          .catch(e => console.warn('[match-info] cloud delete', e.message));
+      }
     }
   }
 

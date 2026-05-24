@@ -71,6 +71,7 @@
   // Écrit en masse un map { playerId: num }. Remplace TOUS les overrides du match.
   // Le map doit contenir SEULEMENT les overrides (num différents du num saison) ;
   // les autres seront effacés.
+  // Push cloud fire-and-forget : adjoints/parents voient les num au prochain pull.
   function setBulk(teamId, matchId, map) {
     if (!teamId || !matchId || !map) return;
     const all = _read();
@@ -82,7 +83,8 @@
         clean[pid] = +v;
       }
     });
-    if (Object.keys(clean).length === 0) {
+    const hadOverrides = Object.keys(clean).length > 0;
+    if (!hadOverrides) {
       delete all[teamId][matchId];
     } else {
       all[teamId][matchId] = clean;
@@ -91,6 +93,16 @@
     _write(all);
     try { window.dispatchEvent(new CustomEvent('cdd-jersey-changed', { detail: { teamId, matchId, bulk: true } })); } catch (e) {}
     if (window.CDD_REBUILD) window.CDD_REBUILD();
+    // Push cloud
+    const activeTeam = window.CDD?.getActiveTeam?.();
+    const clubId = activeTeam?.clubId;
+    if (hadOverrides && window.cddData?.saveJerseyNumbers) {
+      window.cddData.saveJerseyNumbers(teamId, matchId, clean, clubId)
+        .catch(e => console.warn('[jersey] cloud push', e.message));
+    } else if (!hadOverrides && window.cddData?.deleteJerseyNumbers) {
+      window.cddData.deleteJerseyNumbers(teamId, matchId)
+        .catch(e => console.warn('[jersey] cloud delete', e.message));
+    }
   }
 
   // Indique si le match a au moins un override.

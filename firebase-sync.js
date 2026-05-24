@@ -832,6 +832,70 @@ async function deleteMatchLineup(teamId, matchId) {
   return { ok: true };
 }
 
+// ─── Infos pratiques du match (stade, horaires, covoit, notes) ───
+// Storage local : cdd_match_info[teamId][matchId] (voir match-info.js)
+// Cloud : collection match_infos, id = `{teamId}_{matchId}`
+async function saveMatchInfo(teamId, matchId, infoObj, clubId) {
+  if (!db || !teamId || !matchId) return { ok: false, reason: 'no-db' };
+  const id = String(teamId) + '_' + String(matchId);
+  await setDoc(doc(db, 'match_infos', id), {
+    teamId: String(teamId),
+    matchId: String(matchId),
+    clubId: clubId ? String(clubId) : null,
+    info: infoObj || null,
+    updatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: true });
+  return { ok: true };
+}
+async function fetchMatchInfos(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'match_infos'), where('clubId', '==', String(clubId)));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+async function deleteMatchInfo(teamId, matchId) {
+  if (!db || !teamId || !matchId) return { ok: false };
+  const id = String(teamId) + '_' + String(matchId);
+  try { await deleteDoc(doc(db, 'match_infos', id)); } catch (e) {}
+  return { ok: true };
+}
+
+// ─── Numéros de maillot match-specific ───
+// Storage local : cdd_match_jersey_numbers[teamId][matchId][playerId] = num
+//   (voir jersey-numbers.js)
+// Cloud : collection match_jerseys, id = `{teamId}_{matchId}`,
+//   doc.jerseys = { [playerId]: num }
+async function saveJerseyNumbers(teamId, matchId, jerseysMap, clubId) {
+  if (!db || !teamId || !matchId) return { ok: false, reason: 'no-db' };
+  const id = String(teamId) + '_' + String(matchId);
+  await setDoc(doc(db, 'match_jerseys', id), {
+    teamId: String(teamId),
+    matchId: String(matchId),
+    clubId: clubId ? String(clubId) : null,
+    jerseys: jerseysMap || {},
+    updatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: false }); // merge: false → écrase complètement, sinon les pids supprimés persistent
+  return { ok: true };
+}
+async function fetchJerseyNumbers(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'match_jerseys'), where('clubId', '==', String(clubId)));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+async function deleteJerseyNumbers(teamId, matchId) {
+  if (!db || !teamId || !matchId) return { ok: false };
+  const id = String(teamId) + '_' + String(matchId);
+  try { await deleteDoc(doc(db, 'match_jerseys', id)); } catch (e) {}
+  return { ok: true };
+}
+
 // Push EN BLOC de tous les overrides locaux (stats, profils, notes, perf
 // deltas) vers Firestore. Utile pour les cas où le coach a édité des
 // joueurs avant que la sync Firestore n'existe (overrides pre-v62) — ces
@@ -1355,6 +1419,12 @@ async function pullCloudData() {
   // Compos de match (Phase 1A) — récupérées depuis collection match_lineups,
   // propagées vers localStorage cdd_match_lineup[teamId][matchId].
   const rawMatchLineups     = [];
+  // Infos pratiques du match (stade, horaires, covoit) — collection match_infos
+  // → localStorage cdd_match_info[teamId][matchId].
+  const rawMatchInfos       = [];
+  // Numéros maillots match-specific — collection match_jerseys
+  // → localStorage cdd_match_jersey_numbers[teamId][matchId][pid].
+  const rawJerseyNumbers    = [];
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
@@ -1394,6 +1464,34 @@ async function pullCloudData() {
           }
         });
       } catch (e) { console.warn('[cddData] pull match_lineups', cid, e.message); }
+      // Infos pratiques du match (collection match_infos)
+      try {
+        const miList = await fetchMatchInfos(cid);
+        miList.forEach(mi => {
+          if (mi && mi.teamId && mi.matchId) {
+            rawMatchInfos.push({
+              teamId: mi.teamId,
+              matchId: mi.matchId,
+              info: mi.info || null,
+              updatedAt: mi.updatedAt || null,
+            });
+          }
+        });
+      } catch (e) { console.warn('[cddData] pull match_infos', cid, e.message); }
+      // Numéros maillots match-specific (collection match_jerseys)
+      try {
+        const mjList = await fetchJerseyNumbers(cid);
+        mjList.forEach(mj => {
+          if (mj && mj.teamId && mj.matchId) {
+            rawJerseyNumbers.push({
+              teamId: mj.teamId,
+              matchId: mj.matchId,
+              jerseys: mj.jerseys || {},
+              updatedAt: mj.updatedAt || null,
+            });
+          }
+        });
+      } catch (e) { console.warn('[cddData] pull match_jerseys', cid, e.message); }
     } catch (e) { console.warn('[cddData] pull club', cid, e.message); }
   }
 
@@ -1655,6 +1753,58 @@ async function pullCloudData() {
         dirty = true;
       });
       if (dirty) localStorage.setItem('cdd_match_lineup', JSON.stringify(allMl));
+    }
+  } catch (e) {}
+
+  // Sync INFOS DU MATCH depuis le cloud — LWW par (teamId, matchId).
+  try {
+    if (rawMatchInfos.length) {
+      const allMi = JSON.parse(localStorage.getItem('cdd_match_info') || '{}');
+      let dirty = false;
+      rawMatchInfos.forEach(({ teamId, matchId, info, updatedAt }) => {
+        if (!teamId || !matchId) return;
+        const cloudMs = updatedAt && typeof updatedAt.toMillis === 'function'
+          ? updatedAt.toMillis()
+          : (typeof updatedAt === 'number' ? updatedAt : 0);
+        if (!allMi[teamId]) allMi[teamId] = {};
+        const localMs = (allMi[teamId][matchId] && allMi[teamId][matchId].updatedAt) || 0;
+        if (localMs > cloudMs && localMs > 0) return;
+        if (info && typeof info === 'object') {
+          allMi[teamId][matchId] = { ...info, updatedAt: cloudMs };
+        } else {
+          delete allMi[teamId][matchId];
+        }
+        dirty = true;
+      });
+      if (dirty) localStorage.setItem('cdd_match_info', JSON.stringify(allMi));
+    }
+  } catch (e) {}
+
+  // Sync NUMÉROS MAILLOTS match-specific depuis le cloud — LWW par (teamId, matchId).
+  // Le cloud stocke un map { [pid]: num } qui remplace intégralement le local
+  // (et non un merge pid à pid : si le coach a supprimé un override, on doit
+  // le propager). LWW au niveau du couple (teamId, matchId).
+  try {
+    if (rawJerseyNumbers.length) {
+      const allJ = JSON.parse(localStorage.getItem('cdd_match_jersey_numbers') || '{}');
+      const cloudByKey = {}; // pour mémoriser le cloudMs et juger LWW au niveau global
+      let dirty = false;
+      rawJerseyNumbers.forEach(({ teamId, matchId, jerseys, updatedAt }) => {
+        if (!teamId || !matchId) return;
+        const cloudMs = updatedAt && typeof updatedAt.toMillis === 'function'
+          ? updatedAt.toMillis()
+          : (typeof updatedAt === 'number' ? updatedAt : 0);
+        // Local n'a pas d'updatedAt par (teamId, matchId) — on prend la maj cloud
+        // si elle existe. Le user pourra écraser localement après.
+        if (!allJ[teamId]) allJ[teamId] = {};
+        if (jerseys && typeof jerseys === 'object' && Object.keys(jerseys).length > 0) {
+          allJ[teamId][matchId] = jerseys;
+        } else {
+          delete allJ[teamId][matchId];
+        }
+        dirty = true;
+      });
+      if (dirty) localStorage.setItem('cdd_match_jersey_numbers', JSON.stringify(allJ));
     }
   } catch (e) {}
 
@@ -1933,6 +2083,8 @@ window.cddData = {
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
   saveLineupTemplate,
   saveMatchLineup, fetchMatchLineups, deleteMatchLineup,
+  saveMatchInfo, fetchMatchInfos, deleteMatchInfo,
+  saveJerseyNumbers, fetchJerseyNumbers, deleteJerseyNumbers,
   pushAllLocalOverrides,
   saveClubLogoBase64,
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)

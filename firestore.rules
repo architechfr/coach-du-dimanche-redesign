@@ -297,6 +297,58 @@ service cloud.firestore {
         && canEditTeam(resource.data.clubId, resource.data.teamId);
     }
 
+    // ═══ /match_infos/{infoId}  (id = {teamId}_{matchId}) ════════════
+    // Infos pratiques du match (stade, adresse, horaires RDV vs coup d'envoi,
+    // covoiturage, notes libres) — 2026-05-24. Indispensables pour qu'une
+    // convocation envoyée aux parents soit exploitable.
+    //
+    // Lecture : tout membre du club. Écriture : coach/owner/adjoint.
+    match /match_infos/{infoId} {
+      allow read:   if isSignedIn() && canReadClub(resource.data.clubId);
+      allow create: if isSignedIn()
+        && canEditTeam(request.resource.data.clubId,
+                       request.resource.data.teamId)
+        && isString(request.resource.data.teamId)
+        && isString(request.resource.data.matchId)
+        && isString(request.resource.data.clubId)
+        && infoId == request.resource.data.teamId + '_' + request.resource.data.matchId
+        && request.resource.data.size() <= 10;
+      allow update: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.matchId == resource.data.matchId
+        && request.resource.data.size() <= 10;
+      allow delete: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId);
+    }
+
+    // ═══ /match_jerseys/{jerseyId}  (id = {teamId}_{matchId}) ════════
+    // Numéros maillots match-specific (2026-05-24). Override des numéros
+    // saison quand un joueur d'une autre catégorie dépanne ou que des
+    // maillots ont changé pour ce match. doc.jerseys = { [pid]: num }.
+    //
+    // Lecture : tout membre du club. Écriture : coach/owner/adjoint.
+    match /match_jerseys/{jerseyId} {
+      allow read:   if isSignedIn() && canReadClub(resource.data.clubId);
+      allow create: if isSignedIn()
+        && canEditTeam(request.resource.data.clubId,
+                       request.resource.data.teamId)
+        && isString(request.resource.data.teamId)
+        && isString(request.resource.data.matchId)
+        && isString(request.resource.data.clubId)
+        && jerseyId == request.resource.data.teamId + '_' + request.resource.data.matchId
+        && request.resource.data.size() <= 10;
+      allow update: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.matchId == resource.data.matchId
+        && request.resource.data.size() <= 10;
+      allow delete: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  COLLECTIONS EXISTANTES — conservées telles quelles (ne pas casser)
     // ═══════════════════════════════════════════════════════════════
