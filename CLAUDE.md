@@ -53,9 +53,12 @@ coach principal via le panneau admin.
 
 ## Pièges connus
 
-- **Cache buster** : `firebase-sync.js` est chargé avec `?v=NN` dans
-  `app.html` — incrémenter `NN` à chaque modif de ce fichier (actuellement
-  **v56**). Les autres fichiers (`roles.js`, `*.jsx`) ne sont pas versionnés.
+- **Cache buster** : les fichiers `.js` / `.jsx` / `.css` sont chargés
+  avec `?v=NN` dans `app.html`. **1 push git = 1 numéro de version**,
+  tous les fichiers modifiés dans le même commit prennent le même `?v=NN`,
+  le push suivant incrémente de 1 (actuellement **v76**). Pas de
+  réutilisation d'un numéro. Seuls quelques fichiers stables historiques
+  ne sont pas versionnés (player-card.jsx, screen-share.jsx, etc.).
 - **OneDrive** : ce dossier est synchronisé OneDrive. OneDrive verrouille
   parfois `.git/` pendant un `git push` (prompts « Deletion of directory
   failed ») et ressuscite `.git/index.lock`. Mettre OneDrive en pause avant

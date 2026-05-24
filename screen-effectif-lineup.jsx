@@ -1031,14 +1031,27 @@ function ScreenLineup({ go, tweaks, matchId }) {
       </div>
 
       <div className="lu-actions">
-        {canEdit && (
-          <button className="btn-cta ghost" onClick={resetLineup} title="Réinitialiser à la compo FFF">↻ Reset</button>
+        {isMatchMode ? (
+          /* Mode Compo du Match : le coach prépare le match en cours.
+             Reset disponible en haut (barre Phase 1D 'Reset depuis compo type'),
+             on garde juste Retour Convocations + Coup d'envoi. */
+          <>
+            <button className="btn-cta ghost" onClick={()=>go("convocations")}>← Retour convocations</button>
+            <button className="btn-cta" onClick={()=>go("match")} disabled={!allFilled}>
+              <span>{allFilled ? "COUP D'ENVOI" : `${slots.length - starterPlayers.length} POSTE(S) VIDE(S)`}</span>
+              <span className="arr">⚽</span>
+            </button>
+          </>
+        ) : (
+          /* Mode Équipe Type : on FORCE le passage par Convocations pour lancer
+             un match (l'équipe type n'est qu'un template saison, jamais un
+             match concret). La nav du bas permet de quitter à tout moment. */
+          <button className="btn-cta" onClick={()=>go("convocations")}
+                  style={{flex:1, width:'100%'}}>
+            <span>📋 PRÉPARER LE MATCH / CONVOCATION</span>
+            <span className="arr">→</span>
+          </button>
         )}
-        <button className="btn-cta ghost" onClick={()=>go("home")}>← Retour</button>
-        <button className="btn-cta" onClick={()=>go("match")} disabled={!allFilled}>
-          <span>{allFilled ? "COUP D'ENVOI" : `${slots.length - starterPlayers.length} POSTE(S) VIDE(S)`}</span>
-          <span className="arr">⚽</span>
-        </button>
       </div>
 
       {/* Modale numéros maillots — mode match seulement */}

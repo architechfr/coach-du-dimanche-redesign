@@ -1,88 +1,129 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-23** (cache buster **v74**).
+> Document de reprise. Dernière mise à jour : **2026-05-24** (cache buster **v76**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
 
-## 1. État au 23 mai 2026 — où on en est
+## 1. État au 24 mai 2026 — où on en est
 
-### ✅ Livré et publié (v74 en prod)
+### ✅ Livré dans la session du 24 mai (commits post-v74)
+
+**Phase 1C — Mode Vestiaire contextualisé** (commit 31a9caa) :
+- Nouveau screen `tv-match` → lit `cdd_match_lineup` (compo du match).
+  Fallback compo type saison si pas encore éditée.
+- Bandeau visuel différent : 📅 orange en mode match vs 🗓️ gris en mode
+  saison. Bouton 👟 MODE VESTIAIRE dans le hero Convocations.
+
+**Phase 1D — Synchro compo type ↔ compo match** (commit 9b8a884) :
+- Boutons 📌 Adopter comme compo type · ↻ Reset depuis compo type.
+- Bannière orange si compo type modifiée APRÈS la compo match
+  (comparaison `updatedAt`), choix Garder/Mettre à jour.
+
+**Phase 1E — Lancer le match depuis Convocations** (commit 842345f) :
+- Bouton 🏁 LANCER LE MATCH dans hero Convocations.
+- `buildDefaultTeams()` priorité 0 = `cdd_match_lineup[teamId][matchId]`.
+  Le Match Live démarre avec la compo de match si elle existe.
+
+**Bug grid Convocations** (commit f75906b) :
+- `cv-row` passe en 5 colonnes (avatar | num | nom 1fr | pos | action).
+  Le bouton − ne tombe plus en ligne 2. `min-width:0` sur `.cv-last`
+  pour que `text-overflow:ellipsis` fonctionne en flex.
+
+**Sync 3 écrans — cdd_match_lineup = source unique** (commit 60f5e4d) :
+- `CDD_CONVO` builder lit `cdd_match_lineup` en priorité 0 (avant
+  l'overlay legacy `cdd_match_convoc` et le template `lt`).
+- `addToConvoc` / `removeFromConvoc` écrivent dans `cdd_match_lineup`
+  (+ cloud + event). `convocCount` = 11 + bench.length quand matchLineup.
+- Identité visuelle orange = match-specific (bandeau éditeur + bouton
+  VISUEL COMPO → tv-match + bouton COMPO DU MATCH dans Convocations).
+- Garantit la cohérence parfaite des 3 écrans : Convocations / Compo
+  du match / Mode Vestiaire match → même donnée.
+
+**Fix score Match Live + Numéros maillots match-specific** (commits 4f055b8 + 88fb595) :
+- `MatchHeader` restructuré en 2 lignes (scoreboard FIFA `Logo+Score+Logo`
+  puis chrono géant en dessous). Score `clamp(40px, 11vw, 60px)` pour
+  visibilité mobile.
+- Nouveau module `jersey-numbers.js` → `window.CDD_JERSEY` (getOverrides,
+  setBulk, wasReviewed, markReviewed, ofPlayer).
+- Modale réutilisable `jersey-numbers-modal.jsx` (détection doublons,
+  reset num saison, photos joueurs).
+- Storage : `cdd_match_jersey_numbers[teamId][matchId][playerId] = num`.
+  Seuls les num différents du num saison sont stockés.
+- Bouton 🔢 NUMÉROS MAILLOTS DU MATCH dans :
+  · Hero Convocations · Barre d'action Compo du match (mode match)
+  · Toolbar Mode Vestiaire (source=match) · Modale obligatoire au
+  1er clic LANCER LE MATCH (`wasReviewed` mémorise).
+- `buildDefaultTeams()` applique les overrides aux tokens Match Live.
+- Propagation visuelle aux 4 écrans match via helper local `displayNum(p)` :
+  Convocations (4 occurrences + tri par matchNum), Compo du match
+  (3 occurrences, conditional `isMatchMode`), Mode Vestiaire (2 occurrences,
+  conditional `isMatchSource`). En mode saison/hors-match, num saison.
+
+**UX — Recherche sans accents + Équipe Type ≠ Compo Match** (commit 5205375) :
+- Helper `window.CDD_HELPERS.deburr` (NFD + suppression diacritiques).
+  "Leonis" trouve "Léonis", "clement" trouve "Clément".
+- 3 filtres mis à jour : Effectif, Réserve compo, recherche arbitre.
+- Header de la page `lineup` renommé **ÉQUIPE TYPE** (au lieu de
+  "FEUILLE DE MATCH" qui prêtait à confusion).
+- Bandeau VERT 🗓️ ÉQUIPE TYPE en haut de la page compo type, symétrique
+  du bandeau ORANGE 🎯 COMPO DU MATCH en mode match.
+- Tile Accueil "Compo" : sous-titre "Équipe type saison".
+
+### ✅ Livré et publié (v74 et avant)
 
 - **Phase D** : modèle d'autorisation par équipe + multi-rôles. Publié.
 - **Notation v2** : labels par poste (FINITION pour BU, MARQUAGE pour DC,
   VISION DU JEU pour MOC…), cap 99, fix slider fractionnaire `.15`, sync
   stats overrides Firestore.
 - **Sync Firestore globale** : stats, profils, notes, perf deltas, compo
-  type, **compo de match**, logos club (base64 compressé), photos joueurs
-  (base64 compressé) — tout est partagé entre coach principal, adjoints,
-  parents, joueurs, lecteurs.
+  type, compo de match, logos club (base64 compressé), photos joueurs.
 - **Images** : compression Canvas auto (logo 256×256 JPEG 80%, photo
-  400×400 JPEG 75%). Pas de Firebase Storage (plan Spark — base64 direct
-  dans Firestore).
-- **Invitations** : page de validation publique AVANT login (« Tu rejoins
-  FCMH · U15 A en tant que Parent de Léonis CLARISSE »). Sélecteur de
-  lien de parenté (Mère/Père/Beau-père/etc.) au lieu de saisie libre.
-  Affichage du joueur concerné dans la liste invitations.
+  400×400 JPEG 75%). Pas de Firebase Storage (plan Spark).
+- **Invitations** : page de validation publique AVANT login. Sélecteur de
+  lien de parenté. Affichage du joueur concerné dans la liste invitations.
 - **Page Convocations** : refondue. Tri par numéro, photos avatar, fusion
-  des listes "Suivi présences" + "Titulaires/Banc" (un bouton 💬 inline
-  sur chaque ligne).
-- **Page Membres du club** : refondue Phase D. Badge "ADMIN APP" distinct
-  des owners de club. Un rôle par équipe affiché.
-- **Modale "Quitter le club"** : friction délibérée (saisie texte du nom
-  exact). Bouton discret.
-- **Couleurs d'accent** : pastilles colorées visuelles (au lieu de boutons
-  texte).
-- **Page lecteur** : onglet Effectif en 3 sections (Titulaires/Banc/Reste).
-- **Phase 1A + 1B compo match** : data layer + éditeur dédié. Collection
-  Firestore `match_lineups` (id `{teamId}_{matchId}`). Bouton
-  "🎯 COMPO DU MATCH" dans Convocations → réutilise `ScreenLineup` avec
-  param `matchId`. Hérite de la compo type au 1er accès.
+  Suivi présences + Titulaires/Banc avec bouton 💬 inline.
+- **Page Membres du club** : refondue Phase D. Badge ADMIN APP distinct.
+- **Modale "Quitter le club"** : friction délibérée (saisie texte).
+- **Couleurs d'accent** : pastilles colorées visuelles.
+- **Page lecteur** : onglet Effectif en 3 sections.
+- **Phase 1A + 1B compo match** : data layer + éditeur dédié.
+  Collection Firestore `match_lineups`.
 
 ### 🔧 Bugs corrigés récemment
-- `canEdit is not defined` dans PreMatchSetup (oubli de prop passing).
-- Crash `convoStartersIds is not defined` dans screen-tv (variable orpheline
-  après refonte).
+- Bouton − des cards Convocations tombait en 2e ligne (grid 4 cols / 5 items).
+- Score Match Live invisible à l'arrivée (chrono XL écrasait le score).
+- Convocations affichait Lucas alors que Compo du match avait posé Marley
+  (3 storages désynchronisés → fusionnés via `cdd_match_lineup`).
 - Mode Vestiaire qui divergeait de Feuille de match (couche convocation
-  adaptative supprimée — Mode Vestiaire lit maintenant directement le
-  template du coach).
-- Bug stats slider qui sautait par `.15` (Math.round forcé sur les
-  perfDeltas fractionnaires).
-- Cap stat passé de 95 à 99.
-- Logo club rogné sur page Effectif (CSS `.ef-banner-in` passé en `row`).
+  adaptative supprimée).
+- Recherche sans accent ne trouvait pas "Léonis" ni "Clément".
 
 ### ⚠️ Convention cache buster (à respecter)
 **1 push git = 1 numéro de version.** Tous les fichiers modifiés dans
 le même commit prennent le même `?v=NN`. Le push suivant incrémente
 de 1 (v74 → v75 → v76…). **Pas de réutilisation d'un numéro.**
+*Note 2026-05-24* : on est resté longtemps en v74 pendant la session,
+on remonte tout à **v76** au commit final de bouchon.
 
 ---
 
-## 2. Sujet suivant — Phase 1C → 1E du chantier compo match
+## 2. Sujet suivant — backlog priorisé
 
-### Phase 1C : Mode Vestiaire contextualisé
-- Si arrivée depuis Convocations → mode vestiaire affiche la **compo de
-  match** (cdd_match_lineup[teamId][matchId]).
-- Si arrivée depuis Feuille de match → mode vestiaire affiche la **compo
-  type saison** (cdd_lineup_template[teamId]) — comportement actuel.
-- Bandeau visuel différent : "📅 Compo match du XX/XX" vs "🗓️ Compo type
-  saison".
-
-### Phase 1D : Synchronisation compo type ↔ compo match
-- **Bouton "📌 Adopter cette compo comme compo type"** sur l'écran compo
-  match (réponse Florian Q1 = OUI).
-- **Bouton "↻ Reset à la compo type"** sur l'écran compo match.
-- **Bannière "💡 La compo type a évolué — voulez-vous synchroniser ?"**
-  si la compo type est modifiée APRÈS création d'une compo match (réponse
-  Q2 = A + C).
-
-### Phase 1E : Coup d'envoi depuis Convocations
-- Bouton "🏁 Lancer le match" dans Convocations (en plus de Préparation).
-- Le Match Live démarre avec la **compo de match** (pas la compo type).
-
-### Match amical (réponse Q3 = A + C)
+### Match amical (priorité 1 — déjà discuté)
 - A : Bouton "Ajouter un match amical" dans Convocations.
 - C : Onglet "Amicaux" dédié à côté de "Championnat".
+
+### Page Match dédiée (priorité 2)
+- Accès depuis l'Accueil. Vue centrée sur **le prochain match** :
+  équipe convoquée, lancement du match, accès rapide compo/vestiaire.
+  Évite la navigation entre 3 onglets (Convocations/Compo/Match Live).
+
+### Autres pistes
+- Page Club complète (organigramme, stade, GPS, contacts).
+- Page Coach partageable (carte de visite).
+- Onboarding émotionnel repensé.
 
 ---
 
