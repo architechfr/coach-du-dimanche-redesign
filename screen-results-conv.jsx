@@ -669,7 +669,7 @@ function ScreenConvocations({ go, tweaks }) {
               Les autres actions (compo, vestiaire, numéros, infos) sont sur la
               page Match dédiée pour éviter la surcharge. */}
           {canEdit && (() => {
-            const isPlaceholder = noUpcoming;
+            const isPlaceholder = !!(next && (next.noUpcoming || !next.away || next.away === 'À déterminer'));
             const nbPending = pendingPlayers.length;
             const nbConv = convocPlayers.length;
             const allResponded = nbConv > 0 && nbPending === 0;
