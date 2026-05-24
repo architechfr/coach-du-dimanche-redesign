@@ -636,18 +636,24 @@ function ScreenFicheMatch({ go, tweaks }) {
           {resultLabel}
         </div>
         <div style={{fontSize:13, opacity:0.6, marginBottom:8}}>
-          {m.date}{m.venue === "H" ? " · DOMICILE" : m.venue === "E" ? " · EXTÉRIEUR" : ""}
+          {m.date} · {m.venue === "E" ? "EXTÉRIEUR" : "DOMICILE"}
         </div>
         {(() => {
           const myShort = m.home || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
           const myColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
           const myClubId = window.CDD?.getActiveClub?.()?.id;
-          // venue='H' = domicile, 'E' = extérieur, '?' = matchs coach sans info venue
-          // Pour '?' : score[0] = sA = notre score → on s'affiche à gauche (homeIsMe=true)
-          // Pour 'E' (FFF) : score[0] = score de l'équipe domicile = adversaire → ils sont à gauche
+          // Convention foot : le club recevant (home) est TOUJOURS à gauche.
+          // venue='E' → adversaire reçoit → adversaire à gauche, nous à droite.
+          // venue='H' ou '?' → nous à gauche (domicile ou inconnu = défaut domicile).
           const homeIsMe = m.venue !== "E";
           const homeName = homeIsMe ? myShort : m.opp;
           const awayName = homeIsMe ? m.opp   : myShort;
+          // Score : FFF → score[0]=home, score[1]=away (aligné avec les noms).
+          // Coach → score[0]=nous (tA), score[1]=eux (tB).
+          //   Si on est à l'extérieur (homeIsMe=false), il faut swapper pour que
+          //   le score de gauche corresponde à l'équipe de gauche (l'adversaire).
+          const scoreLeft  = (m.coachArbitrated && !homeIsMe) ? m.score[1] : m.score[0];
+          const scoreRight = (m.coachArbitrated && !homeIsMe) ? m.score[0] : m.score[1];
           return (
             <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:12, fontSize:18, fontWeight:700, flexWrap:'wrap'}}>
               {window.ClubBadge && (
@@ -658,7 +664,7 @@ function ScreenFicheMatch({ go, tweaks }) {
                                   size={28} shape="circle"/>
               )}
               <span>{homeName}</span>
-              <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{m.score[0]}–{m.score[1]}</span>
+              <span className="num" style={{fontSize:32, color:"var(--acc)"}}>{scoreLeft}–{scoreRight}</span>
               <span>{awayName}</span>
               {window.ClubBadge && (
                 <window.ClubBadge clubId={homeIsMe ? null : myClubId}
