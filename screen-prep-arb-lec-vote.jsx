@@ -1132,7 +1132,9 @@ window.ScreenLecteur = ScreenLecteur;
    ============================================================ */
 
 function ScreenVote({ go, tweaks }) {
-  const [votes, setVotes] = useState({}); // playerId -> 1-5
+  const [votes, setVotes] = useState({}); // playerId -> 0-10 (demi-points)
+  const [motm, setMotm] = useState(null); // playerId élu MOTM explicitement
+  const [nsSet, setNsSet] = useState(new Set()); // playerIds "Pas vu jouer"
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
@@ -1152,8 +1154,32 @@ function ScreenVote({ go, tweaks }) {
     ? playedLineup.map(lp => CDD_PLAYERS.find(p => p.id === lp.id) || lp).filter(Boolean)
     : CDD_CONVO.starters.map(id => CDD_PLAYERS.find(p => p.id === id)).filter(Boolean);
 
-  const setRating = (id, r) => setVotes(v => ({...v, [id]: r}));
-  const allRated = starters.every(p => votes[p.id]);
+  const setRating = (id, r) => {
+    setVotes(v => ({...v, [id]: r}));
+    // Lever le NS si on note quand même
+    setNsSet(s => { const ns = new Set(s); ns.delete(id); return ns; });
+  };
+
+  const toggleNs = (id) => {
+    setNsSet(s => {
+      const ns = new Set(s);
+      if (ns.has(id)) {
+        ns.delete(id);
+      } else {
+        ns.add(id);
+        // Effacer la note et le MOTM si NS
+        setVotes(v => { const nv = {...v}; delete nv[id]; return nv; });
+        setMotm(m => m === id ? null : m);
+      }
+      return ns;
+    });
+  };
+
+  const toggleMotm = (id) => setMotm(m => m === id ? null : id);
+
+  // Traité = noté (note posée) OU marqué NS
+  const treated = starters.filter(p => votes[p.id] !== undefined || nsSet.has(p.id)).length;
+  const allRated = starters.every(p => votes[p.id] !== undefined || nsSet.has(p.id));
 
   const submitVote = async () => {
     setSending(true);
@@ -1167,17 +1193,19 @@ function ScreenVote({ go, tweaks }) {
         await window.cddSync.sendVote(
           targetMatchId,
           window.cddSync.voterId,
-          votes
+          votes,
+          { motm, ns: [...nsSet] }
         );
       }
       // Applique les deltas OVR avec le vote du coach comme signal qualitatif.
       // Le match a déjà appliqué les deltas "perf brute" (buts/passes/cartons) à la fin ;
       // ici on RE-applique avec le voteAggregate pour intégrer la note coach (la dernière
       // applique écrase la précédente pour ce matchId, idempotent).
+      // Normalisation /2 pour ramener l'échelle 0-10 vers l'équivalent 0-5 attendu.
       if (lastFinishedMatch && window.CDD_COACH?.applyMatchPerformanceDeltas) {
         const voteAggregate = {};
         Object.entries(votes).forEach(([pid, rating]) => {
-          voteAggregate[pid] = { avg: rating, count: 1 };
+          voteAggregate[pid] = { avg: rating / 2, count: 1 };
         });
         window.CDD_COACH.applyMatchPerformanceDeltas(lastFinishedMatch, voteAggregate);
       }
@@ -1192,24 +1220,29 @@ function ScreenVote({ go, tweaks }) {
   };
 
   if (submitted) {
-    // MVP = joueur avec la note la plus haute parmi ceux votés (et non plus hardcodé au 1er)
-    const mvp = starters.reduce((best, p) => {
-      const r = votes[p.id] || 0;
-      return r > (best?.r || 0) ? { p, r } : best;
-    }, null);
+    const motmPlayer = motm ? starters.find(p => p.id === motm) : null;
+    // Fallback : meilleure note si pas de MOTM explicite
+    const fallbackMvp = !motmPlayer ? starters.reduce((best, p) => {
+      if (nsSet.has(p.id)) return best;
+      const r = votes[p.id] ?? -1;
+      return r > (best?.r ?? -1) ? { p, r } : best;
+    }, null) : null;
+    const displayMvp = motmPlayer
+      ? { p: motmPlayer, r: votes[motmPlayer.id] }
+      : fallbackMvp;
     return (
       <div className="scr scr-vote fade-in" data-screen-label="13 Vote — Submitted">
         <div className="vote-success">
           <div className="vote-success-ic">⭐</div>
           <div className="vote-success-t">Notes envoyées !</div>
           <div className="vote-success-d">Tes notes sont prises en compte dans la synthèse collective de l'équipe.</div>
-          {mvp && (
+          {displayMvp && displayMvp.r >= 0 && (
             <div className="vote-success-mvp">
-              <div className="vote-success-mvp-k">TON HOMME DU MATCH</div>
+              <div className="vote-success-mvp-k">{motmPlayer ? 'HOMME DU MATCH' : 'TON MEILLEUR JOUEUR'}</div>
               <div className="vote-success-mvp-name">
-                <span>{mvp.p.first}</span><b>{mvp.p.last}</b>
+                <span>{displayMvp.p.first}</span><b>{displayMvp.p.last}</b>
               </div>
-              <div className="vote-success-mvp-rate">{'⭐'.repeat(mvp.r)}</div>
+              <div className="vote-success-mvp-rate">{displayMvp.r.toFixed(1)}<span style={{fontSize:14,opacity:.6}}>/10</span></div>
             </div>
           )}
           <button className="btn-cta ghost" onClick={() => setSubmitted(false)}>← Modifier mes notes</button>
@@ -1266,45 +1299,78 @@ function ScreenVote({ go, tweaks }) {
 
       <div className="vote-progress">
         <div className="vote-progress-bar">
-          <div className="vote-progress-fill" style={{width: `${(Object.keys(votes).length / starters.length) * 100}%`}}/>
+          <div className="vote-progress-fill" style={{width: starters.length ? `${(treated / starters.length) * 100}%` : '0%'}}/>
         </div>
         <div className="vote-progress-txt">
-          <b className="num">{Object.keys(votes).length}</b>
+          <b className="num">{treated}</b>
           <span>/{starters.length}</span>
-          <em>joueurs notés</em>
+          <em>joueurs traités</em>
         </div>
       </div>
 
+      {motm && (
+        <div className="vote-motm-banner">
+          ★ MOTM sélectionné — tu peux changer en cliquant une autre étoile
+        </div>
+      )}
+
       <div className="vote-list">
-        {starters.map(p => (
-          <div className={`vote-row ${votes[p.id] ? "done" : ""}`} key={p.id}>
-            <div className="vote-row-pl">
-              <div className="vote-pl-avatar">
-                {p.photo ? <img src={p.photo} alt=""/> : <span>{p.first[0]}{p.last[0]}</span>}
-              </div>
-              <div className="vote-pl-info">
-                <b>#{p.num} {p.first} {p.last}</b>
-                <em>{POSITION_LABEL[p.pos] || p.pos} · {p.goals > 0 ? `⚽ ${p.goals}` : ""}</em>
-              </div>
-            </div>
-            <div className="vote-stars">
-              {[1,2,3,4,5].map(r => (
-                <button key={r}
-                  className={`vote-star ${(votes[p.id] || 0) >= r ? "on" : ""}`}
-                  onClick={() => setRating(p.id, r)}>
-                  ★
+        {starters.map(p => {
+          const isNs = nsSet.has(p.id);
+          const isMotm = motm === p.id;
+          const val = votes[p.id]; // undefined si pas encore noté
+          return (
+            <div className={`vote-row ${val !== undefined ? 'done' : ''} ${isNs ? 'ns' : ''}`} key={p.id}>
+              <div className="vote-row-top">
+                <div className="vote-row-pl">
+                  <div className="vote-pl-avatar">
+                    {p.photo ? <img src={p.photo} alt=""/> : <span>{p.first?.[0]}{p.last?.[0]}</span>}
+                  </div>
+                  <div className="vote-pl-info">
+                    <b>#{p.num} {p.first} {p.last}</b>
+                    <em>{POSITION_LABEL[p.pos] || p.pos}{p.goals > 0 ? ` · ⚽ ${p.goals}` : ''}</em>
+                  </div>
+                </div>
+                <button
+                  className={`vote-motm-btn ${isMotm ? 'on' : ''}`}
+                  onClick={() => !isNs && toggleMotm(p.id)}
+                  title={isMotm ? 'Retirer MOTM' : 'Élire Homme du match'}
+                  disabled={isNs}
+                >
+                  {isMotm ? '★' : '☆'}
                 </button>
-              ))}
+              </div>
+
+              {isNs ? (
+                <div className="vote-row-ns-bar">
+                  <span className="vote-ns-label">Pas vu jouer (NS)</span>
+                  <button className="vote-ns-cancel" onClick={() => toggleNs(p.id)}>Annuler</button>
+                </div>
+              ) : (
+                <div className="vote-row-rating">
+                  <button className="vote-ns-btn" onClick={() => toggleNs(p.id)} title="Pas vu jouer">NS</button>
+                  <input
+                    type="range" min="0" max="10" step="0.5"
+                    className="vote-slider"
+                    value={val ?? 5}
+                    onPointerDown={() => { if (val === undefined) setRating(p.id, 5); }}
+                    onChange={e => setRating(p.id, parseFloat(e.target.value))}
+                  />
+                  <span className={`vote-val ${val !== undefined ? 'set' : ''}`}>
+                    {val !== undefined ? val.toFixed(1) : '—'}
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="vote-submit">
         <button className="btn-cta" disabled={!allRated || sending} onClick={submitVote}>
           {sending ? <span>Envoi en cours…</span>
                    : allRated ? <><span>ENVOYER MES NOTES</span><span className="arr">→</span></>
-                              : <span>Note tous les joueurs pour valider</span>}
+                              : <span>Note tous les joueurs pour valider ({treated}/{starters.length})</span>}
         </button>
         {sendError && (
           <div style={{textAlign:"center", marginTop:8, color:"#ff8a8a", fontSize:12}}>

@@ -642,9 +642,12 @@ function ScreenFicheMatch({ go, tweaks }) {
           const myShort = m.home || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
           const myColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
           const myClubId = window.CDD?.getActiveClub?.()?.id;
-          const homeName = m.venue === "H" ? myShort : m.opp;
-          const awayName = m.venue === "H" ? m.opp   : myShort;
-          const homeIsMe = m.venue === "H";
+          // venue='H' = domicile, 'E' = extérieur, '?' = matchs coach sans info venue
+          // Pour '?' : score[0] = sA = notre score → on s'affiche à gauche (homeIsMe=true)
+          // Pour 'E' (FFF) : score[0] = score de l'équipe domicile = adversaire → ils sont à gauche
+          const homeIsMe = m.venue !== "E";
+          const homeName = homeIsMe ? myShort : m.opp;
+          const awayName = homeIsMe ? m.opp   : myShort;
           return (
             <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:12, fontSize:18, fontWeight:700, flexWrap:'wrap'}}>
               {window.ClubBadge && (

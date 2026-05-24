@@ -159,7 +159,7 @@ function watchConvocResponses(matchId, callback) {
 
 /* ---------- API Vote post-match ---------- */
 
-async function sendVote(matchId, voterId, ratings) {
+async function sendVote(matchId, voterId, ratings, meta = {}) {
   if (!db) throw new Error('Firestore non initialisé');
   if (!matchId || !voterId || !ratings) throw new Error('matchId/voterId/ratings requis');
 
@@ -167,13 +167,14 @@ async function sendVote(matchId, voterId, ratings) {
     voters: {
       [voterId]: {
         ratings,
+        ...meta,
         ts: serverTimestamp()
       }
     }
   }, { merge: true });
 
   try {
-    localStorage.setItem(`cdd_v2_vote_${matchId}_${voterId}`, JSON.stringify({ ratings, ts: Date.now() }));
+    localStorage.setItem(`cdd_v2_vote_${matchId}_${voterId}`, JSON.stringify({ ratings, ...meta, ts: Date.now() }));
   } catch (e) {}
 }
 

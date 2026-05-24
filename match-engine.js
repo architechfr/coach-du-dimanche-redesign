@@ -404,7 +404,7 @@ function listCoachFinishedMatches() {
         if (!m || (m.st !== 'finished' && !m.endedAt)) continue;
         if (activeClub && m.clubId && m.clubId !== activeClub) continue;
         const sA = m.sA || 0, sB = m.sB || 0;
-        const result = sA > sB ? 'V' : sA < sB ? 'D' : 'N';
+        const result = sA > sB ? 'W' : sA < sB ? 'L' : 'D';
         const endedAt = m.endedAt || m.savedAt || 0;
         const date = endedAt
           ? new Date(endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
