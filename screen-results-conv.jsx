@@ -497,18 +497,35 @@ function ScreenConvocations({ go, tweaks }) {
             <span>📅 {next.date}</span>
             <span>🏟️ {next.venue}</span>
           </div>
-          <div className="cv-hero-share" style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-            <button className="btn-cta" onClick={() => go("share")}>
-              ↗ PARTAGER AUX PARENTS
-            </button>
-            <button className="btn-cta" onClick={() => go("match-lineup")}
-                    style={{background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.14)'}}>
-              🎯 COMPO DU MATCH
-            </button>
-            <button className="btn-cta" onClick={() => go("tv-match")}
-                    style={{background:'rgba(249,115,22,.12)', border:'1px solid rgba(249,115,22,.40)', color:'#f97316'}}>
-              👟 MODE VESTIAIRE
-            </button>
+          <div style={{display:'flex', flexDirection:'column', gap:8, width:'100%'}}>
+            <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+              <button className="btn-cta" onClick={() => go("share")}>
+                ↗ PARTAGER AUX PARENTS
+              </button>
+              <button className="btn-cta" onClick={() => go("match-lineup")}
+                      style={{background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.14)'}}>
+                🎯 COMPO DU MATCH
+              </button>
+              <button className="btn-cta" onClick={() => go("tv-match")}
+                      style={{background:'rgba(249,115,22,.12)', border:'1px solid rgba(249,115,22,.40)', color:'#f97316'}}>
+                👟 MODE VESTIAIRE
+              </button>
+            </div>
+            {/* Phase 1E — Coup d'envoi direct depuis Convocations */}
+            {canEdit && (
+              <button
+                onClick={() => go("match")}
+                style={{
+                  width:'100%', padding:'11px 16px', borderRadius:10,
+                  background:'linear-gradient(135deg, rgba(200,241,105,0.18) 0%, rgba(200,241,105,0.08) 100%)',
+                  border:'1px solid rgba(200,241,105,0.50)',
+                  color:'#c8f169', fontWeight:800, fontSize:14,
+                  letterSpacing:'.06em', cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                }}>
+                🏁 LANCER LE MATCH
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -85,10 +85,31 @@ function buildDefaultTeams() {
     num: p.num, first: p.first, last: p.last, id: p.id, onField,
   });
 
+  let starters = null, bench = null;
+
+  // Priorité 0 (Phase 1E) : cdd_match_lineup[teamId][matchId] — compo de
+  // match posée depuis la page Convocations. Prend le dessus sur la compo
+  // type et sur CDD_CONVO : c'est la intention explicite du coach pour CE match.
+  try {
+    const activeTeam = window.CDD?.getActiveTeam?.();
+    const matchId = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+    if (activeTeam) {
+      const allM = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+      const ml = allM[activeTeam.id]?.[matchId];
+      if (ml && ml.starters) {
+        const idsInOrder = Object.keys(ml.starters).sort((a,b) => +a - +b).map(k => ml.starters[k]);
+        const matchStarters = idsInOrder.map(byId).filter(Boolean);
+        if (matchStarters.length > 0) {
+          starters = matchStarters;
+          bench    = (ml.bench || []).map(byId).filter(Boolean);
+        }
+      }
+    }
+  } catch (e) {}
+
   // Priorité 1 : CDD_CONVO (overlay convocation match, calculé par data-bridge)
   const conv = window.CDD_CONVO;
-  let starters = null, bench = null;
-  if (conv && Array.isArray(conv.starters) && conv.starters.length > 0) {
+  if ((!starters || starters.length === 0) && conv && Array.isArray(conv.starters) && conv.starters.length > 0) {
     starters = conv.starters.map(byId).filter(Boolean);
     bench    = (conv.bench || []).map(byId).filter(Boolean);
   }
