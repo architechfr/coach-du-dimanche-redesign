@@ -349,6 +349,34 @@ service cloud.firestore {
         && canEditTeam(resource.data.clubId, resource.data.teamId);
     }
 
+    // ═══ /friendly_matches/{matchId}  (id = 'fr_<random>') ═══════════
+    // Matchs amicaux hors-championnat (2026-05-24). Le calendrier FFF ne
+    // liste que les matchs officiels — les amicaux (prépa, tournoi, jubilé…)
+    // sont créés manuellement par le coach.
+    //
+    // Champs : { id, teamId, clubId, date, time, opponent, venue, isAmical }
+    //
+    // Lecture : tout membre du club. Écriture : coach/owner/adjoint.
+    match /friendly_matches/{matchId} {
+      allow read:   if isSignedIn() && canReadClub(resource.data.clubId);
+      allow create: if isSignedIn()
+        && canEditTeam(request.resource.data.clubId,
+                       request.resource.data.teamId)
+        && isString(request.resource.data.id)
+        && isString(request.resource.data.teamId)
+        && isString(request.resource.data.clubId)
+        && matchId == request.resource.data.id
+        && request.resource.data.size() <= 12;
+      allow update: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.size() <= 12;
+      allow delete: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  COLLECTIONS EXISTANTES — conservées telles quelles (ne pas casser)
     // ═══════════════════════════════════════════════════════════════

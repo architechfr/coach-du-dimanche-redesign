@@ -896,6 +896,39 @@ async function deleteJerseyNumbers(teamId, matchId) {
   return { ok: true };
 }
 
+// ─── Matchs amicaux (hors-championnat) ───
+// Storage local : cdd_friendly_matches[teamId][] (voir friendly-matches.js).
+// Cloud : collection friendly_matches, id = match.id (préfixe 'fr_*').
+async function saveFriendlyMatch(match) {
+  if (!db || !match || !match.id || !match.teamId) return { ok: false, reason: 'no-db' };
+  await setDoc(doc(db, 'friendly_matches', String(match.id)), {
+    id: String(match.id),
+    teamId: String(match.teamId),
+    clubId: match.clubId ? String(match.clubId) : null,
+    date: match.date || '',
+    time: match.time || '',
+    opponent: match.opponent || '',
+    venue: match.venue || 'H',
+    isAmical: true,
+    updatedAt: serverTimestamp(),
+    updatedBy: _uid(),
+  }, { merge: true });
+  return { ok: true };
+}
+async function fetchFriendlyMatches(clubId) {
+  if (!db || !clubId) return [];
+  const q = query(collection(db, 'friendly_matches'), where('clubId', '==', String(clubId)));
+  const snap = await getDocs(q);
+  const out = [];
+  snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+  return out;
+}
+async function deleteFriendlyMatch(matchId) {
+  if (!db || !matchId) return { ok: false };
+  try { await deleteDoc(doc(db, 'friendly_matches', String(matchId))); } catch (e) {}
+  return { ok: true };
+}
+
 // Push EN BLOC de tous les overrides locaux (stats, profils, notes, perf
 // deltas) vers Firestore. Utile pour les cas où le coach a édité des
 // joueurs avant que la sync Firestore n'existe (overrides pre-v62) — ces
@@ -1425,6 +1458,8 @@ async function pullCloudData() {
   // Numéros maillots match-specific — collection match_jerseys
   // → localStorage cdd_match_jersey_numbers[teamId][matchId][pid].
   const rawJerseyNumbers    = [];
+  // Matchs amicaux — collection friendly_matches → cdd_friendly_matches[teamId][]
+  const rawFriendlyMatches  = [];
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
@@ -1492,6 +1527,25 @@ async function pullCloudData() {
           }
         });
       } catch (e) { console.warn('[cddData] pull match_jerseys', cid, e.message); }
+      // Matchs amicaux (collection friendly_matches)
+      try {
+        const fmList = await fetchFriendlyMatches(cid);
+        fmList.forEach(fm => {
+          if (fm && fm.id && fm.teamId) {
+            rawFriendlyMatches.push({
+              id: fm.id,
+              teamId: fm.teamId,
+              clubId: fm.clubId || null,
+              date: fm.date || '',
+              time: fm.time || '',
+              opponent: fm.opponent || '',
+              venue: fm.venue || 'H',
+              isAmical: true,
+              updatedAt: fm.updatedAt || null,
+            });
+          }
+        });
+      } catch (e) { console.warn('[cddData] pull friendly_matches', cid, e.message); }
     } catch (e) { console.warn('[cddData] pull club', cid, e.message); }
   }
 
@@ -1808,6 +1862,39 @@ async function pullCloudData() {
     }
   } catch (e) {}
 
+  // Sync MATCHS AMICAUX depuis le cloud — LWW par id (qui est unique).
+  // Local : cdd_friendly_matches[teamId] = [ { id, ... } ].
+  // On fusionne : tout id cloud absent en local est ajouté, et si l'id existe
+  // en local, on garde la version la plus récente (updatedAt).
+  try {
+    if (rawFriendlyMatches.length) {
+      const allFm = JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}');
+      let dirty = false;
+      rawFriendlyMatches.forEach(({ id, teamId, clubId, date, time, opponent, venue, updatedAt }) => {
+        if (!id || !teamId) return;
+        const cloudMs = updatedAt && typeof updatedAt.toMillis === 'function'
+          ? updatedAt.toMillis()
+          : (typeof updatedAt === 'number' ? updatedAt : 0);
+        if (!allFm[teamId]) allFm[teamId] = [];
+        const i = allFm[teamId].findIndex(m => m.id === id);
+        const local = i >= 0 ? allFm[teamId][i] : null;
+        const localMs = local?.updatedAt || 0;
+        if (local && localMs > cloudMs && localMs > 0) return; // local plus récent
+        const entry = {
+          id, teamId, clubId: clubId || null,
+          date, time, opponent, venue,
+          isAmical: true,
+          createdAt: local?.createdAt || cloudMs || Date.now(),
+          updatedAt: cloudMs || Date.now(),
+        };
+        if (i >= 0) allFm[teamId][i] = entry;
+        else allFm[teamId].push(entry);
+        dirty = true;
+      });
+      if (dirty) localStorage.setItem('cdd_friendly_matches', JSON.stringify(allFm));
+    }
+  } catch (e) {}
+
   // Écriture du cache local (source que lit l'adaptateur synchrone).
   try {
     localStorage.setItem('arb_clubs', JSON.stringify(mergedClubs));
@@ -2085,6 +2172,7 @@ window.cddData = {
   saveMatchLineup, fetchMatchLineups, deleteMatchLineup,
   saveMatchInfo, fetchMatchInfos, deleteMatchInfo,
   saveJerseyNumbers, fetchJerseyNumbers, deleteJerseyNumbers,
+  saveFriendlyMatch, fetchFriendlyMatches, deleteFriendlyMatch,
   pushAllLocalOverrides,
   saveClubLogoBase64,
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)

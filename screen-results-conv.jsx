@@ -7,19 +7,33 @@
 function ScreenResults({ go, tweaks }) {
   const [tab, setTab] = useState("classement");
   const [, forceUpdate] = useState({});
+  // Modale création/édition d'un match amical (depuis l'onglet Amicaux)
+  const [friendlyModal, setFriendlyModal] = useState(null); // null | { mode: 'create'|'edit', match? }
 
-  // Re-render when FFF data lands
+  // Re-render when FFF data lands or friendly matches change
   useEffect(() => {
     const handler = () => forceUpdate({});
     window.addEventListener('cdd-fff-loaded', handler);
     window.addEventListener('cdd-fff-loading', handler);
     window.addEventListener('cdd-fff-error', handler);
+    window.addEventListener('cdd-friendly-changed', handler);
     return () => {
       window.removeEventListener('cdd-fff-loaded', handler);
       window.removeEventListener('cdd-fff-loading', handler);
       window.removeEventListener('cdd-fff-error', handler);
+      window.removeEventListener('cdd-friendly-changed', handler);
     };
   }, []);
+
+  // Helpers pour l'onglet Amicaux
+  const _activeTeamRes = window.CDD?.getActiveTeam?.() || {};
+  const _teamIdRes = _activeTeamRes.id;
+  const _clubIdRes = _activeTeamRes.clubId || null;
+  const _canEditRes = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('compo');
+  const friendlyList = _teamIdRes && window.CDD_FRIENDLY?.list
+    ? window.CDD_FRIENDLY.list(_teamIdRes)
+    : [];
 
   const isLoading = window.CDD_FFF_LOADING;
   const fffCfg = CDD_CLUB?.fff;
@@ -76,6 +90,7 @@ function ScreenResults({ go, tweaks }) {
           {id:"classement", l:"Classement"},
           {id:"calendrier", l:"Calendrier"},
           {id:"buteurs",    l:"Buteurs"},
+          {id:"amicaux",    l:"🤝 Amicaux"},
         ].map(t => (
           <button key={t.id} className={`rs-tab ${tab===t.id?"on":""}`} onClick={()=>setTab(t.id)}>{t.l}</button>
         ))}
@@ -219,6 +234,106 @@ function ScreenResults({ go, tweaks }) {
             </div>
           ))}
         </div>
+      )}
+
+      {tab === "amicaux" && (
+        <div className="rs-cal" style={{padding:'0 14px'}}>
+          {/* Header + bouton + Match amical */}
+          {_canEditRes && (
+            <button onClick={() => setFriendlyModal({ mode: 'create' })}
+                    style={{
+                      width:'100%', padding:'11px 14px', borderRadius:10,
+                      background:'rgba(168,85,247,0.10)', color:'#c4b5fd',
+                      border:'1px dashed rgba(168,85,247,0.40)',
+                      cursor:'pointer', fontWeight:800, fontSize:13,
+                      letterSpacing:'.04em', marginBottom:12,
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                    }}>
+              <span>🤝</span><span>+ AJOUTER UN MATCH AMICAL</span>
+            </button>
+          )}
+
+          {/* Liste des amicaux */}
+          {friendlyList.length === 0 ? (
+            <div className="rs-cal-empty">
+              <div className="rs-cal-empty-ic">🤝</div>
+              <div className="rs-cal-empty-t">Aucun match amical</div>
+              <div className="rs-cal-empty-d">
+                Les matchs amicaux (préparation, tournoi, jubilé…) ne sont pas dans
+                le calendrier FFF. Ajoute-les ici pour les retrouver dans Convocations.
+              </div>
+            </div>
+          ) : (
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              {friendlyList.map(m => {
+                const past = m.date && m.date < new Date().toISOString().slice(0, 10);
+                const dDisp = (() => {
+                  const r = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.date || '');
+                  return r ? (r[3] + '/' + r[2] + '/' + r[1]) : (m.date || '');
+                })();
+                return (
+                  <div key={m.id} style={{
+                    padding:'12px 14px', borderRadius:10,
+                    background: past ? 'rgba(255,255,255,0.02)' : 'rgba(168,85,247,0.06)',
+                    border: '1px solid ' + (past ? 'rgba(255,255,255,0.06)' : 'rgba(168,85,247,0.25)'),
+                    opacity: past ? 0.7 : 1,
+                    display:'flex', gap:10, alignItems:'center',
+                  }}>
+                    <div style={{
+                      width:42, textAlign:'center', flexShrink:0,
+                      borderRight:'1px solid rgba(255,255,255,0.08)', paddingRight:10,
+                    }}>
+                      <div style={{fontSize:18, fontWeight:900, lineHeight:1, color:'#c4b5fd'}}>
+                        {dDisp.slice(0,2)}
+                      </div>
+                      <div style={{fontSize:9.5, fontWeight:700, opacity:0.65, marginTop:3, letterSpacing:'.04em'}}>
+                        {dDisp.slice(3,5)}/{dDisp.slice(6,10)}
+                      </div>
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:13, fontWeight:800, color:'#fff', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                        <span style={{
+                          fontSize:9, padding:'2px 6px', borderRadius:5,
+                          background:'rgba(168,85,247,0.20)', color:'#c4b5fd',
+                          border:'1px solid rgba(168,85,247,0.40)', fontWeight:800,
+                          letterSpacing:'.06em',
+                        }}>AMICAL</span>
+                        <span>{m.venue === 'H' ? '🏠 vs' : '🚗 @'} {m.opponent || 'Adversaire'}</span>
+                      </div>
+                      <div style={{fontSize:11, opacity:0.65, marginTop:3, display:'flex', gap:8}}>
+                        {m.time && <span>🕐 {m.time}</span>}
+                        {past && <span style={{color:'rgba(255,255,255,0.5)'}}>· terminé</span>}
+                      </div>
+                    </div>
+                    {_canEditRes && (
+                      <button onClick={() => setFriendlyModal({ mode: 'edit', match: m })}
+                              title="Éditer ce match amical"
+                              style={{
+                                padding:'6px 10px', borderRadius:8, cursor:'pointer',
+                                background:'rgba(255,255,255,0.05)', color:'#c4b5fd',
+                                border:'1px solid rgba(168,85,247,0.30)',
+                                fontSize:11, fontWeight:700, flexShrink:0,
+                              }}>
+                        ✎
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modale création/édition d'un match amical depuis l'onglet Amicaux */}
+      {friendlyModal && window.FriendlyMatchModal && _teamIdRes && (
+        <window.FriendlyMatchModal
+          teamId={_teamIdRes}
+          clubId={_clubIdRes}
+          existing={friendlyModal.mode === 'edit' ? friendlyModal.match : null}
+          onClose={() => setFriendlyModal(null)}
+          onSaved={() => setFriendlyModal(null)}
+        />
       )}
     </div>
   );
