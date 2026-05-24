@@ -509,7 +509,7 @@ function ScreenHome({ go, tweaks }) {
           const resultFR = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : m.result === 'D' ? 'N' : m.result;
           return (
             <button className={`lm-card lm-${(m.result || '').toLowerCase()}`} key={m.id || i}
-                    onClick={() => go("fiche-match")}>
+                    onClick={() => go("fiche-match", m)}>
               <div className="lm-result"><FormDot r={resultFR} big/></div>
               <div className="lm-main">
                 <div className="lm-opp">

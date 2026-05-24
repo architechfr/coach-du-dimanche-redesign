@@ -229,6 +229,7 @@ function App() {
   const [screen, setScreen] = useState(initialScreen);
   const [stack, setStack] = useState([initialScreen]);
   const [currentPlayer, setCurrentPlayer] = useState(null);
+  const [currentMatch,  setCurrentMatch]  = useState(null);
   const [screenMenuOpen, setScreenMenuOpen] = useState(false);
 
   // Apply tweaks
@@ -284,6 +285,7 @@ function App() {
       return;
     }
     if ((id === "fiche" || id === "carnet") && payload) setCurrentPlayer(payload);
+    if (id === "fiche-match" && payload) setCurrentMatch(payload);
     setScreen(id);
     setStack(s => [...s.slice(-3), id]);
     setScreenMenuOpen(false);
@@ -479,7 +481,7 @@ function App() {
             {screen === "results"      && <ScreenResults go={go} tweaks={t}/>}
             {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}
             {screen === "fiche"        && <ScreenFiche go={go} tweaks={t} player={currentPlayer}/>}
-            {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t}/>}
+            {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t} match={currentMatch}/>}
             {screen === "tv"           && <ScreenTV go={go} tweaks={t}/>}
             {screen === "tv-match"     && <ScreenTV go={go} tweaks={t} source="match"
               matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}/>}
@@ -606,9 +608,9 @@ function App() {
 // ============================================================
 // SCREEN — Feuille de match (récap dernier match terminé)
 // ============================================================
-function ScreenFicheMatch({ go, tweaks }) {
+function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
   const matches = (window.CDD_LAST_MATCHES || []).filter(m => m.played);
-  const m = matches[0]; // dernier match terminé
+  const m = matchProp || matches[0]; // match sélectionné ou dernier par défaut
   if (!m) {
     return (
       <div className="scr fade-in" style={{padding:"40px 20px", textAlign:"center"}}>
