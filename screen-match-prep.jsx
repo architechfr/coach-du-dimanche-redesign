@@ -74,8 +74,14 @@ function ScreenMatchPrep({ go, tweaks }) {
   const hasEnoughResponses = convoIds.length > 0 && respPct >= 80;
 
   // Capacité d'édition
-  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+  const _baseCanEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
     || window.CDD_ROLES.canDo('compo');
+  // VERROU pendant match en cours : les actions "préparation" (infos, compo,
+  // numéros, lancer) sont gelées pour éviter d'écraser le live qui tourne.
+  const _liveMatch = (window.MATCH_HELPERS && window.MATCH_HELPERS.getLiveMatch)
+    ? window.MATCH_HELPERS.getLiveMatch() : null;
+  const _matchInProgress = !!_liveMatch;
+  const canEdit = _baseCanEdit && !_matchInProgress;
 
   // ── Helpers UI ────────────────────────────────────────────────
   const ChecklistItem = ({ ic, label, sub, done, onClick }) => (
@@ -151,6 +157,30 @@ function ScreenMatchPrep({ go, tweaks }) {
 
   return (
     <div className="scr scr-prep fade-in" data-screen-label="Page match">
+
+      {/* Bandeau VERROUILLAGE — un match est lancé, on bascule sur le live */}
+      {_matchInProgress && _baseCanEdit && (
+        <div style={{
+          margin:'10px 14px 0', padding:'11px 14px', borderRadius:10,
+          background:'rgba(249,115,22,0.10)',
+          border:'1px solid rgba(249,115,22,0.45)',
+          color:'#fbbf24', fontSize:12.5, fontWeight:700,
+          display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+        }}>
+          <span style={{fontSize:18}}>🔒</span>
+          <span style={{flex:1, minWidth:0}}>
+            <b>Match en cours</b> — la préparation est verrouillée. Termine le match d'abord.
+          </span>
+          <button type="button" onClick={() => go && go('match')}
+            style={{
+              padding:'7px 12px', borderRadius:7, cursor:'pointer',
+              background:'rgba(249,115,22,0.18)', color:'#fbbf24',
+              border:'1px solid rgba(249,115,22,0.40)',
+              fontSize:11.5, fontWeight:800, fontFamily:'inherit',
+              whiteSpace:'nowrap',
+            }}>▶ Aller au match</button>
+        </div>
+      )}
 
       {/* HEADER — Match info */}
       <div className="cv-hero">

@@ -417,8 +417,14 @@ function ScreenLineup({ go, tweaks, matchId }) {
   // #C5 — composer l'équipe = capacité 'compo'. Parent / joueur / lecteur
   // consultent la compo sans pouvoir la modifier. Fallback éditable si le
   // module rôles n'est pas chargé (ne jamais bloquer le coach).
-  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+  const _baseCanEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
     || window.CDD_ROLES.canDo('compo');
+  // VERROU pendant match en cours : on ne touche pas à la compo "préparation"
+  // pendant que le chrono tourne. Cohérence avec screen-results-conv.jsx.
+  const _liveMatch = (window.MATCH_HELPERS && window.MATCH_HELPERS.getLiveMatch)
+    ? window.MATCH_HELPERS.getLiveMatch() : null;
+  const _matchInProgress = !!_liveMatch;
+  const canEdit = _baseCanEdit && !_matchInProgress;
 
   // Garde-fou : si lineup.formation est inconnue, prendre 4-3-3 par défaut (12 emplacements)
   const slots = CDD_FORMATIONS[lineup.formation] || CDD_FORMATIONS['4-3-3'];
@@ -673,6 +679,30 @@ function ScreenLineup({ go, tweaks, matchId }) {
 
   return (
     <div className="scr scr-lineup fade-in" data-screen-label="03 Lineup">
+
+      {/* Bandeau VERROUILLAGE — match en cours, compo verrouillée. */}
+      {_matchInProgress && _baseCanEdit && (
+        <div style={{
+          margin:'10px 14px 0', padding:'11px 14px', borderRadius:10,
+          background:'rgba(249,115,22,0.10)',
+          border:'1px solid rgba(249,115,22,0.45)',
+          color:'#fbbf24', fontSize:12.5, fontWeight:700,
+          display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+        }}>
+          <span style={{fontSize:18}}>🔒</span>
+          <span style={{flex:1, minWidth:0}}>
+            <b>Match en cours</b> — la compo est verrouillée jusqu'à la fin du match.
+          </span>
+          <button type="button" onClick={() => go && go('match')}
+            style={{
+              padding:'7px 12px', borderRadius:7, cursor:'pointer',
+              background:'rgba(249,115,22,0.18)', color:'#fbbf24',
+              border:'1px solid rgba(249,115,22,0.40)',
+              fontSize:11.5, fontWeight:800, fontFamily:'inherit',
+              whiteSpace:'nowrap',
+            }}>▶ Aller au match</button>
+        </div>
+      )}
 
       {/* Bandeau d'identité écran : orange en mode match, vert en mode compo type. */}
       {isMatchMode ? (

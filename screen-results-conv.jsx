@@ -464,8 +464,15 @@ function ScreenConvocations({ go, tweaks }) {
   // #C5 — modifier la convocation/compo = capacité 'compo' ; changer un
   // statut = 'effectif'. Les deux couvrent le même périmètre de rôles
   // (coach principal + adjoint), donc un seul booléen suffit ici.
-  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+  const _baseCanEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
     || window.CDD_ROLES.canDo('compo');
+  // VERROU : si un match est déjà LANCÉ (chrono en cours), on bloque
+  // toute édition de la convoc/compo. Sinon le coach pourrait ressaisir
+  // une compo "préparation" pendant que le live tourne → incohérent.
+  const _liveMatch = (window.MATCH_HELPERS && window.MATCH_HELPERS.getLiveMatch)
+    ? window.MATCH_HELPERS.getLiveMatch() : null;
+  const _matchInProgress = !!_liveMatch;
+  const canEdit = _baseCanEdit && !_matchInProgress;
 
   const addPlayer = (pid) => {
     // Log de traçabilité pour diagnostiquer pourquoi l'ajout peut échouer
@@ -756,6 +763,36 @@ function ScreenConvocations({ go, tweaks }) {
 
   return (
     <div className="scr scr-conv fade-in" data-screen-label="07 Convocations">
+
+      {/* Bandeau VERROUILLAGE — affiché si un match est en cours.
+          Empêche le coach de modifier la convoc pendant le live, ce qui
+          mettrait la compo "préparation" en incohérence avec le terrain. */}
+      {_matchInProgress && _baseCanEdit && (
+        <div style={{
+          margin:'10px 14px', padding:'11px 14px', borderRadius:10,
+          background:'rgba(249,115,22,0.10)',
+          border:'1px solid rgba(249,115,22,0.45)',
+          color:'#fbbf24', fontSize:12.5, fontWeight:700,
+          display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+        }}>
+          <span style={{fontSize:18}}>🔒</span>
+          <span style={{flex:1, minWidth:0}}>
+            <b>Match en cours</b> — la convocation est verrouillée jusqu'à la fin du match.
+          </span>
+          <button
+            type="button"
+            onClick={() => go && go('match')}
+            style={{
+              padding:'7px 12px', borderRadius:7, cursor:'pointer',
+              background:'rgba(249,115,22,0.18)', color:'#fbbf24',
+              border:'1px solid rgba(249,115,22,0.40)',
+              fontSize:11.5, fontWeight:800, fontFamily:'inherit',
+              whiteSpace:'nowrap',
+            }}>
+            ▶ Aller au match
+          </button>
+        </div>
+      )}
 
       <div className="cv-hero">
         <div className="cv-hero-bg"/>
