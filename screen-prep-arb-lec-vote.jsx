@@ -1296,6 +1296,13 @@ function ScreenVote({ go, tweaks }) {
             </div>
           )}
           <button className="btn-cta ghost" onClick={() => setSubmitted(false)}>← Modifier mes notes</button>
+          {playedMatches.length > 1 && (
+            <button className="btn-cta ghost"
+              style={{marginTop:8}}
+              onClick={() => { setSubmitted(false); setShowMatchPicker(true); window.scrollTo({top:0, behavior:'smooth'}); }}>
+              → Noter un autre match
+            </button>
+          )}
         </div>
       </div>
     );
