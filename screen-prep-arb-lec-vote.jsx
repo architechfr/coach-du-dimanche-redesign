@@ -372,6 +372,10 @@ function ScreenLecteur({ go, tweaks }) {
   }, [playerId, matchId]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
+  // Mode "édition" : permet de réafficher les 3 boutons après validation.
+  // Reset à false quand on change de joueur ou de match.
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setEditing(false); }, [playerId, matchId]);
   const sendResponse = async (newResp) => {
     setSending(true);
     setSendError(null);
@@ -385,6 +389,7 @@ function ScreenLecteur({ go, tweaks }) {
       setSendError(err.message || 'Erreur envoi');
     } finally {
       setSending(false);
+      setEditing(false);
     }
   };
 
@@ -578,33 +583,55 @@ function ScreenLecteur({ go, tweaks }) {
                     })()}
                   </div>
                 </div>
-                <div className="lec-convo-cta">
-                  <button
-                    className={`lec-btn-resp lec-btn-yes ${resp === 'yes' ? 'on' : ''}`}
-                    disabled={sending}
-                    onClick={() => sendResponse('yes')}>
-                    ✓ JE VIENS
-                  </button>
-                  <button
-                    className={`lec-btn-resp lec-btn-no ${resp === 'no' ? 'on' : ''}`}
-                    disabled={sending}
-                    onClick={() => sendResponse('no')}>
-                    ✕ Absent
-                  </button>
-                  <button
-                    className={`lec-btn-resp lec-btn-may ${resp === 'may' ? 'on' : ''}`}
-                    disabled={sending}
-                    onClick={() => sendResponse('may')}>
-                    ?
-                  </button>
-                </div>
-                {resp && (
-                  <div className="lec-convo-confirm" style={{padding:"10px 14px", textAlign:"center", color:"var(--accent,#c8f169)", fontSize:13, fontWeight:600}}>
-                    {sending ? "Envoi en cours…" :
-                     sendError ? `⚠ ${sendError} (sauvegardé localement)` :
-                     resp === 'yes' ? "✓ Réponse envoyée : présent" :
-                     resp === 'no'  ? "✓ Réponse envoyée : absent" :
-                                      "✓ Réponse envoyée : peut-être"}
+                {/* Tant qu'aucune réponse OU mode édition → 3 boutons.
+                    Sinon → résumé compact + bouton Modifier. */}
+                {(!resp || editing) ? (
+                  <div className="lec-convo-cta">
+                    <button
+                      className={`lec-btn-resp lec-btn-yes ${resp === 'yes' ? 'on' : ''}`}
+                      disabled={sending}
+                      onClick={() => sendResponse('yes')}>
+                      ✓ JE VIENS
+                    </button>
+                    <button
+                      className={`lec-btn-resp lec-btn-no ${resp === 'no' ? 'on' : ''}`}
+                      disabled={sending}
+                      onClick={() => sendResponse('no')}>
+                      ✕ Absent
+                    </button>
+                    <button
+                      className={`lec-btn-resp lec-btn-may ${resp === 'may' ? 'on' : ''}`}
+                      disabled={sending}
+                      onClick={() => sendResponse('may')}>
+                      ?
+                    </button>
+                  </div>
+                ) : (
+                  <div className="lec-convo-confirm" style={{
+                    padding:"12px 14px", display:"flex", alignItems:"center",
+                    gap:10, justifyContent:"space-between", flexWrap:"wrap",
+                  }}>
+                    <span style={{
+                      color:"var(--accent,#c8f169)", fontSize:14, fontWeight:700,
+                    }}>
+                      {sending ? "Envoi en cours…" :
+                       sendError ? `⚠ ${sendError} (sauvegardé localement)` :
+                       resp === 'yes' ? "✓ Réponse envoyée : présent" :
+                       resp === 'no'  ? "✓ Réponse envoyée : absent" :
+                                        "✓ Réponse envoyée : peut-être"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(true)}
+                      style={{
+                        padding:"7px 14px", borderRadius:8, cursor:"pointer",
+                        background:"rgba(255,255,255,0.06)",
+                        border:"1px solid rgba(255,255,255,0.18)",
+                        color:"var(--tx,#fff)", fontSize:12.5, fontWeight:700,
+                        fontFamily:"inherit",
+                      }}>
+                      ✎ Modifier
+                    </button>
                   </div>
                 )}
               </>
