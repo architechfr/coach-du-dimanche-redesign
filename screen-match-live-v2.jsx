@@ -245,37 +245,52 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
       <div className="mv-header-bg"/>
       <div className="mv-header-grad"/>
 
-      {/* Ligne 1 : scoreboard FIFA — Logo+Nom A | SCORE | Logo+Nom B */}
-      <div className="mv-teams-row">
-        <div className="mv-team mv-team-A">
-          <TeamBadgeBig team={M.tA}/>
-          <div className="mv-team-n" style={{
-            fontSize:'clamp(13px, 3.5vw, 18px)', fontWeight:900,
-            letterSpacing:'.02em', lineHeight:1.1,
-          }}>{M.tA.n}</div>
-        </div>
-
-        <div className="mv-score-block">
-          <div className="mv-score-row">
-            <span className="mv-score-num num">{M.sA ?? 0}</span>
-            <span className="mv-score-dash" style={{
-              color:'rgba(255,255,255,0.55)', fontSize:'42px', fontWeight:300,
-              margin:'0 12px', lineHeight:1,
-            }}>–</span>
-            <span className="mv-score-num num">{M.sB ?? 0}</span>
+      {/* Ligne 1 : scoreboard FIFA — Logo+Nom RECEVANT | SCORE | Logo+Nom VISITEUR
+          Convention foot : le club qui RECOIT est toujours à gauche.
+          tA = mon équipe (semantique), tB = adversaire. Si on joue à
+          l'extérieur, mon équipe passe à droite (et le score aussi). */}
+      {(() => {
+        const _isAtHome = (window.CDD_NEXT_MATCH?.venue === 'Domicile');
+        const teamA = (
+          <div className="mv-team mv-team-A">
+            <TeamBadgeBig team={M.tA}/>
+            <div className="mv-team-n" style={{
+              fontSize:'clamp(13px, 3.5vw, 18px)', fontWeight:900,
+              letterSpacing:'.02em', lineHeight:1.1,
+            }}>{M.tA.n}</div>
           </div>
-          {M.notStarted && <div className="mv-live-badge mv-pre" style={{marginTop:6}}>EN ATTENTE · COUP D'ENVOI</div>}
-          {M.st === 'finished' && <div className="mv-live-badge mv-end" style={{marginTop:6}}>MATCH TERMINÉ</div>}
-        </div>
-
-        <div className="mv-team mv-team-B">
-          <TeamBadgeBig team={M.tB}/>
-          <div className="mv-team-n" style={{
-            fontSize:'clamp(13px, 3.5vw, 18px)', fontWeight:900,
-            letterSpacing:'.02em', lineHeight:1.1,
-          }}>{M.tB.n}</div>
-        </div>
-      </div>
+        );
+        const teamB = (
+          <div className="mv-team mv-team-B">
+            <TeamBadgeBig team={M.tB}/>
+            <div className="mv-team-n" style={{
+              fontSize:'clamp(13px, 3.5vw, 18px)', fontWeight:900,
+              letterSpacing:'.02em', lineHeight:1.1,
+            }}>{M.tB.n}</div>
+          </div>
+        );
+        // Score : suit la position physique de chaque équipe.
+        const leftScore  = _isAtHome ? (M.sA ?? 0) : (M.sB ?? 0);
+        const rightScore = _isAtHome ? (M.sB ?? 0) : (M.sA ?? 0);
+        return (
+          <div className="mv-teams-row">
+            {_isAtHome ? teamA : teamB}
+            <div className="mv-score-block">
+              <div className="mv-score-row">
+                <span className="mv-score-num num">{leftScore}</span>
+                <span className="mv-score-dash" style={{
+                  color:'rgba(255,255,255,0.55)', fontSize:'42px', fontWeight:300,
+                  margin:'0 12px', lineHeight:1,
+                }}>–</span>
+                <span className="mv-score-num num">{rightScore}</span>
+              </div>
+              {M.notStarted && <div className="mv-live-badge mv-pre" style={{marginTop:6}}>EN ATTENTE · COUP D'ENVOI</div>}
+              {M.st === 'finished' && <div className="mv-live-badge mv-end" style={{marginTop:6}}>MATCH TERMINÉ</div>}
+            </div>
+            {_isAtHome ? teamB : teamA}
+          </div>
+        );
+      })()}
 
       {/* Ligne 2 : Chrono géant + sous-titres + horodatages + halftime */}
       {showChrono && (
@@ -1403,13 +1418,31 @@ function getYellowsForPlayer(M, t, lbl) {
 // Setup adversaire pré-match (#14)
 // ──────────────────────────────────────────────────────────
 function PreMatchSetup({ M, onStart, rerender, canEdit }) {
-  const [oppName, setOppName] = useStateMV(M.tB?.n || 'Adversaire');
+  // Pré-remplissage intelligent depuis CDD_NEXT_MATCH si dispo :
+  // - nom adversaire (opponentName) → pas besoin de re-saisir
+  // - type de match (isAmical → 'amical', fffMatchId → 'championnat')
+  // Évite la friction "tout ressaisir" quand le match est déjà programmé.
+  const _next = window.CDD_NEXT_MATCH || {};
+  const _autoOpp = (() => {
+    if (M.tB?.n && M.tB.n !== 'Adversaire') return M.tB.n;
+    return _next.opponentName
+        || (_next.venue === 'Domicile' ? _next.away : _next.home)
+        || 'Adversaire';
+  })();
+  const _autoType = (() => {
+    if (M.matchType) return M.matchType;
+    if (M.fffMatchId) return 'championnat';
+    if (_next.isAmical) return 'amical';
+    if (!_next.noUpcoming && _next.opponentName) return 'championnat';
+    return '';
+  })();
+  const [oppName, setOppName] = useStateMV(_autoOpp);
   const [oppColor, setOppColor] = useStateMV(M.tB?.c || '#3b82f6');
   const [oppColor2, setOppColor2] = useStateMV(M.tB?.c2 || '#ffffff');
   const [hd, setHd] = useStateMV(M.cfg?.hd || 45);
   const [htd, setHtd] = useStateMV(M.cfg?.htd || 15);
   const [hs, setHs] = useStateMV(M.cfg?.hs || 2);
-  const [matchType, setMatchType] = useStateMV(M.matchType || (M.fffMatchId ? 'championnat' : ''));
+  const [matchType, setMatchType] = useStateMV(_autoType);
 
   const MATCH_TYPES = [
     { id: 'championnat',  ic: '🏆', label: 'Championnat (FFF)' },
