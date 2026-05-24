@@ -468,6 +468,25 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             </div>
           </button>
 
+          {/* Reconnexion : pour les comptes existants (parent/joueur/adjoint/
+              lecteur déjà rattachés au club). Évite de devoir cliquer 'Je suis
+              coach' quand on n'en est pas un. */}
+          <button onClick={() => setMode('returning-signin')} style={{
+            ...cardBase, marginBottom:10,
+            background:'rgba(125,211,252,0.06)', border:'1px solid rgba(125,211,252,0.30)',
+          }}>
+            <div style={{display:'flex', alignItems:'center', gap:14}}>
+              <span style={{fontSize:32}}>👤</span>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontWeight:900, fontSize:15, color:'#7dd3fc'}}>Je me reconnecte</div>
+                <div style={{fontSize:12, opacity:0.65, marginTop:4, lineHeight:1.4}}>
+                  J'ai déjà un compte (parent, joueur, adjoint, lecteur, coach…)
+                </div>
+              </div>
+              <span style={{opacity:0.5, fontSize:18}}>›</span>
+            </div>
+          </button>
+
           <button onClick={() => alert(
             'Pas encore disponible.\n\nCette app sert à des coachs pour gérer leurs équipes. ' +
             'Si tu cherches à découvrir l\'app, demande un lien à un coach ou crée ton propre club.'
@@ -741,6 +760,70 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             d'invitation personnel</b> (commence par <code>?invite=</code>).
           </div>
 
+        </div>
+      )}
+
+      {/* MODE RETURNING SIGN-IN — reconnexion d'un user existant (peu importe son rôle).
+           Le rôle vient automatiquement du membership Firestore, on ne demande
+           rien d'autre que l'email/Google. */}
+      {mode === 'returning-signin' && (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          <button onClick={() => setMode('home')} style={{
+            background:'transparent', border:'none', color:'rgba(255,255,255,0.6)',
+            cursor:'pointer', textAlign:'left', padding:'4px 0',
+            fontFamily:'inherit', fontSize:13,
+          }}>‹ Retour</button>
+
+          <div style={{fontSize:22, fontWeight:900, marginBottom:4}}>Je me reconnecte</div>
+          <div style={{fontSize:12, opacity:0.65, lineHeight:1.5, marginBottom:6}}>
+            Tu as déjà un compte (parent, joueur, adjoint, lecteur ou coach) ?
+            Connecte-toi avec le même email/Google qu'à ton inscription. Ton rôle
+            et tes rattachements aux clubs/équipes sont restaurés automatiquement.
+          </div>
+
+          {googleButton('lecteur')}
+          {orSep}
+
+          <label style={{display:'flex', flexDirection:'column', gap:6}}>
+            <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
+              TON EMAIL
+            </span>
+            <input value={email} onChange={e => setEmail(e.target.value)}
+                   type="email" placeholder="celui de ton inscription" autoFocus
+                   style={{
+                     padding:'12px 14px', borderRadius:10, fontSize:14,
+                     background:'rgba(255,255,255,0.05)',
+                     border: `1px solid ${emailValid ? 'rgba(255,255,255,0.12)' : 'rgba(239,68,68,0.45)'}`,
+                     color:'#fff', fontFamily:'inherit',
+                   }}/>
+            {!emailValid && (
+              <span style={{fontSize:11, color:'#ff8a8a'}}>⚠ Format email invalide</span>
+            )}
+          </label>
+
+          <button onClick={() => {
+                    const eClean = email.trim().toLowerCase();
+                    if (!eClean) { alert('Email requis.'); return; }
+                    if (!emailValid) { alert('Format email invalide.'); return; }
+                    // role='lecteur' est un fallback minimal : si l'user a déjà un
+                    // membership, son rôle réel est restauré depuis Firestore.
+                    sendMagicLink(eClean, eClean.split('@')[0], 'lecteur');
+                  }}
+                  disabled={!email.trim() || !emailValid || sending}
+                  className="btn-cta"
+                  style={{marginTop:4, opacity: (!email.trim() || !emailValid || sending) ? 0.5 : 1}}>
+            {sending ? 'ENVOI EN COURS…' : 'RECEVOIR MON LIEN DE CONNEXION →'}
+          </button>
+
+          <div style={{
+            marginTop:10, padding:'10px 12px', borderRadius:9,
+            background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+            fontSize:11, opacity:0.7, lineHeight:1.55,
+          }}>
+            💡 <b>Pas encore de compte ?</b><br/>
+            Reviens à l'écran précédent et choisis « Je suis coach » (pour créer
+            un club) ou « J'ai reçu un lien » (si ton coach t'a invité).
+          </div>
         </div>
       )}
 
