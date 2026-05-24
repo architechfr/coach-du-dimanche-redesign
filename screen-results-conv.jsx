@@ -751,8 +751,11 @@ function ScreenConvocations({ go, tweaks }) {
 
       {/* Carte récap des infos pratiques du match — visible si renseignées ou
           avertissement si vides (gating UX pour pousser le coach à les saisir
-          AVANT d'envoyer la convocation). */}
+          AVANT d'envoyer la convocation).
+          ⚠ Affichée uniquement s'il y a un VRAI match programmé (pas si placeholder). */}
       {(() => {
+        const _isPlaceholderMatch = !!(next && (next.noUpcoming || !next.away || next.away === 'À déterminer'));
+        if (_isPlaceholderMatch) return null; // pas de match → pas d'infos à demander
         const _mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
         const info = (teamId && window.CDD_MATCH_INFO?.get?.(teamId, _mid)) || null;
         const hasInfo = teamId && window.CDD_MATCH_INFO?.hasAny?.(teamId, _mid);

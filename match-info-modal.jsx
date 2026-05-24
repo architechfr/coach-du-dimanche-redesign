@@ -23,16 +23,27 @@ function MatchInfoModal({ teamId, matchId, matchLabel, onClose, onSaved }) {
       carpool:  { enabled: false, place: '', time: '', note: '' },
       notes:    '',
     };
-    // Pré-remplir le stade depuis le club si match à domicile ET stade vide.
-    // Heuristique simple : on regarde CDD_NEXT_MATCH.venue (Domicile/Extérieur).
+    let working = stored;
     try {
       const nextMatch = window.CDD_NEXT_MATCH || {};
-      const isHome = (nextMatch.venue === 'Domicile')
-                  || (nextMatch.isAmical && nextMatch.venue === 'Domicile');
+      const isHome = (nextMatch.venue === 'Domicile');
+      const myClubName = (window.CDD_CLUB && (window.CDD_CLUB.name || window.CDD_CLUB.short)) || '';
+      // Pré-remplir le nom de l'adversaire depuis CDD_NEXT_MATCH si vide.
+      // L'adversaire est dans next.away si on est à domicile, sinon next.home.
+      // On évite de mettre son propre nom de club s'il apparaît côté away/home.
+      const opponentName = isHome ? (nextMatch.away || '') : (nextMatch.home || '');
+      if (opponentName && !working.opponent.name && opponentName !== myClubName) {
+        working = { ...working, opponent: { ...working.opponent, name: opponentName } };
+      }
+      // Pré-remplir le coup d'envoi depuis next.time si dispo et vide.
+      if (nextMatch.time && !working.kickoff) {
+        working = { ...working, kickoff: nextMatch.time };
+      }
+      // Pré-remplir le stade depuis le club si match à domicile ET stade vide.
       const clubStadium = window.CDD_CLUB?.stadium;
-      if (isHome && clubStadium && !stored.stadium.name && !stored.stadium.address) {
-        return {
-          ...stored,
+      if (isHome && clubStadium && !working.stadium.name && !working.stadium.address) {
+        working = {
+          ...working,
           stadium: {
             name:    clubStadium.name    || '',
             address: clubStadium.address || '',
@@ -40,7 +51,7 @@ function MatchInfoModal({ teamId, matchId, matchLabel, onClose, onSaved }) {
         };
       }
     } catch (e) {}
-    return stored;
+    return working;
   });
   const [savedFlash, setSavedFlash] = React.useState(false);
 
