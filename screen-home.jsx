@@ -513,7 +513,9 @@ function ScreenHome({ go, tweaks }) {
               <div className="lm-result"><FormDot r={resultFR} big/></div>
               <div className="lm-main">
                 <div className="lm-opp">
-                  <span className="lm-venue">{m.venue}</span>
+                  {(m.venue === 'H' || m.venue === 'E') && (
+                    <span className="lm-venue">{m.venue}</span>
+                  )}
                   <span className="lm-club">{m.opp}</span>
                 </div>
                 <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
@@ -530,7 +532,12 @@ function ScreenHome({ go, tweaks }) {
                 </div>
               </div>
               <div className="lm-score num">
-                <span>{m.score[0]}</span><i>–</i><span>{m.score[1]}</span>
+                {(() => {
+                  // score[0]=home, score[1]=away en FFF ; score[0]=nous en matchs coach
+                  // On veut toujours "notre score – leur score"
+                  const [us, them] = m.venue === 'E' ? [m.score[1], m.score[0]] : [m.score[0], m.score[1]];
+                  return <><span>{us}</span><i>–</i><span>{them}</span></>;
+                })()}
               </div>
               <div className="lm-date">{m.date}</div>
             </button>
