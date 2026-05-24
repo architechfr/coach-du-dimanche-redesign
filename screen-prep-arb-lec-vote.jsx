@@ -1472,11 +1472,34 @@ function ScreenVote({ go, tweaks }) {
         </div>
       </div>
 
-      {motm && (
-        <div className="vote-motm-banner">
-          ★ MOTM sélectionné — tu peux changer en cliquant une autre étoile
+      {/* Rappel contextuel du match — reste visible juste au-dessus de la liste
+          des joueurs, pour qu'on sache toujours pour quel match on note. */}
+      {lastFinishedMatch && (
+        <div style={{
+          margin:'0 14px 10px', padding:'10px 12px',
+          background:'rgba(56,189,248,.06)',
+          border:'1px solid rgba(56,189,248,.25)',
+          borderRadius:10, fontSize:12,
+          color:'rgba(255,255,255,.85)',
+          textAlign:'center', lineHeight:1.4,
+        }}>
+          📋 Tu notes les joueurs de <b style={{color:'#fff'}}>{lastFinishedMatch.tA?.n || 'Mon équipe'} {lastFinishedMatch.sA||0}–{lastFinishedMatch.sB||0} {lastFinishedMatch.tB?.n || 'Adversaire'}</b>
+          {lastFinishedMatch.endedAt && (
+            <span style={{opacity:.7, marginLeft:6}}>
+              · {new Date(lastFinishedMatch.endedAt).toLocaleDateString('fr-FR', {day:'numeric',month:'short'})}
+            </span>
+          )}
         </div>
       )}
+
+      {motm && (() => {
+        const mp = starters.find(p => p.id === motm);
+        return (
+          <div className="vote-motm-banner">
+            ★ Ton homme du match : <b>{mp ? `${mp.first} ${mp.last}` : '…'}</b> · touche une autre ★ pour changer
+          </div>
+        );
+      })()}
 
       <div className="vote-list">
         {starters.map(p => {
