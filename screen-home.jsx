@@ -63,6 +63,18 @@ function ScreenHome({ go, tweaks }) {
   const respondedCount = convocIds.filter(id => parentResponses[id]).length;
   const pendingCount = convocIds.length - respondedCount;
 
+  // Filtrage des tiles par rôle effectif (2026-05-24).
+  // Coach/Owner/Adjoint/Admin voient tout. Parent/Joueur/Lecteur n'ont que
+  // les tiles pertinentes (pas de Prépa, pas d'Effectif, pas de Compo, etc.)
+  const _role = (window.CDD_ROLES?.effectiveRole?.()) || 'coach';
+  const isCoachLike = ['owner', 'coach', 'adjoint', 'admin'].includes(_role);
+  const isOwnerLike = ['owner', 'coach', 'admin'].includes(_role);
+  const isParent    = _role === 'parent';
+  const isJoueur    = _role === 'joueur';
+  const isLecteur   = _role === 'lecteur';
+  // Tile Vote / Mon club / Carnet : utile pour tout membre actif (pas lecteur seul).
+  const canSeeMembership = isCoachLike || isParent || isJoueur;
+
   return (
     <div className="scr scr-home fade-in" data-screen-label="01 Home">
 
@@ -242,93 +254,134 @@ function ScreenHome({ go, tweaks }) {
         </div>
       </div>
 
-      {/* QUICK TILES — full grid of all sections */}
+      {/* QUICK TILES — filtrées par rôle. Coach/Owner/Adjoint voient tout.
+          Parent/Joueur/Lecteur n'ont que les tiles pertinentes pour eux. */}
       <div className="sec-h"><span className="t">Hub</span><span className="a">Tout en un coup d'œil</span></div>
       <div className="home-tiles home-tiles-grid">
-        <button className="tile tile-prep" onClick={() => go("prep")}>
-          <span className="tile-ic">🧠</span>
-          <span className="tile-t">Prépa match</span>
-          <span className="tile-s">J-{next.daysLeft} · adversaire</span>
-        </button>
-        <button className="tile tile-convoc" onClick={() => go("convocations")}>
-          <span className="tile-ic">📋</span>
-          <span className="tile-t">Convocations</span>
-          <span className="tile-s">
-            {convocIds.length > 0
-              ? <>{respondedCount}/{convocIds.length} répondus{pendingCount > 0 ? <span style={{color:'#f97316', fontWeight:700}}> · {pendingCount} à relancer</span> : null}</>
-              : `${CDD_CONVO?.starters.length + CDD_CONVO?.bench.length || 0} convoqués`}
-          </span>
-        </button>
-        <button className="tile tile-effectif" onClick={() => go("effectif")}>
-          <span className="tile-ic">👥</span>
-          <span className="tile-t">Effectif</span>
-          <span className="tile-s">{CDD_PLAYERS.length} joueurs</span>
-        </button>
-        <button className="tile tile-lineup" onClick={() => go("lineup")}>
-          <span className="tile-ic">⚽</span>
-          <span className="tile-t">Compo</span>
-          <span className="tile-s">Équipe type saison</span>
-        </button>
-        <button className="tile tile-match" onClick={() => go("match-prep")}>
-          <span className="tile-ic" style={{color:"#ef4444"}}>●</span>
-          <span className="tile-t">Prochain match</span>
-          <span className="tile-s">Préparer · lancer</span>
-        </button>
+        {isCoachLike && (
+          <button className="tile tile-prep" onClick={() => go("prep")}>
+            <span className="tile-ic">🧠</span>
+            <span className="tile-t">Prépa match</span>
+            <span className="tile-s">J-{next.daysLeft} · adversaire</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-convoc" onClick={() => go("convocations")}>
+            <span className="tile-ic">📋</span>
+            <span className="tile-t">Convocations</span>
+            <span className="tile-s">
+              {convocIds.length > 0
+                ? <>{respondedCount}/{convocIds.length} répondus{pendingCount > 0 ? <span style={{color:'#f97316', fontWeight:700}}> · {pendingCount} à relancer</span> : null}</>
+                : `${CDD_CONVO?.starters.length + CDD_CONVO?.bench.length || 0} convoqués`}
+            </span>
+          </button>
+        )}
+        {/* Pour parent/joueur : accès direct à la page lecteur (ma convoc) */}
+        {(isParent || isJoueur) && (
+          <button className="tile tile-convoc" onClick={() => go("lecteur")}>
+            <span className="tile-ic">📋</span>
+            <span className="tile-t">Ma convocation</span>
+            <span className="tile-s">Réponse présence · infos match</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-effectif" onClick={() => go("effectif")}>
+            <span className="tile-ic">👥</span>
+            <span className="tile-t">Effectif</span>
+            <span className="tile-s">{CDD_PLAYERS.length} joueurs</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-lineup" onClick={() => go("lineup")}>
+            <span className="tile-ic">⚽</span>
+            <span className="tile-t">Compo</span>
+            <span className="tile-s">Équipe type saison</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-match" onClick={() => go("match-prep")}>
+            <span className="tile-ic" style={{color:"#ef4444"}}>●</span>
+            <span className="tile-t">Prochain match</span>
+            <span className="tile-s">Préparer · lancer</span>
+          </button>
+        )}
+        {/* Championnat : visible pour tout le monde (info publique du club) */}
         <button className="tile tile-champ" onClick={() => go("results")}>
           <span className="tile-ic">🏆</span>
           <span className="tile-t">Championnat</span>
           <span className="tile-s">{club.rank ? <>{club.rank}<sup>e</sup> · {club.pts} pts</> : 'FFF live'}</span>
         </button>
-        <button className="tile tile-fiche" onClick={() => go("effectif")}>
-          <span className="tile-ic">📊</span>
-          <span className="tile-t">Fiches joueurs</span>
-          <span className="tile-s">Stats · obs · niveau</span>
-        </button>
-        <button className="tile tile-vote" onClick={() => go("vote")}>
-          <span className="tile-ic">⭐</span>
-          <span className="tile-t">Vote post-match</span>
-          <span className="tile-s">Notes joueurs</span>
-        </button>
-        <button className="tile tile-club" onClick={() => go("club")}>
-          <span className="tile-ic">🏢</span>
-          <span className="tile-t">Mon club</span>
-          <span className="tile-s">Stade · contacts</span>
-        </button>
-        <button className="tile tile-coach" onClick={() => go("coach-profile")}>
-          <span className="tile-ic">🪪</span>
-          <span className="tile-t">Ma carte coach</span>
-          <span className="tile-s">Partageable</span>
-        </button>
+        {isCoachLike && (
+          <button className="tile tile-fiche" onClick={() => go("effectif")}>
+            <span className="tile-ic">📊</span>
+            <span className="tile-t">Fiches joueurs</span>
+            <span className="tile-s">Stats · obs · niveau</span>
+          </button>
+        )}
+        {canSeeMembership && (
+          <button className="tile tile-vote" onClick={() => go("vote")}>
+            <span className="tile-ic">⭐</span>
+            <span className="tile-t">Vote post-match</span>
+            <span className="tile-s">Notes joueurs</span>
+          </button>
+        )}
+        {canSeeMembership && (
+          <button className="tile tile-club" onClick={() => go("club")}>
+            <span className="tile-ic">🏢</span>
+            <span className="tile-t">Mon club</span>
+            <span className="tile-s">Stade · contacts</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-coach" onClick={() => go("coach-profile")}>
+            <span className="tile-ic">🪪</span>
+            <span className="tile-t">Ma carte coach</span>
+            <span className="tile-s">Partageable</span>
+          </button>
+        )}
       </div>
 
-      {/* SECONDARY tiles — share + admin */}
-      <div className="sec-h"><span className="t">Partage & Outils</span></div>
+      {/* SECONDARY tiles — outils & admin. Filtrés par rôle. */}
+      <div className="sec-h"><span className="t">{isCoachLike ? 'Partage & Outils' : 'Outils'}</span></div>
       <div className="home-tiles home-tiles-grid">
-        <button className="tile tile-lecteur" onClick={() => go("lecteur")}>
-          <span className="tile-ic">👀</span>
-          <span className="tile-t">Page parents</span>
-          <span className="tile-s">Lecteur public</span>
-        </button>
-        <button className="tile tile-cvp" onClick={() => go("share")}>
-          <span className="tile-ic">↗</span>
-          <span className="tile-t">Partager</span>
-          <span className="tile-s">WhatsApp · SMS · QR</span>
-        </button>
-        <button className="tile tile-arb" onClick={() => go("arb")}>
-          <span className="tile-ic">🟨</span>
-          <span className="tile-t">Mode arbitre</span>
-          <span className="tile-s">Cartons · chrono</span>
-        </button>
-        <button className="tile tile-transfert" onClick={() => go("transfert")}>
-          <span className="tile-ic">⇄</span>
-          <span className="tile-t">Transfert</span>
-          <span className="tile-s">Donner équipe</span>
-        </button>
-        <button className="tile tile-sync" onClick={() => go("sync")}>
-          <span className="tile-ic">☁️</span>
-          <span className="tile-t">Sync cloud</span>
-          <span className="tile-s">Multi-club · Firestore</span>
-        </button>
+        {/* Page lecteur — visible pour les coachs (preview parents) ET pour les lecteurs.
+            Parent/joueur l'ont déjà via 'Ma convocation' au-dessus. */}
+        {(isCoachLike || isLecteur) && (
+          <button className="tile tile-lecteur" onClick={() => go("lecteur")}>
+            <span className="tile-ic">👀</span>
+            <span className="tile-t">{isCoachLike ? 'Page parents' : 'Page lecteur'}</span>
+            <span className="tile-s">{isCoachLike ? 'Lecteur public' : 'Convoc · effectif · stats'}</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-cvp" onClick={() => go("share")}>
+            <span className="tile-ic">↗</span>
+            <span className="tile-t">Partager</span>
+            <span className="tile-s">WhatsApp · SMS · QR</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-arb" onClick={() => go("arb")}>
+            <span className="tile-ic">🟨</span>
+            <span className="tile-t">Mode arbitre</span>
+            <span className="tile-s">Cartons · chrono</span>
+          </button>
+        )}
+        {isOwnerLike && (
+          <button className="tile tile-transfert" onClick={() => go("transfert")}>
+            <span className="tile-ic">⇄</span>
+            <span className="tile-t">Transfert</span>
+            <span className="tile-s">Donner équipe</span>
+          </button>
+        )}
+        {isCoachLike && (
+          <button className="tile tile-sync" onClick={() => go("sync")}>
+            <span className="tile-ic">☁️</span>
+            <span className="tile-t">Sync cloud</span>
+            <span className="tile-s">Multi-club · Firestore</span>
+          </button>
+        )}
+        {/* Réglages : tout le monde (chacun gère son compte, préférences, etc.) */}
         <button className="tile tile-set" onClick={() => go("set")}>
           <span className="tile-ic">⚙️</span>
           <span className="tile-t">Réglages</span>
