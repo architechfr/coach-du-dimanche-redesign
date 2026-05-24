@@ -466,17 +466,31 @@ function ScreenLecteur({ go, tweaks }) {
   // Live match watcher : si un match est en cours côté coach et qu'il pousse
   // dans Firestore (cdd_v2_matches/{matchId}), le parent voit le score en
   // direct. Pas besoin d'être coach ni d'avoir un statut particulier.
+  // BONUS : si le coach termine le match (status='finished'), on l'enregistre
+  // localement comme "last_finished" → les écrans qui filtrent dessus
+  // (data-bridge, match-switcher) excluent ce match de la liste "à venir".
+  // Cohérence parent ↔ coach sans rien d'autre à faire côté parent.
   const [_liveData, _setLiveData] = useState(null);
   useEffect(() => {
     const _mid = (window.cddSync && window.cddSync.matchId) || null;
     if (!_mid || _mid === 'demo' || _mid === 'demo_default') return;
     if (!window.cddSync?.watchMatchFromCloud) return;
     const unsub = window.cddSync.watchMatchFromCloud(_mid, (data) => {
-      // Filtre : on n'affiche que les matchs lancés (live / paused, pas finished).
-      if (data && (data.status === 'live' || data.status === 'paused')) {
+      if (!data) { _setLiveData(null); return; }
+      if (data.status === 'live' || data.status === 'paused') {
         _setLiveData(data);
       } else {
         _setLiveData(null);
+        // Match terminé côté coach → cache local pour exclure de "à venir"
+        if (data.status === 'finished') {
+          try {
+            const cur = localStorage.getItem('cdd_match_last_finished');
+            if (cur !== _mid) {
+              localStorage.setItem('cdd_match_last_finished', _mid);
+              if (window.CDD_REBUILD) window.CDD_REBUILD();
+            }
+          } catch (e) {}
+        }
       }
     });
     return () => { try { unsub?.(); } catch (e) {} };

@@ -38,12 +38,24 @@
   }
 
   // Liste les matchs amicaux d'une équipe, triés par date croissante.
-  function list(teamId) {
+  // Par défaut, EXCLUT les matchs terminés (endedAt présent) → ils ne
+  // doivent plus apparaître comme "à venir" sur les écrans de préparation.
+  // Passer { includeEnded: true } pour récupérer l'historique complet.
+  function list(teamId, opts) {
     if (!teamId) return [];
     const all = _read();
-    const arr = (all[teamId] || []).slice();
+    let arr = (all[teamId] || []).slice();
+    if (!opts || !opts.includeEnded) {
+      arr = arr.filter(m => !m.endedAt);
+    }
     arr.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
     return arr;
+  }
+
+  // Marque un match amical comme TERMINÉ. Appelé par endMatch côté
+  // match-live. Le match disparaît immédiatement de list() (défaut).
+  function markEnded(teamId, matchId) {
+    return update(teamId, matchId, { endedAt: Date.now() });
   }
 
   // Récupère un match amical par id.
@@ -151,6 +163,6 @@
   }
 
   window.CDD_FRIENDLY = {
-    isAmical, list, get, create, update, remove, nextUpcoming,
+    isAmical, list, get, create, update, remove, nextUpcoming, markEnded,
   };
 })();

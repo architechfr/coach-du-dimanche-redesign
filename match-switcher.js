@@ -62,23 +62,34 @@
   }
 
   // Liste fusionnée des matchs à venir (FFF + amicaux), triée par date croissante.
+  // EXCLUT le dernier match terminé (cdd_match_last_finished) pour éviter qu'il
+  // reste affiché en "à venir" jusqu'au lendemain — bug remonté Florian 26/05 :
+  // un amical joué dans la journée continuait à apparaître "J-0 · À VENIR".
+  // Les amicaux terminés (endedAt) sont déjà filtrés par CDD_FRIENDLY.list().
   function listUpcoming(teamId) {
     const today = _todayISO();
+    const lastFinishedId = (() => {
+      try { return localStorage.getItem('cdd_match_last_finished') || null; }
+      catch (e) { return null; }
+    })();
     const out = [];
     // FFF
     const fffList = Array.isArray(window.CDD_FFF_UPCOMING) ? window.CDD_FFF_UPCOMING : [];
     fffList.forEach(m => {
       const u = _fromFff(m);
-      if (u && (!u.dateISO || u.dateISO >= today)) out.push(u);
+      if (!u) return;
+      if (u.dateISO && u.dateISO < today) return;
+      if (lastFinishedId && u.id === lastFinishedId) return;
+      out.push(u);
     });
-    // Amicaux
+    // Amicaux (CDD_FRIENDLY.list filtre déjà les endedAt)
     if (teamId && window.CDD_FRIENDLY?.list) {
       const friendlies = window.CDD_FRIENDLY.list(teamId);
       friendlies.forEach(m => {
-        if (!m.date || m.date >= today) {
-          const u = _fromFriendly(m);
-          if (u) out.push(u);
-        }
+        if (m.date && m.date < today) return;
+        if (lastFinishedId && m.id === lastFinishedId) return;
+        const u = _fromFriendly(m);
+        if (u) out.push(u);
       });
     }
     out.sort((a, b) => String(a.dateISO || '').localeCompare(String(b.dateISO || '')));
@@ -115,8 +126,15 @@
   // Indique si le coach a forcé un choix (ou si on est en auto).
   function hasExplicitChoice(teamId) {
     if (!teamId) return false;
-    try { return !!(localStorage.getItem(_keyFor(teamId)) || '').trim(); }
-    catch (e) { return false; }
+    try {
+      const chosen = (localStorage.getItem(_keyFor(teamId)) || '').trim();
+      if (!chosen) return false;
+      // Si le matchId choisi n'existe plus dans la liste (match terminé,
+      // supprimé...) on retourne false pour que le fallback automatique
+      // (FFF / amical le plus proche) reprenne la main.
+      const list = listUpcoming(teamId);
+      return list.some(m => m.id === chosen);
+    } catch (e) { return false; }
   }
 
   window.CDD_MATCH_SWITCHER = {

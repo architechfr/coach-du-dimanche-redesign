@@ -956,6 +956,27 @@ function ScreenMatchV2({ go, tweaks }) {
       localStorage.setItem('cdd_match_last_finished', M.id);
       localStorage.removeItem('cdd_match_current');
     } catch (e) {}
+    // BASCULE POST-MATCH : marquer l'amical comme terminé (s'il y en a un)
+    // pour qu'il disparaisse de la liste "à venir". Pour les FFF, c'est
+    // le filtre cdd_match_last_finished + date passée qui s'en charge.
+    try {
+      const _teamId = window.CDD?.getActiveTeam?.()?.id;
+      if (_teamId && window.CDD_FRIENDLY?.markEnded && window.CDD_FRIENDLY?.get) {
+        if (window.CDD_FRIENDLY.get(_teamId, M.id)) {
+          window.CDD_FRIENDLY.markEnded(_teamId, M.id);
+        }
+      }
+    } catch (e) { console.warn('[match] markEnded failed', e); }
+    // Force le rebuild de CDD_NEXT_MATCH pour basculer sur le match suivant
+    // (ou noUpcoming si plus aucun à venir). Sans ça, les écrans
+    // Accueil/Convocations/Match-prep continuaient à proposer le match
+    // terminé "J-0 · À VENIR · 15 parents pas encore répondu...".
+    try {
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+    } catch (e) {}
+    // Push final cloud : status='finished' visible des viewers (parents)
+    // qui peuvent ainsi sortir le match de leur "prochain match" via watch.
+    _pushLive(M);
     // Auto-progression OVR : applique les deltas de stats sur chaque joueur ayant joué.
     // Le vote parents/coach viendra s'ajouter plus tard via ScreenVote.submitVote().
     try {

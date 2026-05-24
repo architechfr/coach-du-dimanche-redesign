@@ -1090,11 +1090,25 @@ async function applyFFFData(fffCfg, clubName, players) {
       window.CDD_CLUB.form = played.slice(0, 8).reverse().map(m => m.result || "?");
     }
 
+    // Filtre le match qui vient d'être TERMINÉ : sans cette exclusion, un
+    // match FFF du jour terminé en fin de matinée continuait à apparaître
+    // "À VENIR" sur l'Accueil et Convocations jusqu'au lendemain.
+    const _lastFinishedId = (() => {
+      try { return localStorage.getItem('cdd_match_last_finished') || null; }
+      catch (e) { return null; }
+    })();
+    let upcomingFiltered = upcoming.slice();
+    if (_lastFinishedId) {
+      upcomingFiltered = upcomingFiltered.filter(m => {
+        const id = `${m.away || 'inconnu'}__${m.dateRaw || m.date || 'sans-date'}`;
+        return id !== _lastFinishedId;
+      });
+    }
     // Expose la liste des matchs FFF à venir pour le sélecteur multi-matchs
     // (combine ensuite avec les matchs amicaux dans match-switcher.js).
-    window.CDD_FFF_UPCOMING = upcoming.slice();
-    if (upcoming.length > 0) {
-      const next = upcoming[0];
+    window.CDD_FFF_UPCOMING = upcomingFiltered.slice();
+    if (upcomingFiltered.length > 0) {
+      const next = upcomingFiltered[0];
       const d = new Date(next.dateRaw);
       const isValid = !isNaN(d);
       const dayLabel = isValid ?
