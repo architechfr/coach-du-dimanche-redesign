@@ -433,31 +433,47 @@ function ScreenLecteur({ go, tweaks }) {
         <div className="lec-prochain">
           <div className="lec-card">
             <div className="lec-card-k">PROCHAIN MATCH · J-{next.daysLeft}</div>
-            <div className="lec-card-vs">
-              <div className="lec-team">
-                {window.ClubBadge && (
-                  <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
-                                    clubName={myShort} colors={myColors}
-                                    size={42} shape="circle"/>
-                )}
-                <span>{myShort}</span>
-              </div>
-              <div className="lec-vs">VS</div>
-              <div className="lec-team">
-                {window.ClubBadge && (
-                  <window.ClubBadge clubId={null} clubName={oppShort}
-                                    colors={['#3b82f6','#fff']}
-                                    forceLogo={oppLogo}
-                                    size={42} shape="circle"/>
-                )}
-                <span>{oppShort}</span>
-              </div>
-            </div>
-            <div className="lec-when">
-              <div><em>QUAND</em><b>{next.date}</b></div>
-              <div><em>OÙ</em><b>{next.venue}</b></div>
-              <div><em>RDV</em><b className="acc">09h45 · vestiaire</b></div>
-            </div>
+            {/* Convention football : club recevant (domicile) toujours à gauche */}
+            {(() => {
+              const isHome = next?.venue === 'Domicile';
+              const myClubId = window.CDD?.getActiveClub?.()?.id;
+              const myTeam  = { name: myShort,  colors: myColors,            logo: null,    clubId: myClubId };
+              const oppTeam = { name: oppShort, colors: ['#3b82f6','#fff'],  logo: oppLogo, clubId: null };
+              const [leftT, rightT] = isHome ? [myTeam, oppTeam] : [oppTeam, myTeam];
+              const renderTeam = (t) => (
+                <div className="lec-team">
+                  {window.ClubBadge && (
+                    <window.ClubBadge clubId={t.clubId} clubName={t.name}
+                                      colors={t.colors} forceLogo={t.logo || undefined}
+                                      size={42} shape="circle"/>
+                  )}
+                  <span>{t.name}</span>
+                </div>
+              );
+              return (
+                <div className="lec-card-vs">
+                  {renderTeam(leftT)}
+                  <div className="lec-vs">VS</div>
+                  {renderTeam(rightT)}
+                </div>
+              );
+            })()}
+            {(() => {
+              const teamId = window.CDD?.getActiveTeam?.()?.id;
+              const mId = next?.id;
+              const mInfo = (teamId && mId && window.CDD_MATCH_INFO?.get)
+                ? window.CDD_MATCH_INFO.get(teamId, mId) : null;
+              const rdv = mInfo?.arrival ? `${mInfo.arrival} · vestiaire`
+                        : mInfo?.kickoff ? `${mInfo.kickoff} · coup d'envoi`
+                        : null;
+              return (
+                <div className="lec-when">
+                  <div><em>QUAND</em><b>{next.date}</b></div>
+                  <div><em>OÙ</em><b>{next.venue}</b></div>
+                  {rdv && <div><em>RDV</em><b className="acc">{rdv}</b></div>}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="sec-h"><span className="t">Mon enfant est-il convoqué ?</span></div>
@@ -668,9 +684,8 @@ function ScreenLecteur({ go, tweaks }) {
                 Convocation adaptée pour le prochain match (différente de la compo type).
               </div>
             )}
-            {renderSection('Titulaires',  '⚽', '#c8f169', startersList)}
-            {renderSection('Banc',        '🪑', '#7dd3fc', benchList)}
-            {renderSection('Reste de l\'effectif', '🛋️', '#94a3b8', restList)}
+            {renderSection('Titulaires', '⚽', '#c8f169', startersList)}
+            {renderSection('Banc',       '🪑', '#7dd3fc', benchList)}
             {startersList.length === 0 && benchList.length === 0 && restList.length === 0 && (
               <div style={{
                 padding: '40px 16px', textAlign: 'center',
@@ -681,21 +696,51 @@ function ScreenLecteur({ go, tweaks }) {
         );
       })()}
 
-      {tab === "cal" && (
-        <div className="lec-cal">
-          {CDD_LAST_MATCHES.slice(0, 5).map((m,i) => (
-            <div className={`lec-cal-row rs-${m.result.toLowerCase()}`} key={i}>
-              <span className={`rs-cal-result rs-${m.result.toLowerCase()}`}>{m.result}</span>
-              <span className="lec-cal-opp">
-                <em>{m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}</em>
-                {m.opp}
-              </span>
-              <span className="num lec-cal-sc">{m.score[0]}–{m.score[1]}</span>
-              <span className="lec-cal-d num">{m.date}</span>
+      {tab === "cal" && (() => {
+        const _calTeamId = window.CDD?.getActiveTeam?.()?.id;
+        let upcoming = [];
+        if (_calTeamId && window.CDD_MATCH_SWITCHER?.listUpcoming) {
+          upcoming = window.CDD_MATCH_SWITCHER.listUpcoming(_calTeamId).slice(0, 10);
+        } else if (CDD_NEXT_MATCH && !CDD_NEXT_MATCH.noUpcoming) {
+          upcoming = [CDD_NEXT_MATCH];
+        }
+        if (upcoming.length === 0) {
+          return (
+            <div style={{padding:'36px 16px', textAlign:'center', opacity:.55, fontSize:13}}>
+              <div style={{fontSize:36, marginBottom:10}}>📅</div>
+              <div style={{fontWeight:700}}>Aucun match à venir programmé</div>
+              <div style={{marginTop:6, fontSize:12, opacity:.7}}>Les prochains matchs apparaîtront ici.</div>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        }
+        return (
+          <div className="lec-cal">
+            {upcoming.map((m, i) => {
+              const opp = m.opponentName
+                || (m.venue === 'Domicile' ? m.away : m.home)
+                || m.away || '?';
+              const venueLabel = m.venue === 'Domicile' ? 'DOMICILE' : 'EXTÉRIEUR';
+              return (
+                <div className="lec-cal-row" key={m.id || i}
+                     style={{background:'rgba(255,255,255,0.03)'}}>
+                  <span style={{fontSize:15, flexShrink:0}}>📅</span>
+                  <span className="lec-cal-opp">
+                    <em>{venueLabel}</em>
+                    {opp}
+                    {m.isAmical && (
+                      <span style={{marginLeft:6, fontSize:10, fontWeight:700, color:'#a78bfa',
+                        background:'rgba(167,139,250,0.12)', padding:'1px 6px', borderRadius:4}}>
+                        AMICAL
+                      </span>
+                    )}
+                  </span>
+                  <span className="lec-cal-d num">{m.date}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {tab === "class" && (
         <div className="rs-standings">

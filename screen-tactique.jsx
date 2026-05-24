@@ -56,9 +56,21 @@ function saveSchemes(teamId, list) {
 }
 
 function ScreenTactique({ go, tweaks }) {
+  const _canAccess = !window.CDD_ROLES || !window.CDD_ROLES.canDo || window.CDD_ROLES.canDo('compo');
   const teamId = getActiveTeamId();
-  const [schemes, setSchemes] = useS(() => loadSchemes(teamId));
+  const [schemes, setSchemes] = useS(() => _canAccess ? loadSchemes(teamId) : []);
   const [editingId, setEditingId] = useS(null);
+
+  if (!_canAccess) {
+    return (
+      <div className="scr fade-in" style={{display:'flex',flexDirection:'column',
+        alignItems:'center',justifyContent:'center',minHeight:'60vh',gap:16}}>
+        <div style={{fontSize:48}}>🔒</div>
+        <div style={{fontSize:16,fontWeight:700}}>Page réservée aux coachs</div>
+        <button className="tv-btn tv-btn-primary" onClick={() => go('home')}>← Retour à l'accueil</button>
+      </div>
+    );
+  }
 
   if (editingId === null) {
     // ─── Liste des schémas ───

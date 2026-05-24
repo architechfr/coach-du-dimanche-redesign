@@ -985,7 +985,7 @@ function ScreenConvocations({ go, tweaks }) {
           <b className="num">{benchPlayers.length}<span className="cv-stat-max">/{BENCH_MAX}</span></b>
           <em>Banc</em>
         </div>
-        <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>
+        {canEdit && <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>}
       </div>
 
       {/* Suivi présences — RÉSERVÉ AUX COACHS (info pilotage). Parent/joueur/
@@ -1168,7 +1168,7 @@ function ScreenConvocations({ go, tweaks }) {
         </div>
       </div>
 
-      <div className="cv-sec">
+      {canEdit && <div className="cv-sec">
         <div className="cv-sec-h">
           <span className="cv-sec-k abs">ABSENTS · {absentEntries.length}</span>
         </div>
@@ -1232,9 +1232,9 @@ function ScreenConvocations({ go, tweaks }) {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
-      {reservePlayers.length > 0 && (
+      {canEdit && reservePlayers.length > 0 && (
         <div className="cv-sec">
           <div className="cv-sec-h">
             <span className="cv-sec-k">DISPONIBLES NON CONVOQUÉS · {reservePlayers.length}</span>

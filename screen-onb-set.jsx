@@ -526,7 +526,7 @@ function ScreenSettings({ go, tweaks, setTweak }) {
 
       {/* INVITER — génération de liens d'invitation (C4/C5). Visible dès que
           le rôle courant a au moins un rôle invitable (matrice). Lecteur exclu. */}
-      {myInvitable.length > 0 && (
+      {myInvitable.length > 0 && isCoach && (
         <div className="set-sec">
           <div className="set-sec-k">INVITER QUELQU'UN</div>
           <div style={{ padding: '0 14px' }}>

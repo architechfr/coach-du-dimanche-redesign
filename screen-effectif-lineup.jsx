@@ -699,7 +699,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
         </div>
       )}
 
-      <div className="cl-quick-actions" style={{
+      {canEdit && <div className="cl-quick-actions" style={{
         display:'flex', gap:8, padding:'10px 14px 0',
       }}>
         <button className="tv-btn" onClick={() => go("tactique")}
@@ -739,7 +739,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
                 }}>
           📷 VISUEL COMPO
         </button>
-      </div>
+      </div>}
 
       {/* Phase 1D — Barre d'actions compo match (visible seulement en mode match) */}
       {isMatchMode && canEdit && (
@@ -1000,6 +1000,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
         )}
       </div>
 
+      {canEdit && <>
       <div className="sec-h">
         <span className="t">Réserve / Non retenus · {reservePlayers.length}</span>
         <span className="a">{reserveSearch.trim() ? `${reserveFiltered.length} match` : 'Tap pour faire monter'}</span>
@@ -1029,6 +1030,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
           </button>
         ))}
       </div>
+      </>}
 
       <div className="lu-actions">
         {isMatchMode ? (
@@ -1043,14 +1045,20 @@ function ScreenLineup({ go, tweaks, matchId }) {
             </button>
           </>
         ) : (
-          /* Mode Équipe Type : on FORCE le passage par Convocations pour lancer
-             un match (l'équipe type n'est qu'un template saison, jamais un
-             match concret). La nav du bas permet de quitter à tout moment. */
-          <button className="btn-cta" onClick={()=>go("convocations")}
-                  style={{flex:1, width:'100%'}}>
-            <span>📋 PRÉPARER LE MATCH / CONVOCATION</span>
-            <span className="arr">→</span>
-          </button>
+          /* Mode Équipe Type : coach → Convocations, parent → vue Lecteur */
+          canEdit ? (
+            <button className="btn-cta" onClick={()=>go("convocations")}
+                    style={{flex:1, width:'100%'}}>
+              <span>📋 PRÉPARER LE MATCH / CONVOCATION</span>
+              <span className="arr">→</span>
+            </button>
+          ) : (
+            <button className="btn-cta" onClick={()=>go("lecteur")}
+                    style={{flex:1, width:'100%'}}>
+              <span>👁 VOIR LA CONVOCATION</span>
+              <span className="arr">→</span>
+            </button>
+          )
         )}
       </div>
 

@@ -800,6 +800,20 @@
     runMigrationIfNeeded();
   });
 
+  // Retourne l'id du joueur lié à un parent sur une équipe donnée.
+  function getChildOfParent(teamId) {
+    const ctx = readActiveContext();
+    const tid = teamId || (ctx && ctx.teamId);
+    if (!tid) return null;
+    const ms = listMemberships();
+    for (const raw of ms) {
+      const m = _normalizeMembership(raw);
+      if (m.teams && m.teams[tid] && m.teams[tid].playerId) return m.teams[tid].playerId;
+      if (m._legacyPlayerId) return m._legacyPlayerId;
+    }
+    return null;
+  }
+
   // Expose
   window.CDD_ROLES = {
     ROLES, ADMIN_EMAIL, INVITE_MATRIX, ROLE_CAPS,
@@ -814,6 +828,8 @@
     // Phase D — rôles par équipe & multi-rôles
     readActiveContext, clubRoleOf, teamRole, myRoleOnTeam,
     activeTeamRole, listMyTeamRoles,
+    // Parent
+    getChildOfParent,
     // Diagnostic
     diagnose,
   };
