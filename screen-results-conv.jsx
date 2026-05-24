@@ -660,101 +660,92 @@ function ScreenConvocations({ go, tweaks }) {
             <span>📅 {next.date}{next.time ? ` · ${next.time}` : ''}</span>
             <span>🏟️ {next.venue}</span>
           </div>
-          <div style={{display:'flex', flexDirection:'column', gap:8, width:'100%'}}>
-            <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-              <button className="btn-cta" onClick={() => go("share")}>
-                ↗ PARTAGER AUX PARENTS
-              </button>
-              <button className="btn-cta" onClick={() => go("match-lineup")}
-                      style={{background:'rgba(249,115,22,.12)', border:'1px solid rgba(249,115,22,.40)', color:'#f97316'}}>
-                🎯 COMPO DU MATCH
-              </button>
-              <button className="btn-cta" onClick={() => go("tv-match")}
-                      style={{background:'rgba(249,115,22,.12)', border:'1px solid rgba(249,115,22,.40)', color:'#f97316'}}>
-                👟 MODE VESTIAIRE
-              </button>
-              {/* Match amical : créer un nouveau OU éditer celui en cours */}
-              {canEdit && !next.isAmical && (
-                <button className="btn-cta" onClick={() => setFriendlyModalMode('create')}
-                        style={{background:'rgba(168,85,247,.12)', border:'1px solid rgba(168,85,247,.40)', color:'#c4b5fd'}}>
-                  + MATCH AMICAL
+          {/* CTA unique dynamique selon l'état de la convocation.
+              Logique en enfilade :
+              1. Pas de match (placeholder)        → Créer un match amical
+              2. Match présent, jamais partagé     → Envoyer la convocation
+              3. Partagé, réponses incomplètes     → Relancer les parents restants
+              4. Toutes les réponses sont arrivées → Lancer le match
+              Les autres actions (compo, vestiaire, numéros, infos) sont sur la
+              page Match dédiée pour éviter la surcharge. */}
+          {canEdit && (() => {
+            const isPlaceholder = noUpcoming;
+            const nbPending = pendingPlayers.length;
+            const nbConv = convocPlayers.length;
+            const allResponded = nbConv > 0 && nbPending === 0;
+            const noShareYet = nbConv > 0 && totalResponded === 0;
+
+            // Style commun
+            const baseStyle = {
+              width:'100%', padding:'13px 16px', borderRadius:11,
+              fontWeight:900, fontSize:14, letterSpacing:'.06em',
+              cursor:'pointer', textAlign:'center',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+            };
+
+            if (isPlaceholder) {
+              return (
+                <button onClick={() => setFriendlyModalMode('create')}
+                  style={{ ...baseStyle,
+                    background:'linear-gradient(135deg, rgba(168,85,247,0.20) 0%, rgba(168,85,247,0.08) 100%)',
+                    border:'1px solid rgba(168,85,247,0.50)', color:'#c4b5fd' }}>
+                  🤝 CRÉER UN MATCH AMICAL
                 </button>
-              )}
-              {canEdit && next.isAmical && (
-                <button className="btn-cta" onClick={() => setFriendlyModalMode('edit')}
-                        style={{background:'rgba(168,85,247,.12)', border:'1px solid rgba(168,85,247,.40)', color:'#c4b5fd'}}>
-                  ✎ ÉDITER L'AMICAL
-                </button>
-              )}
-            </div>
-            {/* Infos pratiques du match (stade, horaires, covoiturage) */}
-            {canEdit && (
-              <button
-                onClick={() => setMatchInfoOpen(true)}
-                style={{
-                  width:'100%', padding:'9px 12px', borderRadius:9,
-                  background:'rgba(125,211,252,0.10)', color:'#7dd3fc',
-                  border:'1px solid rgba(125,211,252,0.35)',
-                  fontSize:12.5, fontWeight:700, letterSpacing:'.04em',
-                  cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                }}>
-                📋 INFOS DU MATCH (STADE · HORAIRES · COVOIT.)
-                {teamId && window.CDD_MATCH_INFO?.hasAny?.(teamId, (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder') && (
-                  <span style={{
-                    fontSize:10, padding:'2px 7px', borderRadius:10,
-                    background:'rgba(125,211,252,0.25)', fontWeight:800,
-                  }}>renseignées ✓</span>
-                )}
-              </button>
-            )}
-            {/* Numéros maillots match-specific — bouton 🔢 (orange = match) */}
-            {canEdit && (
-              <button
-                onClick={() => setJerseyModalMode('edit')}
-                style={{
-                  width:'100%', padding:'9px 12px', borderRadius:9,
-                  background:'rgba(249,115,22,0.10)', color:'#f97316',
-                  border:'1px solid rgba(249,115,22,0.35)',
-                  fontSize:12.5, fontWeight:700, letterSpacing:'.04em',
-                  cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                }}>
-                🔢 NUMÉROS MAILLOTS DU MATCH
-                {window.CDD_JERSEY?.hasOverrides?.(teamId, (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder') && (
-                  <span style={{
-                    fontSize:10, padding:'2px 7px', borderRadius:10,
-                    background:'rgba(249,115,22,0.25)', fontWeight:800,
-                  }}>modifiés ✓</span>
-                )}
-              </button>
-            )}
-            {/* Phase 1E — Coup d'envoi direct depuis Convocations */}
-            {canEdit && (
-              <button
-                onClick={() => {
-                  // 1er lancement : on impose un passage par la modale numéros
-                  // pour éviter le "vrais maillots ≠ profils" reporté par le coach.
+              );
+            }
+            if (allResponded) {
+              return (
+                <button onClick={() => {
                   const mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
                   const reviewed = window.CDD_JERSEY?.wasReviewed?.(teamId, mid);
-                  if (!reviewed) {
-                    setJerseyModalMode('pre-match');
-                  } else {
-                    go('match');
-                  }
+                  if (!reviewed) setJerseyModalMode('pre-match');
+                  else go('match');
                 }}
-                style={{
-                  width:'100%', padding:'11px 16px', borderRadius:10,
-                  background:'linear-gradient(135deg, rgba(200,241,105,0.18) 0%, rgba(200,241,105,0.08) 100%)',
-                  border:'1px solid rgba(200,241,105,0.50)',
-                  color:'#c8f169', fontWeight:800, fontSize:14,
-                  letterSpacing:'.06em', cursor:'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                }}>
-                🏁 LANCER LE MATCH
-              </button>
-            )}
-          </div>
+                  style={{ ...baseStyle,
+                    background:'linear-gradient(135deg, rgba(200,241,105,0.22) 0%, rgba(200,241,105,0.10) 100%)',
+                    border:'1px solid rgba(200,241,105,0.55)', color:'#c8f169',
+                    boxShadow:'0 4px 16px rgba(200,241,105,0.10)' }}>
+                  🏁 LANCER LE MATCH ({nbConv} confirmés)
+                </button>
+              );
+            }
+            if (noShareYet) {
+              return (
+                <button onClick={() => go("share")}
+                  style={{ ...baseStyle,
+                    background:'linear-gradient(135deg, rgba(200,241,105,0.20) 0%, rgba(200,241,105,0.08) 100%)',
+                    border:'1px solid rgba(200,241,105,0.50)', color:'#c8f169' }}>
+                  ↗ ENVOYER LA CONVOCATION AUX PARENTS
+                </button>
+              );
+            }
+            // État intermédiaire : partagé, réponses partielles
+            return (
+              <div style={{display:'flex', flexDirection:'column', gap:8, width:'100%'}}>
+                <button onClick={openRelanceAll}
+                  style={{ ...baseStyle,
+                    background:'linear-gradient(135deg, rgba(255,170,40,0.18) 0%, rgba(255,170,40,0.08) 100%)',
+                    border:'1px solid rgba(255,170,40,0.50)', color:'#ffc788' }}>
+                  📣 RELANCER LES {nbPending} PARENT{nbPending > 1 ? 'S' : ''} RESTANT{nbPending > 1 ? 'S' : ''}
+                </button>
+                {/* Bouton secondaire 'Lancer quand même' si le coach veut forcer */}
+                <button onClick={() => {
+                    const mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+                    const reviewed = window.CDD_JERSEY?.wasReviewed?.(teamId, mid);
+                    if (!reviewed) setJerseyModalMode('pre-match');
+                    else go('match');
+                  }}
+                  style={{
+                    width:'100%', padding:'10px 14px', borderRadius:10, cursor:'pointer',
+                    background:'rgba(200,241,105,0.06)', color:'#c8f169',
+                    border:'1px dashed rgba(200,241,105,0.35)',
+                    fontWeight:700, fontSize:12.5, letterSpacing:'.04em',
+                  }}>
+                  🏁 Lancer le match sans attendre →
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
