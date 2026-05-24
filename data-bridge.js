@@ -718,9 +718,14 @@ async function rebuildCDDGlobals() {
   const availablePlayers = players.filter(p => !unavailable.has(p.status));
   const absentPlayers = players.filter(p => unavailable.has(p.status));
 
-  // Titulaires : ceux marqués isStarter, dans la limite des dispos
+  // Helper dédup en gardant l'ordre.
+  const dedup = (arr) => { const seen = new Set(); return arr.filter(x => !seen.has(x) && seen.add(x)); };
+
+  // Titulaires : ceux marqués isStarter, dans la limite des dispos.
+  // Dédup défensif : si effectiveLt.startersIds contient des doublons (cas legacy
+  // ou manipulation manuelle du storage), on les supprime ici.
   let starters = effectiveLt?.startersIds
-    ? effectiveLt.startersIds.filter(id => availablePlayers.some(p => p.id === id))
+    ? dedup(effectiveLt.startersIds.filter(id => availablePlayers.some(p => p.id === id)))
     : availablePlayers.filter(p => p.isStarter).slice(0, 11).map(p => p.id);
 
   // ⚠️ COMPLETER A 11 TITULAIRES : puise dans dispos (banc puis reserve)
@@ -769,7 +774,7 @@ async function rebuildCDDGlobals() {
       benchPool = [...benchPool, ...reservists];
     }
     bench = (effectiveLt?.benchIds && effectiveLt.benchIds.length)
-      ? effectiveLt.benchIds.filter(id => benchPool.some(p => p.id === id)).slice(0, benchTarget)
+      ? dedup(effectiveLt.benchIds.filter(id => benchPool.some(p => p.id === id))).slice(0, benchTarget)
       : benchPool.slice(0, benchTarget).map(p => p.id);
     if (bench.length < benchTarget) {
       const inBench = new Set(bench);
@@ -780,6 +785,7 @@ async function rebuildCDDGlobals() {
         }
       });
     }
+    bench = dedup(bench); // sécurité finale
   }
 
   // Absents : TOUS (plus de slice(0,3))
@@ -792,10 +798,12 @@ async function rebuildCDDGlobals() {
     };
   });
 
-  // Joueurs en réserve non convoqués (filtre statut + non dans la convoc)
+  // Joueurs disponibles non convoqués : tout le monde sauf les déjà convoqués
+  // et les absents (blessé/suspendu/repos). On INCLUT les joueurs status='reserve'
+  // (équipe 2 / dépannage) pour que le coach puisse les piocher pour un match.
   const convocIds = new Set([...starters, ...bench, ...absent.map(a => a.id)]);
   const reserve = players.filter(p =>
-    !convocIds.has(p.id) && p.status !== 'reserve' && !unavailable.has(p.status)
+    !convocIds.has(p.id) && !unavailable.has(p.status)
   ).map(p => p.id);
 
   // Warnings convoc : taille atteinte ? 11 titulaires ?
@@ -1116,13 +1124,29 @@ function _writeMatchLineup(teamId, matchId, ml) {
 // template (compo type) au 1er accès — même logique que ScreenLineup en mode match.
 function _ensureMatchLineup(teamId, matchId) {
   const all = _readMatchLineupAll();
+  // Helper dédup en gardant l'ordre — défense contre un storage corrompu.
+  const dd = (arr) => { const s = new Set(); return arr.filter(x => !s.has(x) && s.add(x)); };
   if (all[teamId] && all[teamId][matchId]) {
     const ml = all[teamId][matchId];
+    // Dédup des starters : si un même playerId est posé dans plusieurs slots
+    // (ne devrait pas arriver, défense), on garde la 1ère occurrence.
+    const cleanStarters = {};
+    const seenPids = new Set();
+    Object.keys(ml.starters || {})
+      .map(k => parseInt(k, 10)).filter(k => !isNaN(k))
+      .sort((a, b) => a - b)
+      .forEach(k => {
+        const pid = ml.starters[k];
+        if (pid && !seenPids.has(pid)) {
+          cleanStarters[k] = pid;
+          seenPids.add(pid);
+        }
+      });
     return {
       formation: ml.formation || '4-3-3',
-      starters: { ...(ml.starters || {}) },
-      bench:    Array.isArray(ml.bench)   ? [...ml.bench]   : [],
-      reserve:  Array.isArray(ml.reserve) ? [...ml.reserve] : [],
+      starters: cleanStarters,
+      bench:    Array.isArray(ml.bench)   ? dd(ml.bench).filter(id => !seenPids.has(id))   : [],
+      reserve:  Array.isArray(ml.reserve) ? dd(ml.reserve).filter(id => !seenPids.has(id)) : [],
       updatedAt: ml.updatedAt,
     };
   }

@@ -838,25 +838,38 @@ function ScreenConvocations({ go, tweaks }) {
             </span>
           </div>
           <div className="cv-list">
-            {sortByNum(reservePlayers).map(p => (
-              <div className="cv-row cv-row-add cv-row-clickable" key={p.id}
-                   onClick={() => setFicheModalPlayer(p)}
-                   title="Toucher pour voir la fiche du joueur">
-                {renderAvatar(p)}
-                <span className="cv-num num">#{displayNum(p)}</span>
-                <span className="cv-name">
-                  <span className="cv-first">{p.first}</span>
-                  {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
-                </span>
-                <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
-                {canEdit && (
-                  <button className={`cv-action cv-action-add ${benchPlayers.length >= BENCH_MAX ? 'cv-action-disabled' : ''}`}
-                          disabled={benchPlayers.length >= BENCH_MAX}
-                          onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
-                          title={benchPlayers.length >= BENCH_MAX ? `Banc plein (${BENCH_MAX}/${BENCH_MAX})` : "Ajouter à la convocation"}>+</button>
-                )}
-              </div>
-            ))}
+            {sortByNum(reservePlayers).map(p => {
+              const isReserveTeam = p.status === 'reserve';
+              return (
+                <div className="cv-row cv-row-add cv-row-clickable" key={p.id}
+                     onClick={() => setFicheModalPlayer(p)}
+                     title={isReserveTeam ? "Joueur de l'équipe 2 — touche pour voir la fiche" : "Toucher pour voir la fiche du joueur"}
+                     style={isReserveTeam ? {opacity:0.85, borderLeft:'3px solid rgba(125,211,252,0.45)'} : null}>
+                  {renderAvatar(p)}
+                  <span className="cv-num num">#{displayNum(p)}</span>
+                  <span className="cv-name">
+                    <span className="cv-first">{p.first}</span>
+                    {p.last && <span className="cv-last">{p.last.toUpperCase()}</span>}
+                    {isReserveTeam && (
+                      <span style={{
+                        fontSize:9, fontWeight:800, letterSpacing:'.06em',
+                        padding:'2px 6px', borderRadius:5, marginLeft:6,
+                        background:'rgba(125,211,252,0.14)', color:'#7dd3fc',
+                        border:'1px solid rgba(125,211,252,0.35)',
+                        textTransform:'uppercase', whiteSpace:'nowrap',
+                      }} title="Joueur réserve / équipe 2">Équipe 2</span>
+                    )}
+                  </span>
+                  <span className="cv-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
+                  {canEdit && (
+                    <button className={`cv-action cv-action-add ${benchPlayers.length >= BENCH_MAX ? 'cv-action-disabled' : ''}`}
+                            disabled={benchPlayers.length >= BENCH_MAX}
+                            onClick={(e) => { e.stopPropagation(); addPlayer(p.id); }}
+                            title={benchPlayers.length >= BENCH_MAX ? `Banc plein (${BENCH_MAX}/${BENCH_MAX})` : (isReserveTeam ? "Convoquer ce joueur de l'équipe 2" : "Ajouter à la convocation")}>+</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
