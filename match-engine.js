@@ -397,6 +397,15 @@ function listCoachFinishedMatches() {
     const activeTeam = ctx.teamId;
     const markerKeys = new Set(['cdd_match_current', 'cdd_match_last_finished']);
     const matches = [];
+    // Index des amicaux par id : permet de dériver le venue d'un match arbitré
+    // qui n'a pas d'isAtHome stocké (matchs créés avant le toggle Dom/Ext).
+    const friendlyById = {};
+    try {
+      const allFm = JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}');
+      for (const teamId in allFm) {
+        (allFm[teamId] || []).forEach(fm => { if (fm && fm.id) friendlyById[fm.id] = fm; });
+      }
+    } catch (e) {}
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith('cdd_match_') || markerKeys.has(k)) continue;
@@ -428,7 +437,19 @@ function listCoachFinishedMatches() {
           opp: m.tB?.n || 'Adversaire',
           home: m.tA?.n || 'Mon équipe',
           away: m.tB?.n || 'Adversaire',
-          venue: m.isAtHome === true ? 'H' : m.isAtHome === false ? 'E' : '?',
+          venue: (() => {
+            // 1. Source primaire : flag explicite stocké au lancement du match
+            if (m.isAtHome === true)  return 'H';
+            if (m.isAtHome === false) return 'E';
+            // 2. Fallback : si le match était lié à un amical programmé, lire
+            // le venue de l'amical (saisi dans la modale "+ Amical").
+            if (m.scheduledMatchId && friendlyById[m.scheduledMatchId]) {
+              const v = friendlyById[m.scheduledMatchId].venue;
+              if (v === 'H' || v === 'Domicile')  return 'H';
+              if (v === 'E' || v === 'Extérieur') return 'E';
+            }
+            return '?';
+          })(),
           score: [sA, sB],
           result,
           journee: null,

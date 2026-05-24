@@ -611,7 +611,6 @@ function App() {
 function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
   const matches = (window.CDD_LAST_MATCHES || []).filter(m => m.played);
   const m = matchProp || matches[0]; // match sélectionné ou dernier par défaut
-  const [editingVenue, setEditingVenue] = useState(false);
   if (!m) {
     return (
       <div className="scr fade-in" style={{padding:"40px 20px", textAlign:"center"}}>
@@ -628,23 +627,6 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
   }
   const resultLabel = m.result === "W" ? "VICTOIRE" : m.result === "D" ? "MATCH NUL" : "DÉFAITE";
   const resultCls   = m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss";
-  const isCoachMatch = m.coachArbitrated === true && !!m.id;
-  const venueText = m.venue === "H" ? "DOMICILE" : m.venue === "E" ? "EXTÉRIEUR" : "Lieu à définir";
-  const updateVenue = (newIsAtHome) => {
-    if (!isCoachMatch) return;
-    try {
-      const key = 'cdd_match_' + m.id;
-      const data = JSON.parse(localStorage.getItem(key) || 'null');
-      if (!data) return;
-      data.isAtHome = newIsAtHome;
-      localStorage.setItem(key, JSON.stringify(data));
-      if (window.cddSync && window.cddSync.saveMatchToCloud) {
-        window.cddSync.saveMatchToCloud(data).catch(() => {});
-      }
-      if (window.CDD_REBUILD) window.CDD_REBUILD();
-      setEditingVenue(false);
-    } catch (e) { console.warn('updateVenue failed:', e); }
-  };
   return (
     <div className="scr fade-in" style={{padding:"0 0 24px"}}>
       <div style={{
@@ -656,40 +638,8 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
           {resultLabel}
         </div>
         <div style={{fontSize:13, opacity:0.6, marginBottom:8}}>
-          {m.date} · {venueText}
-          {isCoachMatch && (
-            <button onClick={() => setEditingVenue(v => !v)}
-              style={{
-                marginLeft:8, padding:'2px 8px', fontSize:10,
-                background:'rgba(255,255,255,0.08)',
-                border:'1px solid rgba(255,255,255,0.15)',
-                borderRadius:6, color:'rgba(255,255,255,0.85)',
-                cursor:'pointer',
-              }}>
-              {editingVenue ? '✕' : '✎ lieu'}
-            </button>
-          )}
+          {m.date}{m.venue === "H" ? " · DOMICILE" : m.venue === "E" ? " · EXTÉRIEUR" : ""}
         </div>
-        {editingVenue && isCoachMatch && (
-          <div style={{display:'flex', gap:8, justifyContent:'center', marginBottom:14}}>
-            <button onClick={() => updateVenue(true)}
-              style={{
-                padding:'8px 14px', fontSize:12, fontWeight:700,
-                background: m.venue === 'H' ? 'rgba(200,241,105,.22)' : 'rgba(0,0,0,.35)',
-                border:'1px solid ' + (m.venue === 'H' ? 'var(--acc, #c8f169)' : 'rgba(255,255,255,.15)'),
-                borderRadius:8, color: m.venue === 'H' ? 'var(--acc, #c8f169)' : '#fff',
-                cursor:'pointer',
-              }}>🏠 Domicile</button>
-            <button onClick={() => updateVenue(false)}
-              style={{
-                padding:'8px 14px', fontSize:12, fontWeight:700,
-                background: m.venue === 'E' ? 'rgba(200,241,105,.22)' : 'rgba(0,0,0,.35)',
-                border:'1px solid ' + (m.venue === 'E' ? 'var(--acc, #c8f169)' : 'rgba(255,255,255,.15)'),
-                borderRadius:8, color: m.venue === 'E' ? 'var(--acc, #c8f169)' : '#fff',
-                cursor:'pointer',
-              }}>✈️ Extérieur</button>
-          </div>
-        )}
         {(() => {
           const myShort = m.home || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
           const myColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
