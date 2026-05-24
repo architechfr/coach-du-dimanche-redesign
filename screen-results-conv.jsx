@@ -482,7 +482,13 @@ function ScreenConvocations({ go, tweaks }) {
   });
   useEffect(() => {
     if (!window.cddSync?.watchConvocResponses) return;
+    // Log de traçabilité — Florian peut comparer ce matchId avec celui
+    // loggué par la page Lecteur côté parent. S'ils diffèrent → désync.
+    console.info('[convocs] watching matchId=' + matchId
+      + ' (firestorePath: match_convocs/' + matchId + ')');
     const unsubscribe = window.cddSync.watchConvocResponses(matchId, (responses) => {
+      const n = Object.keys(responses || {}).length;
+      console.info('[convocs] snapshot reçu : ' + n + ' réponse(s) pour ' + matchId);
       setParentResponses(responses);
     });
     return () => { try { unsubscribe?.(); } catch (e) {} };

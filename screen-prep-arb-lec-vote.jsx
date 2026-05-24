@@ -377,12 +377,33 @@ function ScreenLecteur({ go, tweaks }) {
   const [editing, setEditing] = useState(false);
   useEffect(() => { setEditing(false); }, [playerId, matchId]);
   const sendResponse = async (newResp) => {
+    // Garde-fou : si matchId est en fallback (pas de match courant détecté),
+    // refuse l'envoi avec un message clair. Sinon la réponse part dans un
+    // doc Firestore que le coach ne regarde pas → silence trompeur.
+    if (!matchId || matchId === 'demo' || matchId === 'demo_default') {
+      const msg = "Aucun match en cours détecté — recharge la page";
+      console.warn('[lecteur] sendResponse REFUSÉ : matchId invalide', { matchId, playerId });
+      setSendError(msg);
+      return;
+    }
+    if (!playerId) {
+      setSendError("Aucun joueur sélectionné");
+      return;
+    }
     setSending(true);
     setSendError(null);
     setResp(newResp);
+    // Log de traçabilité — utile pour diagnostiquer la sync parent→coach
+    // via la console (chrome://inspect sur mobile). Le coach doit voir le
+    // MÊME matchId côté Convocations pour que la réponse remonte.
+    console.info('[lecteur] sendResponse →', {
+      matchId, playerId, resp: newResp, label: playerDisplay,
+      firestorePath: `match_convocs/${matchId}.responses.${playerId}`,
+    });
     try {
       if (window.cddSync?.sendConvocResponse) {
         await window.cddSync.sendConvocResponse(matchId, playerId, newResp, playerDisplay);
+        console.info('[lecteur] sendResponse OK');
       }
     } catch (err) {
       console.warn('[lecteur] sendResponse failed:', err.message);
