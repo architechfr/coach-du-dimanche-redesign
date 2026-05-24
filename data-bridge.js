@@ -510,7 +510,9 @@ async function rebuildCDDGlobals() {
   })();
 
   // Club view — pull FFF config from active team
-  const fffCfg = activeTeam?.fff || null;
+  // Compat double-clé : seed local utilise `fff`, cloud sync écrit `fffConfig`.
+  // Sans ce fallback, AUCUN user cloud ne voit ses stats championnat.
+  const fffCfg = activeTeam?.fff || activeTeam?.fffConfig || null;
   const clubName = activeClub?.name || '';
 
   // Logo club : keyé par clubId pour qu'un coach gérant plusieurs clubs (FCMH, USDF...)
