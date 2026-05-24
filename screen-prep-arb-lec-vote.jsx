@@ -11,8 +11,17 @@ function ScreenPrep({ go, tweaks }) {
   const standings = (typeof CDD_STANDINGS !== 'undefined' && Array.isArray(CDD_STANDINGS)) ? CDD_STANDINGS : [];
   const lastMatches = (typeof CDD_LAST_MATCHES !== 'undefined' && Array.isArray(CDD_LAST_MATCHES)) ? CDD_LAST_MATCHES : [];
   const convo = CDD_CONVO || { starters:[], bench:[], absent:[] };
-  // L'adversaire du prochain match (depuis CDD_NEXT_MATCH.away si possible, sinon "FC PONTOISE" placeholder)
-  const oppName = (next.away && next.away !== 'À déterminer') ? next.away : null;
+  // L'adversaire du prochain match. On utilise opponentName (calculé selon
+  // venue par data-bridge) ; fallback sur next.away pour la rétrocompat.
+  const oppName = (() => {
+    const candidate = next.opponentName
+                  || (next.venue === 'Domicile' ? next.away : next.home);
+    if (!candidate || candidate === 'À déterminer') return null;
+    return candidate;
+  })();
+  const oppLogo = next.opponentLogo
+              || (next.venue === 'Domicile' ? next.awayLogoDataUrl : next.homeLogoDataUrl)
+              || null;
   const noUpcoming = !oppName || next.noUpcoming;
   const opp = standings.find(s => s.club === oppName) || standings.find(s => !s.me) || null;
   const me  = standings.find(s => s.me) || null;
@@ -49,7 +58,7 @@ function ScreenPrep({ go, tweaks }) {
                 <window.ClubBadge clubId={null}
                                   clubName={noUpcoming ? '?' : (oppName || '?')}
                                   colors={['#3b82f6','#fff']}
-                                  forceLogo={next?.awayLogoDataUrl || null}
+                                  forceLogo={oppLogo}
                                   size={48} shape="circle"/>
               ) : (
                 <i className="prep-badge them">{noUpcoming ? '?' : (oppName || '?').charAt(0)}</i>

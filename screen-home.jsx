@@ -210,35 +210,49 @@ function ScreenHome({ go, tweaks }) {
           <button className="hero-share" aria-label="Partager" onClick={() => go("share")}>↗</button>
         </div>
 
-        <div className="home-hero-vs">
-          <div className="hero-club hero-club-home">
-            {window.ClubBadge ? (
-              <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
-                                clubName={club.short || club.name || next.home}
-                                colors={club.colors}
-                                size={56} shape="square"/>
-            ) : (
-              <div className="hero-badge me" aria-hidden="true">{(club.short || next.home || 'F')[0]}</div>
-            )}
-            <div className="hero-club-name">{next.home}</div>
-          </div>
-          <div className="hero-vs">
-            <span>VS</span>
-            <div className="hero-when num">{next.date}</div>
-          </div>
-          <div className="hero-club hero-club-away">
-            {window.ClubBadge ? (
-              <window.ClubBadge clubId={null}
-                                clubName={next.away || 'À venir'}
-                                colors={['#3b82f6','#fff']}
-                                forceLogo={next.awayLogoDataUrl || null}
-                                size={56} shape="square"/>
-            ) : (
-              <div className="hero-badge them" aria-hidden="true">{(next.away || '?')[0]}</div>
-            )}
-            <div className="hero-club-name">{next.away}</div>
-          </div>
-        </div>
+        {/* Affichage : MON CLUB toujours à gauche, ADVERSAIRE à droite,
+            peu importe le venue (home/away). Évite la confusion 'FCMH vs FCMH'
+            quand on joue à l'extérieur (next.home n'est alors PAS notre club). */}
+        {(() => {
+          const myClubLabel = club.short || club.name || next.myClubName || 'MON CLUB';
+          const oppLabel = next.opponentName
+                        || (next.venue === 'Domicile' ? next.away : next.home)
+                        || 'À venir';
+          const oppLogo = next.opponentLogo
+                       || (next.venue === 'Domicile' ? next.awayLogoDataUrl : next.homeLogoDataUrl)
+                       || null;
+          return (
+            <div className="home-hero-vs">
+              <div className="hero-club hero-club-home">
+                {window.ClubBadge ? (
+                  <window.ClubBadge clubId={window.CDD?.getActiveClub?.()?.id}
+                                    clubName={myClubLabel}
+                                    colors={club.colors}
+                                    size={56} shape="square"/>
+                ) : (
+                  <div className="hero-badge me" aria-hidden="true">{(myClubLabel || 'F')[0]}</div>
+                )}
+                <div className="hero-club-name">{myClubLabel}</div>
+              </div>
+              <div className="hero-vs">
+                <span>VS</span>
+                <div className="hero-when num">{next.date}</div>
+              </div>
+              <div className="hero-club hero-club-away">
+                {window.ClubBadge ? (
+                  <window.ClubBadge clubId={null}
+                                    clubName={oppLabel}
+                                    colors={['#3b82f6','#fff']}
+                                    forceLogo={oppLogo}
+                                    size={56} shape="square"/>
+                ) : (
+                  <div className="hero-badge them" aria-hidden="true">{(oppLabel || '?')[0]}</div>
+                )}
+                <div className="hero-club-name">{oppLabel}</div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="home-hero-meta">
           <span>{next.venue}</span>

@@ -649,6 +649,11 @@ async function rebuildCDDGlobals() {
           home, away,
           homeBadge: (home || '?')[0],
           awayBadge: (away || '?')[0],
+          // Adversaire (= équipe qui n'est pas la nôtre) — calculé selon venue
+          // pour éviter la confusion "FCMH vs FCMH" quand on est à l'extérieur.
+          opponentName: active.opponent || 'Adversaire',
+          opponentLogo: null,
+          myClubName: myName,
           venue: isHome ? 'Domicile' : 'Extérieur',
           competition: active.label,
           isAmical: active.kind === 'amical',
@@ -687,6 +692,9 @@ async function rebuildCDDGlobals() {
           away,
           homeBadge: (home || '?')[0],
           awayBadge: (away || '?')[0],
+          opponentName: fn.opponent || 'Adversaire',
+          opponentLogo: null,
+          myClubName: myName,
           venue: isHome ? 'Domicile' : 'Extérieur',
           competition: 'Match amical',
           isAmical: true,
@@ -1087,6 +1095,7 @@ async function applyFFFData(fffCfg, clubName, players) {
         `${String(d.getHours()).padStart(2,'0')}h${String(d.getMinutes()).padStart(2,'0')}` : '';
       const daysLeft = isValid ? Math.max(0, Math.ceil((d - Date.now()) / 86400000)) : 0;
 
+      const _isHomeFff = next.venue === 'H';
       window.CDD_NEXT_MATCH = {
         id: `${next.away || 'inconnu'}__${next.dateRaw || next.date || 'sans-date'}`,
         date: isValid ? `${dayLabel} ${dayNum} ${monthLabel}${hour ? ' · ' + hour : ''}` : next.date,
@@ -1099,7 +1108,12 @@ async function applyFFFData(fffCfg, clubName, players) {
         // logo de l'adversaire dans les ecrans Prepa / Lecteur / Vote.
         homeLogoDataUrl: next.homeLogo || null,
         awayLogoDataUrl: next.awayLogo || null,
-        venue: next.venue === 'H' ? 'Domicile' : 'Extérieur',
+        // Adversaire = celui qui n'est pas nous, calculé selon venue.
+        // Évite l'écueil "FCMH vs FCMH" quand on est à l'extérieur.
+        opponentName: _isHomeFff ? next.away : next.home,
+        opponentLogo: _isHomeFff ? (next.awayLogo || null) : (next.homeLogo || null),
+        myClubName: clubName || (_isHomeFff ? next.home : next.away),
+        venue: _isHomeFff ? 'Domicile' : 'Extérieur',
         weather: '',
         competition: fffCfg.label,
         daysLeft,
