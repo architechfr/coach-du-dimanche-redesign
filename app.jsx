@@ -697,6 +697,46 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
           ↗ Partager
         </button>
       </div>
+
+      {/* Suppression du match — réservé coach/adjoint/owner/admin (canDo compo) */}
+      {m.coachArbitrated && m.id && window.CDD_ROLES?.canDo?.('compo') && (
+        <div style={{padding:"0 20px 20px"}}>
+          <button onClick={() => {
+            const label = `${m.home || 'Mon équipe'} ${m.score?.[0] ?? '?'}-${m.score?.[1] ?? '?'} ${m.opp || 'Adversaire'}`;
+            if (!window.confirm(`Supprimer définitivement le match :\n\n${label}\n${m.date || ''}\n\nCette action est irréversible.`)) return;
+            try {
+              // 1) localStorage : suppression du match + nettoyage des marqueurs
+              localStorage.removeItem('cdd_match_' + m.id);
+              const lastFin = localStorage.getItem('cdd_match_last_finished');
+              if (lastFin === m.id) localStorage.removeItem('cdd_match_last_finished');
+              const cur = localStorage.getItem('cdd_match_current');
+              if (cur === m.id) localStorage.removeItem('cdd_match_current');
+              // 2) Firestore : best-effort, fire-and-forget
+              if (window.cddSync?.deleteMatchFromCloud) {
+                window.cddSync.deleteMatchFromCloud(m.id).catch(e => console.warn('[fiche-match] cloud delete failed:', e));
+              }
+              // 3) Rebuild + retour à l'accueil
+              if (window.CDD_REBUILD) window.CDD_REBUILD();
+              go('home');
+            } catch (e) {
+              console.error('[fiche-match] suppression échouée:', e);
+              alert('Erreur lors de la suppression : ' + (e.message || e));
+            }
+          }}
+          style={{
+            width:'100%', padding:'10px 14px',
+            background:'rgba(255,107,107,.08)',
+            border:'1px solid rgba(255,107,107,.35)',
+            borderRadius:10, color:'#ff8a8a',
+            fontSize:12, fontWeight:700, cursor:'pointer',
+          }}>
+            🗑 Supprimer ce match
+          </button>
+          <div style={{fontSize:10, opacity:.5, textAlign:'center', marginTop:6}}>
+            Réservé coach principal · adjoint · admin
+          </div>
+        </div>
+      )}
     </div>
   );
 }

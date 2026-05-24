@@ -1385,7 +1385,16 @@ function ScreenVote({ go, tweaks }) {
               display:'flex', justifyContent:'space-between', alignItems:'center',
               fontSize:12, cursor:'pointer',
             }}>
-            <span style={{opacity:.7}}>📅 {playedMatches.length} matchs jouables</span>
+            <span style={{opacity:.7}}>
+              📅 {playedMatches.length} matchs · {playedMatches.filter(m => {
+                const vid = window.cddSync?.voterId;
+                if (!vid) return false;
+                try {
+                  const v = JSON.parse(localStorage.getItem(`cdd_v2_vote_${m.id}_${vid}`) || 'null');
+                  return v && v.ratings && Object.keys(v.ratings).length > 0;
+                } catch (e) { return false; }
+              }).length} notés
+            </span>
             <span style={{fontWeight:700}}>{showMatchPicker ? '▲ Fermer' : 'Changer de match ▼'}</span>
           </button>
           {showMatchPicker && (
@@ -1396,14 +1405,27 @@ function ScreenVote({ go, tweaks }) {
                 const isSel = m.id === selectedMatchId;
                 const resColor = m.result === 'W' ? '#c8f169' : m.result === 'L' ? '#ff8a8a' : '#fbbf24';
                 const resLabel = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : 'N';
+                // Détection si l'utilisateur a déjà voté ce match (localStorage)
+                let isVoted = false;
+                const vid = window.cddSync?.voterId;
+                if (vid) {
+                  try {
+                    const v = JSON.parse(localStorage.getItem(`cdd_v2_vote_${m.id}_${vid}`) || 'null');
+                    isVoted = !!(v && v.ratings && Object.keys(v.ratings).length > 0);
+                  } catch (e) {}
+                }
                 return (
                   <button key={m.id} onClick={() => { setSelectedMatchId(m.id); setShowMatchPicker(false); }}
                     style={{
                       padding:'10px 12px', textAlign:'left',
-                      background: isSel ? 'rgba(200,241,105,.12)' : 'rgba(255,255,255,.04)',
-                      border:'1px solid ' + (isSel ? 'var(--acc, #c8f169)' : 'rgba(255,255,255,.08)'),
+                      background: isSel ? 'rgba(200,241,105,.12)'
+                                : isVoted ? 'rgba(56,189,248,.06)'
+                                : 'rgba(255,255,255,.04)',
+                      border:'1px solid ' + (isSel ? 'var(--acc, #c8f169)'
+                                          : isVoted ? 'rgba(56,189,248,.35)'
+                                          : 'rgba(255,255,255,.08)'),
                       borderRadius:8, color:'#fff', cursor:'pointer',
-                      display:'flex', alignItems:'center', gap:10, fontSize:12,
+                      display:'flex', alignItems:'center', gap:8, fontSize:12,
                     }}>
                     <span style={{
                       display:'inline-block', width:22, height:22, borderRadius:6,
@@ -1411,7 +1433,13 @@ function ScreenVote({ go, tweaks }) {
                       fontWeight:900, fontSize:11, textAlign:'center', lineHeight:'22px',
                     }}>{resLabel}</span>
                     <span style={{flex:1}}>{m.date} · {m.opp}</span>
-                    <span className="num" style={{fontWeight:700}}>{m.score?.[0]}–{m.score?.[1]}</span>
+                    <span className="num" style={{fontWeight:700, opacity:.85}}>{m.score?.[0]}–{m.score?.[1]}</span>
+                    <span style={{
+                      fontSize:10, fontWeight:900, letterSpacing:'.04em',
+                      padding:'3px 6px', borderRadius:5, whiteSpace:'nowrap',
+                      background: isVoted ? 'rgba(56,189,248,.18)' : 'rgba(251,191,36,.14)',
+                      color: isVoted ? '#7dd3fc' : '#fbbf24',
+                    }}>{isVoted ? '✓ noté' : '• à noter'}</span>
                   </button>
                 );
               })}

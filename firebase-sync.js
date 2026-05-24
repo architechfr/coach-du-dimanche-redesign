@@ -223,6 +223,15 @@ async function saveMatchToCloud(match) {
   return { ok: true, matchId };
 }
 
+async function deleteMatchFromCloud(matchId) {
+  if (!db) throw new Error('Firestore non initialisé');
+  if (!matchId) throw new Error('matchId requis');
+  // Best-effort : on ne casse pas si les docs annexes n'existent pas.
+  try { await deleteDoc(doc(db, COLL_MATCHES, matchId)); } catch (e) {}
+  try { await deleteDoc(doc(db, COLL_VOTES, matchId));   } catch (e) {}
+  return { ok: true, matchId };
+}
+
 function watchMatchFromCloud(matchId, callback) {
   if (!db) { callback(null); return () => {}; }
   return onSnapshot(
@@ -2358,7 +2367,7 @@ window.cddSync = {
   watchConvocResponses,
   sendVote,
   watchVotes,
-  saveMatchToCloud,
+  saveMatchToCloud, deleteMatchFromCloud,
   watchMatchFromCloud,
   setPlayerStatus,
   watchPlayerStatuses,
