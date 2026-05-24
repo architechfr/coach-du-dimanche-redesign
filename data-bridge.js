@@ -624,12 +624,48 @@ async function rebuildCDDGlobals() {
     noUpcoming: true, // ← flag pour l'UI : afficher un placeholder explicite
   };
 
-  // ─── Match AMICAL (hors-championnat) ───
+  // ─── Sélecteur multi-matchs (FFF + amicaux) — 2026-05-24 ───
+  // Si le coach a explicitement choisi un match actif (via le switcher),
+  // on l'utilise comme CDD_NEXT_MATCH, prioritaire sur tout le reste.
+  // Sinon, le comportement par défaut s'applique : FFF si présent, sinon
+  // prochain amical (fallback ci-dessous).
+  if (activeTeam?.id && window.CDD_MATCH_SWITCHER?.hasExplicitChoice?.(activeTeam.id)) {
+    try {
+      const active = window.CDD_MATCH_SWITCHER.getActive(activeTeam.id);
+      if (active) {
+        const myName = clubName || 'Mon équipe';
+        const isHome = active.venue === 'H';
+        const home = isHome ? myName : (active.opponent || 'Adversaire');
+        const away = isHome ? (active.opponent || 'Adversaire') : myName;
+        const dDisplay = (() => {
+          const r = /^(\d{4})-(\d{2})-(\d{2})$/.exec(active.dateISO || '');
+          return r ? (r[3] + '/' + r[2] + '/' + r[1]) : (active.date || '');
+        })();
+        window.CDD_NEXT_MATCH = {
+          id: active.id,
+          date: dDisplay,
+          dateISO: active.dateISO,
+          time: active.time || '',
+          home, away,
+          homeBadge: (home || '?')[0],
+          awayBadge: (away || '?')[0],
+          venue: isHome ? 'Domicile' : 'Extérieur',
+          competition: active.label,
+          isAmical: active.kind === 'amical',
+          daysLeft: 0,
+          noUpcoming: false,
+        };
+      }
+    } catch (e) {}
+  }
+
+  // ─── Match AMICAL (hors-championnat) — fallback ───
   // Si aucun match FFF n'est chargé (placeholder en cours), on regarde si le
   // coach a créé un match amical à venir. Dans ce cas, l'amical devient le
   // prochain match. Si FFF a déjà un vrai match, on le garde (les amicaux
   // viendront dans un second temps via un onglet dédié).
-  if (!hasRealNext && activeTeam?.id && window.CDD_FRIENDLY?.nextUpcoming) {
+  if (!hasRealNext && activeTeam?.id && window.CDD_FRIENDLY?.nextUpcoming
+      && !(window.CDD_MATCH_SWITCHER?.hasExplicitChoice?.(activeTeam.id))) {
     try {
       const fn = window.CDD_FRIENDLY.nextUpcoming(activeTeam.id);
       if (fn) {
@@ -1035,6 +1071,9 @@ async function applyFFFData(fffCfg, clubName, players) {
       window.CDD_CLUB.form = played.slice(0, 8).reverse().map(m => m.result || "?");
     }
 
+    // Expose la liste des matchs FFF à venir pour le sélecteur multi-matchs
+    // (combine ensuite avec les matchs amicaux dans match-switcher.js).
+    window.CDD_FFF_UPCOMING = upcoming.slice();
     if (upcoming.length > 0) {
       const next = upcoming[0];
       const d = new Date(next.dateRaw);
@@ -1344,6 +1383,8 @@ window.addEventListener('cdd-active-club-changed', rebuildCDDGlobals);
 window.addEventListener('cdd-active-team-changed', rebuildCDDGlobals);
 // Match amical créé/modifié/supprimé → on rebuild CDD_NEXT_MATCH si concerné.
 window.addEventListener('cdd-friendly-changed', rebuildCDDGlobals);
+// Match actif changé via le sélecteur → rebuild.
+window.addEventListener('cdd-active-match-changed', rebuildCDDGlobals);
 
 // Initial build (sync)
 if (window.CDD && window.CDD.getActiveClub) {

@@ -35,13 +35,20 @@ function ScreenMatchPrep({ go, tweaks }) {
     window.addEventListener('cdd-friendly-changed', h);
     window.addEventListener('cdd-match-info-changed', h);
     window.addEventListener('cdd-jersey-changed', h);
+    window.addEventListener('cdd-active-match-changed', h);
     return () => {
       window.removeEventListener('cdd-data-rebuilt', h);
       window.removeEventListener('cdd-friendly-changed', h);
       window.removeEventListener('cdd-match-info-changed', h);
       window.removeEventListener('cdd-jersey-changed', h);
+      window.removeEventListener('cdd-active-match-changed', h);
     };
   }, []);
+
+  // Liste des matchs à venir (FFF + amicaux) pour le sélecteur multi-matchs.
+  const upcomingMatches = (teamId && window.CDD_MATCH_SWITCHER?.listUpcoming)
+    ? window.CDD_MATCH_SWITCHER.listUpcoming(teamId)
+    : [];
 
   // ── Statut préparation ────────────────────────────────────────
   const hasMatchInfo = teamId && window.CDD_MATCH_INFO?.hasAny?.(teamId, matchId);
@@ -180,6 +187,58 @@ function ScreenMatchPrep({ go, tweaks }) {
           )}
         </div>
       </div>
+
+      {/* SÉLECTEUR multi-matchs (visible seulement si >1 match upcoming) */}
+      {upcomingMatches.length > 1 && (
+        <div style={{margin:'4px 14px 12px'}}>
+          <div style={{
+            fontSize:11, fontWeight:900, letterSpacing:'.08em',
+            color:'rgba(255,255,255,0.55)', marginBottom:8, textTransform:'uppercase',
+          }}>
+            Quel match préparer ?
+          </div>
+          <div style={{display:'flex', gap:6, overflowX:'auto', paddingBottom:4,
+                       scrollbarWidth:'thin'}}>
+            {upcomingMatches.slice(0, 6).map(m => {
+              const active = m.id === next.id;
+              const isAmical = m.kind === 'amical';
+              const dDisp = (() => {
+                const r = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.dateISO || '');
+                return r ? `${r[3]}/${r[2]}` : (m.date || '?').slice(0, 5);
+              })();
+              return (
+                <button key={m.id} type="button"
+                  onClick={() => window.CDD_MATCH_SWITCHER?.setActive?.(teamId, m.id)}
+                  style={{
+                    flexShrink: 0, padding:'8px 12px', borderRadius:9, cursor:'pointer',
+                    background: active
+                      ? (isAmical ? 'rgba(168,85,247,0.18)' : 'rgba(200,241,105,0.18)')
+                      : 'rgba(255,255,255,0.04)',
+                    color: active
+                      ? (isAmical ? '#c4b5fd' : '#c8f169')
+                      : '#fff',
+                    border: '1px solid ' + (active
+                      ? (isAmical ? 'rgba(168,85,247,0.50)' : 'rgba(200,241,105,0.50)')
+                      : 'rgba(255,255,255,0.10)'),
+                    fontFamily:'inherit', textAlign:'left',
+                    minWidth: 120,
+                  }}>
+                  <div style={{fontSize:10, fontWeight:800, opacity:active ? 1 : 0.6,
+                               letterSpacing:'.06em', textTransform:'uppercase',
+                               marginBottom:2,
+                               color: isAmical ? (active ? '#c4b5fd' : 'rgba(168,85,247,0.75)') : undefined}}>
+                    {isAmical ? '🤝 Amical' : '🏆 Champ.'} · {dDisp}
+                  </div>
+                  <div style={{fontSize:12, fontWeight:800, whiteSpace:'nowrap',
+                               overflow:'hidden', textOverflow:'ellipsis', maxWidth:140}}>
+                    {m.venue === 'H' ? 'vs ' : '@ '}{m.opponent}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* CHECKLIST — Statut préparation */}
       <div style={{margin:'4px 14px 12px'}}>
