@@ -816,43 +816,54 @@ async function rebuildCDDGlobals() {
     ? dedup(effectiveLt.startersIds.filter(id => availablePlayers.some(p => p.id === id)))
     : availablePlayers.filter(p => p.isStarter).slice(0, 11).map(p => p.id);
 
-  // ⚠️ COMPLETER A 11 TITULAIRES : puise dans dispos (banc puis reserve)
-  // pour garantir une équipe complète, sinon banc d'origine en priorite.
-  const startersSetInit = new Set(starters);
-  // 1ere passe : non-reserve
-  let fillers = availablePlayers.filter(p =>
-    !startersSetInit.has(p.id) && p.status !== 'reserve'
-  );
-  fillers.sort((a, b) => {
-    const aBench = effectiveLt?.benchIds?.includes(a.id) ? 0 : 1;
-    const bBench = effectiveLt?.benchIds?.includes(b.id) ? 0 : 1;
-    return aBench - bBench;
-  });
-  while (starters.length < 11 && fillers.length > 0) {
-    starters.push(fillers.shift().id);
-  }
-  // 2eme passe : si encore < 11, puiser dans les reservistes
-  if (starters.length < 11) {
-    const sNow = new Set(starters);
-    const reservistsNow = availablePlayers.filter(p =>
-      !sNow.has(p.id) && p.status === 'reserve'
+  // ⚠️ AUTO-COMPLÉTION à 11 titulaires — UNIQUEMENT si pas de matchLineup
+  // posé manuellement par le coach. Sinon on respecte SES choix : s'il a
+  // retiré un titulaire, on accepte la convoc à 10 (à lui de remplir).
+  // Sans ce check, retirer un titulaire le ré-ajoutait silencieusement via
+  // un joueur du banc → "impossible de supprimer", "banc plein figé".
+  const _coachHasSetLineup = !!(matchLineup && matchLineup.starters);
+  if (!_coachHasSetLineup) {
+    const startersSetInit = new Set(starters);
+    // 1ere passe : non-reserve
+    let fillers = availablePlayers.filter(p =>
+      !startersSetInit.has(p.id) && p.status !== 'reserve'
     );
-    while (starters.length < 11 && reservistsNow.length > 0) {
-      starters.push(reservistsNow.shift().id);
+    fillers.sort((a, b) => {
+      const aBench = effectiveLt?.benchIds?.includes(a.id) ? 0 : 1;
+      const bBench = effectiveLt?.benchIds?.includes(b.id) ? 0 : 1;
+      return aBench - bBench;
+    });
+    while (starters.length < 11 && fillers.length > 0) {
+      starters.push(fillers.shift().id);
+    }
+    // 2eme passe : si encore < 11, puiser dans les reservistes
+    if (starters.length < 11) {
+      const sNow = new Set(starters);
+      const reservistsNow = availablePlayers.filter(p =>
+        !sNow.has(p.id) && p.status === 'reserve'
+      );
+      while (starters.length < 11 && reservistsNow.length > 0) {
+        starters.push(reservistsNow.shift().id);
+      }
     }
   }
 
   // Remplaçants : convocCount - starters parmi les dispos restants
   const startersSet = new Set(starters);
   let benchPool = availablePlayers.filter(p => !startersSet.has(p.id) && p.status !== 'reserve');
-  // #41 — Si benchPool insuffisant, puiser dans les 'reserve' (joueurs surnumeraires)
-  // pour atteindre la taille demandee (ou au moins 3 remplaçants mini).
-  // #44 — Banc EXACTEMENT convocCount - 11 (pas de min force). Reste va en reserve.
   let bench;
-  if (convocCount === null) {
+  if (_coachHasSetLineup) {
+    // RESPECT du choix coach : on prend EXACTEMENT le bench posé, sans
+    // auto-complétion. Si le coach veut un banc à 4, il aura 4 — pas
+    // d'injection automatique d'un 5ème depuis la réserve.
+    bench = (effectiveLt?.benchIds && effectiveLt.benchIds.length)
+      ? dedup(effectiveLt.benchIds.filter(id => availablePlayers.some(p => p.id === id)))
+      : [];
+  } else if (convocCount === null) {
     // Illimite : tous les dispos non-reserve sur le banc
     bench = benchPool.map(p => p.id);
   } else {
+    // Pas de matchLineup : auto-completion classique à convocCount - 11
     const benchTarget = Math.max(0, convocCount - starters.length);
     if (benchPool.length < benchTarget) {
       // Pas assez de dispos hors reserve : puiser dans la reserve pour atteindre la cible

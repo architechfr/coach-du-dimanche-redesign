@@ -499,9 +499,42 @@ function ScreenConvocations({ go, tweaks }) {
     }
   };
   const removePlayer = (pid) => {
-    if (!canEdit || !teamId || !window.CDD_CONVOC) return;
+    const _diag = { canEdit, teamId, pid, hasConvoc: !!window.CDD_CONVOC };
+    if (!canEdit) {
+      console.warn('[convocs] removePlayer refusé : pas de permission', _diag);
+      return;
+    }
+    if (!teamId) {
+      console.warn('[convocs] removePlayer refusé : teamId manquant', _diag);
+      alert('Impossible de retirer — aucune équipe active. Recharge la page.');
+      return;
+    }
+    if (!window.CDD_CONVOC || !window.CDD_CONVOC.removeFromConvoc) {
+      console.warn('[convocs] removePlayer refusé : CDD_CONVOC non chargé', _diag);
+      return;
+    }
     if (!confirm('Retirer ce joueur de la convocation ?')) return;
+    console.info('[convocs] removePlayer →', _diag);
     window.CDD_CONVOC.removeFromConvoc(teamId, pid);
+    console.info('[convocs] removePlayer terminé');
+  };
+  // Marque la présence d'un joueur côté coach (cas parent sans app ou
+  // info reçue par texto/oral). Écrit dans Firestore comme une réponse
+  // parent normale, avec un label indiquant qui a saisi.
+  const markPresenceManual = (player, resp) => {
+    if (!canEdit || !player) return;
+    const label = `${player.first} ${player.last || ''} (saisi par coach)`;
+    if (!window.cddSync?.sendConvocResponse) {
+      console.warn('[convocs] markPresenceManual : cddSync indisponible');
+      return;
+    }
+    console.info('[convocs] markPresenceManual →', { matchId, pid: player.id, resp });
+    window.cddSync.sendConvocResponse(matchId, player.id, resp, label)
+      .then(() => console.info('[convocs] markPresenceManual OK'))
+      .catch(err => {
+        console.warn('[convocs] markPresenceManual failed:', err.message);
+        alert('Erreur sauvegarde — réessaie dans quelques secondes.');
+      });
   };
 
   // --- Live réponses parents (Firestore via cddSync) ---
@@ -586,28 +619,62 @@ function ScreenConvocations({ go, tweaks }) {
     if (r) {
       const label = r.resp === 'yes' ? '👍' : r.resp === 'no' ? '👎' : '❓';
       const title = r.resp === 'yes' ? 'Parent : présent' : r.resp === 'no' ? 'Parent : absent' : 'Parent : peut-être';
+      // Coach peut ÉCRASER une réponse en cliquant à nouveau sur ✓/✗
+      // (utile si la réponse parent est erronée — saisie manuelle gagne).
+      if (canEdit && r.resp !== 'yes') {
+        return (
+          <span style={{display:'inline-flex', gap:4, marginLeft:6, alignItems:'center'}}>
+            <span title={title} style={{fontSize:14, opacity:0.7}}>{label}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); markPresenceManual(p, 'yes'); }}
+              title="Forcer présent (saisie coach)"
+              style={{
+                padding:'2px 6px', borderRadius:6,
+                background:'rgba(200,241,105,0.18)', color:'#c8f169',
+                border:'1px solid rgba(200,241,105,0.45)',
+                fontSize:10.5, fontWeight:800, cursor:'pointer',
+              }}>✓</button>
+          </span>
+        );
+      }
       return <span className="cv-parent-resp" title={title} style={{marginLeft:6, fontSize:14, opacity:0.9}}>{label}</span>;
     }
-    // Bouton de relance WhatsApp = outil coach (parent n'a rien à relancer).
+    // Pas de réponse : parent ne voit rien, coach voit 2 boutons côte-à-côte :
+    // ✓ Marquer présent (cas info reçue par texto / parent sans app)
+    // 💬 Relancer WhatsApp
     if (!canEdit) return null;
     const hasPhone = !!normalizePhone(p.parentPhone);
     return (
-      <button
-        onClick={(e) => { e.stopPropagation(); openRelanceWhatsApp(p); }}
-        title={hasPhone
-          ? `Relancer ${p.first} sur WhatsApp`
-          : `Pas de numéro parent enregistré — WhatsApp s'ouvrira vide`}
-        style={{
-          marginLeft: 8, padding: '3px 8px', borderRadius: 7,
-          background: hasPhone ? '#25D366' : 'rgba(255,170,40,0.15)',
-          color: hasPhone ? '#fff' : '#ffc788',
-          border: hasPhone ? 'none' : '1px solid rgba(255,170,40,0.35)',
-          fontSize: 11, fontWeight: 800, cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', gap: 3,
-          whiteSpace: 'nowrap', flexShrink: 0,
-        }}>
-        💬 {hasPhone ? '' : '?'}
-      </button>
+      <span style={{display:'inline-flex', gap:4, marginLeft:8, flexShrink:0}}>
+        <button
+          onClick={(e) => { e.stopPropagation(); markPresenceManual(p, 'yes'); }}
+          title={`Marquer ${p.first} comme PRÉSENT (saisie manuelle coach)`}
+          style={{
+            padding:'3px 8px', borderRadius:7,
+            background:'rgba(200,241,105,0.18)', color:'#c8f169',
+            border:'1px solid rgba(200,241,105,0.45)',
+            fontSize:11, fontWeight:800, cursor:'pointer',
+            whiteSpace:'nowrap',
+          }}>
+          ✓
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); openRelanceWhatsApp(p); }}
+          title={hasPhone
+            ? `Relancer ${p.first} sur WhatsApp`
+            : `Pas de numéro parent enregistré — WhatsApp s'ouvrira vide`}
+          style={{
+            padding:'3px 8px', borderRadius:7,
+            background: hasPhone ? '#25D366' : 'rgba(255,170,40,0.15)',
+            color: hasPhone ? '#fff' : '#ffc788',
+            border: hasPhone ? 'none' : '1px solid rgba(255,170,40,0.35)',
+            fontSize:11, fontWeight:800, cursor:'pointer',
+            display:'inline-flex', alignItems:'center', gap:3,
+            whiteSpace:'nowrap',
+          }}>
+          💬 {hasPhone ? '' : '?'}
+        </button>
+      </span>
     );
   };
   const respCounts = Object.values(parentResponses).reduce((acc, r) => {
