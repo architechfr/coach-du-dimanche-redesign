@@ -749,6 +749,155 @@ function ScreenConvocations({ go, tweaks }) {
         </div>
       </div>
 
+      {/* Mini-vue terrain de la compo du match. Lecture seule, bouton ✎ Modifier
+          qui ouvre l'éditeur complet (avec drag & drop). Affiché uniquement
+          quand un vrai match est programmé. */}
+      {(() => {
+        const _isPlaceholderMatch = !!(next && (next.noUpcoming || !next.away || next.away === 'À déterminer'));
+        if (_isPlaceholderMatch || !teamId) return null;
+        const _mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+        // Source du lineup : compo match (cdd_match_lineup) ou compo type
+        let pitchLineup = null;
+        let isMatchSpecific = false;
+        try {
+          const allM = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+          if (allM[teamId]?.[_mid]) { pitchLineup = allM[teamId][_mid]; isMatchSpecific = true; }
+          else {
+            const allT = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+            if (allT[teamId]) pitchLineup = allT[teamId];
+          }
+        } catch (e) {}
+        if (!pitchLineup || !pitchLineup.starters) return null;
+        const formation = pitchLineup.formation || '4-3-3';
+        const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[formation])
+                   || (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
+        const allPlayers = window.CDD_PLAYERS || [];
+        const playerOf = (pid) => pid && allPlayers.find(p => p.id === pid);
+        const club = window.CDD_CLUB || {};
+        const primary = (club.colors && club.colors[0]) || '#c8f169';
+        const secondary = (club.colors && club.colors[1]) || '#000';
+        return (
+          <div style={{
+            margin:'8px 14px 14px', borderRadius:12, overflow:'hidden',
+            border:'1px solid rgba(255,255,255,0.10)',
+          }}>
+            {/* Header */}
+            <div style={{
+              padding:'10px 12px', display:'flex', justifyContent:'space-between',
+              alignItems:'center', background:'rgba(0,0,0,0.45)', gap:8,
+            }}>
+              <div style={{fontSize:11, fontWeight:900, letterSpacing:'.08em',
+                           color: isMatchSpecific ? '#f97316' : '#c8f169',
+                           textTransform:'uppercase'}}>
+                {isMatchSpecific ? '🎯 Compo du match' : '🗓️ Compo type'} · {formation}
+              </div>
+              {canEdit && (
+                <button onClick={() => go('match-lineup')}
+                  style={{
+                    padding:'6px 12px', borderRadius:7, cursor:'pointer',
+                    background: isMatchSpecific ? 'rgba(249,115,22,0.12)' : 'rgba(200,241,105,0.12)',
+                    color: isMatchSpecific ? '#f97316' : '#c8f169',
+                    border: '1px solid ' + (isMatchSpecific ? 'rgba(249,115,22,0.40)' : 'rgba(200,241,105,0.40)'),
+                    fontSize:11, fontWeight:700, letterSpacing:'.02em',
+                  }}>
+                  ✎ Modifier
+                </button>
+              )}
+            </div>
+            {/* Terrain SVG */}
+            <div style={{position:'relative', width:'100%', paddingBottom:'95%', background:'#1c6e35'}}>
+              <svg viewBox="0 0 100 110" preserveAspectRatio="xMidYMid meet"
+                   style={{position:'absolute', top:0, left:0, width:'100%', height:'100%'}}>
+                <defs>
+                  <linearGradient id="cv-pitch-grass" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#1f7a3a"/>
+                    <stop offset="50%" stopColor="#2c8c47"/>
+                    <stop offset="100%" stopColor="#1c6e35"/>
+                  </linearGradient>
+                  <pattern id="cv-pitch-stripes" x="0" y="0" width="100" height="14" patternUnits="userSpaceOnUse">
+                    <rect width="100" height="14" fill="url(#cv-pitch-grass)"/>
+                    <rect y="7" width="100" height="7" fill="rgba(255,255,255,.04)"/>
+                  </pattern>
+                </defs>
+                <rect width="100" height="110" fill="url(#cv-pitch-stripes)"/>
+                {/* Lignes terrain */}
+                <g stroke="rgba(255,255,255,.65)" strokeWidth=".3" fill="none">
+                  <rect x="2" y="2" width="96" height="106"/>
+                  <line x1="2" y1="55" x2="98" y2="55"/>
+                  <circle cx="50" cy="55" r="9"/>
+                  <circle cx="50" cy="55" r=".6" fill="rgba(255,255,255,.65)"/>
+                  <rect x="22" y="2" width="56" height="13"/>
+                  <rect x="36" y="2" width="28" height="5"/>
+                  <rect x="22" y="95" width="56" height="13"/>
+                  <rect x="36" y="103" width="28" height="5"/>
+                </g>
+                {/* Labels noms — passe 1 (en arrière) */}
+                <g>
+                  {slots.map((slot, i) => {
+                    const p = playerOf(pitchLineup.starters[i]);
+                    if (!p) return null;
+                    const x = slot.x;
+                    const y = 8 + (slot.y / 92) * 86;
+                    return (
+                      <g key={'l-' + i} transform={`translate(${x}, ${y + 10})`}>
+                        <rect x="-11" y="-2" width="22" height="3.6" rx="1" fill="rgba(0,0,0,.78)"/>
+                        <text textAnchor="middle" dominantBaseline="central"
+                              fontSize="2.6" fontWeight="800" fill="#fff"
+                              fontFamily="Inter, sans-serif">
+                          {(p.first || '').slice(0, 12)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </g>
+                {/* Pastilles joueurs — passe 2 (au-dessus) */}
+                <g>
+                  {slots.map((slot, i) => {
+                    const p = playerOf(pitchLineup.starters[i]);
+                    const x = slot.x;
+                    const y = 8 + (slot.y / 92) * 86;
+                    if (!p) {
+                      // Slot vide : pastille discrète
+                      return (
+                        <g key={'e-' + i} transform={`translate(${x}, ${y})`}>
+                          <circle r="5" fill="rgba(0,0,0,.30)" stroke="rgba(255,255,255,.30)"
+                                  strokeWidth=".3" strokeDasharray="1 1"/>
+                          <text textAnchor="middle" dominantBaseline="central"
+                                fontSize="4" fontWeight="900" fill="rgba(255,255,255,.5)">+</text>
+                        </g>
+                      );
+                    }
+                    const num = (window.CDD_JERSEY?.getNum?.(teamId, _mid, p.id, p.num)) ?? p.num;
+                    return (
+                      <g key={'p-' + i} transform={`translate(${x}, ${y})`}>
+                        <circle r="6.8" fill="rgba(0,0,0,.42)"/>
+                        <circle r="5.8" fill={primary} stroke="#fff" strokeWidth=".4"/>
+                        {p.photo && (
+                          <>
+                            <defs><clipPath id={`cv-clip-${i}`}><circle cx="0" cy="0" r="5.6"/></clipPath></defs>
+                            <image href={p.photo} xlinkHref={p.photo}
+                                   x="-5.6" y="-5.6" width="11.2" height="11.2"
+                                   preserveAspectRatio="xMidYMid slice"
+                                   clipPath={`url(#cv-clip-${i})`}/>
+                            <circle r="5.6" fill="rgba(0,0,0,.18)"/>
+                          </>
+                        )}
+                        <circle cx="3.4" cy="-3.4" r="2.4" fill={secondary} stroke="#fff" strokeWidth=".2"/>
+                        <text x="3.4" y="-3.0" textAnchor="middle" dominantBaseline="central"
+                              fontSize="2.8" fontWeight="900" fill="#fff"
+                              fontFamily="Inter, sans-serif">
+                          {num}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </g>
+              </svg>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Carte récap des infos pratiques du match — visible si renseignées ou
           avertissement si vides (gating UX pour pousser le coach à les saisir
           AVANT d'envoyer la convocation).
