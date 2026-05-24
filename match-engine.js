@@ -392,8 +392,9 @@ function getLiveMatch() {
 // Le type de match (championnat / amical / coupe / etc.) est inclus pour l'affichage.
 function listCoachFinishedMatches() {
   try {
-    const activeClub = JSON.parse(localStorage.getItem('cdd_active_context') || '{}').clubId
-                     || localStorage.getItem('arb_current_club');
+    const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+    const activeClub = ctx.clubId || localStorage.getItem('arb_current_club');
+    const activeTeam = ctx.teamId;
     const markerKeys = new Set(['cdd_match_current', 'cdd_match_last_finished']);
     const matches = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -402,7 +403,12 @@ function listCoachFinishedMatches() {
       try {
         const m = JSON.parse(localStorage.getItem(k) || 'null');
         if (!m || (m.st !== 'finished' && !m.endedAt)) continue;
-        if (activeClub && m.clubId && m.clubId !== activeClub) continue;
+        // Filtre STRICT par club actif : un match sans clubId ou d'un autre
+        // club est masqué — évite que les matchs d'un autre club fuient ici.
+        if (activeClub && m.clubId !== activeClub) continue;
+        // Filtre équipe : un match d'une autre équipe du même club est masqué
+        // (les matchs sans tmId restent visibles pour compat rétro).
+        if (activeTeam && m.tmId && m.tmId !== activeTeam) continue;
         const sA = m.sA || 0, sB = m.sB || 0;
         const result = sA > sB ? 'W' : sA < sB ? 'L' : 'D';
         const endedAt = m.endedAt || m.savedAt || 0;
