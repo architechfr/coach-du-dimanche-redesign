@@ -1,6 +1,6 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-24** (cache buster **v76**).
+> Document de reprise. Dernière mise à jour : **2026-05-24 (soir)** (cache buster **v82**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
@@ -70,6 +70,102 @@
   du bandeau ORANGE 🎯 COMPO DU MATCH en mode match.
 - Tile Accueil "Compo" : sous-titre "Équipe type saison".
 
+### ✅ Livré dans la session du 24 mai SOIR (post-v76, commits c0945a0 → 01aa9e7)
+
+**UX page Équipe Type — un seul bouton** (commit c0945a0) :
+- Page lineup (Équipe Type) : suppression des boutons Reset/Retour/Coup d'envoi.
+  Remplacés par **📋 PRÉPARER LE MATCH / CONVOCATION** plein largeur.
+- Force le passage par Convocations pour lancer un match (équipe type =
+  template saison, jamais un match concret).
+- En mode Compo du Match : Reset/Retour/Coup d'envoi conservés, Retour
+  pointe désormais sur Convocations (au lieu de Home).
+
+**Dédup doublons + équipe 2 dans "Disponibles non convoqués"** (commit b54016a) :
+- Bug résolu : Mamadou #6+#8, Appolinaire #7+#8, Laighor #11+#16 en double.
+  Helper `dedup()` défensif dans builder `CDD_CONVO` (starters, bench) +
+  `_ensureMatchLineup` (un joueur ne peut être qu'une fois entre
+  starters/bench/reserve, priorité starters).
+- Filtre `p.status !== 'reserve'` RETIRÉ de la liste "Disponibles non
+  convoqués" → les joueurs équipe 2 apparaissent maintenant. Badge bleu
+  pastel **Équipe 2** à côté du nom, bordure gauche distinctive.
+
+**Page dédiée pour les liens ?t= (partage convocation)** (commit b78b411) :
+- Avant : un parent qui cliquait un lien WhatsApp `?t=TOKEN` atterrissait
+  sur la landing générique 'Je suis coach / Je découvre' — incohérent.
+- `app.jsx` : `?t=` SANS email → landing (au lieu de lecteur direct).
+  Après login depuis landing avec `?t=` en URL, redirection auto vers lecteur.
+- `screen-landing.jsx` : nouveau mode 'share-signup' déclenché par `?t=` :
+  bandeau bleu pastel 🔗 'Lien de convocation reçu', boutons Google +
+  email magique, note 'Pas encore membre ? Demande un lien d'invitation'.
+
+**Option "Je me reconnecte"** (commit fc0fdd6) :
+- 4e carte sur la landing entre "J'ai reçu un lien" et "Je découvre" :
+  **👤 Je me reconnecte (parent/joueur/adjoint/lecteur/coach)** en bleu.
+- Mode `returning-signin` minimaliste : Google sign-in OU email magique
+  sans saisie de nom ni choix de rôle. Le rôle réel est restauré
+  automatiquement depuis le membership Firestore au login.
+
+**Infos pratiques du match** (commit 3e59a02) :
+- Module `match-info.js` (`window.CDD_MATCH_INFO`) : get/set/hasAny/clear/
+  formatForMessage. Storage `cdd_match_info[teamId][matchId]` avec
+  opponent / stadium / kickoff / arrival / carpool / notes / updatedAt.
+- Modale `match-info-modal.jsx` (`window.MatchInfoModal`) : 5 sections
+  (Adversaire, Stade, Horaires RDV+coup d'envoi, Covoiturage avec toggle,
+  Notes libres).
+- Intégration Convocations : bouton bleu **📋 INFOS DU MATCH** dans hero,
+  carte récap si renseignées OU avertissement orange dashed
+  '⚠️ Infos du match manquantes'. `buildRelanceMsg` WhatsApp inclut
+  désormais le bloc `formatForMessage`.
+
+**Sync cloud match-info + numéros maillots multi-device** (commit 86525b6) :
+- `firebase-sync.js` : 6 nouvelles fonctions (`saveMatchInfo/fetchMatchInfos/
+  deleteMatchInfo` + équivalents `saveJerseyNumbers/...`). Collections
+  `match_infos` et `match_jerseys` (id = `{teamId}_{matchId}`).
+- `pullCloudData` fetch les 2 collections au login, propage en LWW vers
+  `cdd_match_info` et `cdd_match_jersey_numbers`.
+- `match-info.js` set/clear et `jersey-numbers.js` setBulk push cloud
+  fire-and-forget.
+- `firestore.rules` : règles `/match_infos/{infoId}` et `/match_jerseys/
+  {jerseyId}` (read = membre du club, write = canEditTeam).
+  **Publiées dans la console Firebase le 24 mai soir.**
+
+**Match amical — création hors-championnat** (commit 003d84e) :
+- Module `friendly-matches.js` (`window.CDD_FRIENDLY`) : list/get/create/
+  update/remove/nextUpcoming/isAmical. Storage `cdd_friendly_matches[teamId]
+  []` avec ids préfixés `fr_*`. Cleanup automatique des données liées
+  (match-info, match-lineup, jersey-numbers) à la suppression.
+- Modale `friendly-match-modal.jsx` (`window.FriendlyMatchModal`) :
+  date (default = prochain dimanche 14h), heure, adversaire, domicile/extérieur.
+- `data-bridge.js` : si pas de match FFF en cours, le prochain amical
+  devient `CDD_NEXT_MATCH` (avec `isAmical: true`).
+- `screen-results-conv.jsx` : badge violet **🤝 MATCH AMICAL** dans hero
+  Convocations, bouton **+ MATCH AMICAL** ou **✎ ÉDITER L'AMICAL** selon
+  contexte.
+
+**Match amical — sync cloud + onglet Amicaux dans Championnat** (commit bd44f18) :
+- `firebase-sync.js` : `saveFriendlyMatch/fetchFriendlyMatches/
+  deleteFriendlyMatch` (collection `friendly_matches`).
+  `pullCloudData` étendu : merge LWW par id (préserve les ajouts locaux
+  non encore push).
+- `firestore.rules` : règles `/friendly_matches/{matchId}` (read = membre
+  du club, write = canEditTeam). **Publiées dans la console Firebase.**
+- `ScreenResults` (Championnat) : 4e onglet **🤝 Amicaux** à côté de
+  Classement/Calendrier/Buteurs. Liste triée par date avec badge AMICAL,
+  matchs passés grisés. Bouton **+ AJOUTER UN MATCH AMICAL** + bouton
+  **✎** sur chaque ligne.
+
+**Page Match dédiée — hub centralisé** (commit 01aa9e7) :
+- Nouveau `screen-match-prep.jsx` (`window.ScreenMatchPrep`) accessible
+  depuis l'Accueil (tile "Prochain match", anciennement "Match live").
+- Contenu : hero match (badge AMICAL) · **checklist 4 items binaires**
+  (✅/⚠️ Infos / Compo / Numéros / Convocations parents X/N avec seuil
+  80%) · **grille 6 tuiles d'actions** (📋 Infos · 🎯 Compo · 🔢 Numéros ·
+  👟 Vestiaire · 📣 Convocs · ↗ Partager) · **CTA primaire 🏁 LANCER LE
+  MATCH** avec garde modale numéros au 1er passage.
+- Cas "aucun match" : invitation à créer un match amical.
+- 3 modales intégrées (MatchInfo, JerseyNumbers, FriendlyMatch).
+- App.jsx : route `match-prep` + titre 'PROCHAIN MATCH'.
+
 ### ✅ Livré et publié (v74 et avant)
 
 - **Phase D** : modèle d'autorisation par équipe + multi-rôles. Publié.
@@ -99,48 +195,56 @@
 - Mode Vestiaire qui divergeait de Feuille de match (couche convocation
   adaptative supprimée).
 - Recherche sans accent ne trouvait pas "Léonis" ni "Clément".
+- Joueurs Mamadou/Appolinaire/Laighor en double dans Convocations (dédup
+  défensif dans builder + `_ensureMatchLineup`).
+- Joueurs équipe 2 invisibles dans "Disponibles non convoqués"
+  (filtre `p.status !== 'reserve'` retiré).
+- Lien WhatsApp `?t=` aboutissait sur la landing générique (mode
+  share-signup dédié maintenant).
+- Parent obligé de cliquer "Je suis coach" pour se reconnecter
+  (option "Je me reconnecte" ajoutée).
 
 ### ⚠️ Convention cache buster (à respecter)
 **1 push git = 1 numéro de version.** Tous les fichiers modifiés dans
 le même commit prennent le même `?v=NN`. Le push suivant incrémente
 de 1 (v74 → v75 → v76…). **Pas de réutilisation d'un numéro.**
-*Note 2026-05-24* : on est resté longtemps en v74 pendant la session,
-on remonte tout à **v76** au commit final de bouchon.
+Versions notables : v76 (bouchon UX + cache buster homogène),
+v78 (numéros maillots + match-info), v79 (sync cloud match-info+jersey),
+v80 (match amical), v81 (cloud amical + onglet Champ.), **v82** (page
+Match dédiée — actuelle).
 
 ---
 
 ## 2. Sujet suivant — backlog priorisé
 
-### Match amical (priorité 1 — déjà discuté)
-- A : Bouton "Ajouter un match amical" dans Convocations.
-- C : Onglet "Amicaux" dédié à côté de "Championnat".
+### Page Club complète (priorité 1)
+- Logo, stade principal (nom + adresse + GPS), couleurs, contacts
+  (coachs, secrétaire, dirigeant, président).
+- Sert de **référentiel** pour pré-remplir les infos match : si le match
+  est à domicile, on devrait reproposer le stade du club par défaut dans
+  la modale `match-info`.
 
-### Page Match dédiée (priorité 2)
-- Accès depuis l'Accueil. Vue centrée sur **le prochain match** :
-  équipe convoquée, lancement du match, accès rapide compo/vestiaire.
-  Évite la navigation entre 3 onglets (Convocations/Compo/Match Live).
+### Page Coach partageable (priorité 2)
+- Fiche publique du coach : avatar, nom, expérience, contact.
+- Carte de visite à partager aux parents/joueurs/dirigeants.
 
 ### Autres pistes
-- Page Club complète (organigramme, stade, GPS, contacts).
-- Page Coach partageable (carte de visite).
 - Onboarding émotionnel repensé.
+- Page Soutien projet dédiée (pas paiement, juste présentation).
+- Import district / FFF (futur module ingestion).
+- QR code d'invitation (le flow Phase D est livré et stable).
+- Match amical avec coexistence FFF : pour l'instant l'amical n'apparaît
+  comme prochain match QUE si le calendrier FFF est vide. À raffiner si
+  le coach a un FFF + un amical : sélecteur multi-matchs.
 
 ---
 
-## 3. Sujets en backlog (post-Phase 1)
+## 3. Sujets en backlog (long terme)
 
-- **Page Match dédiée** depuis Accueil : voir l'équipe convoquée + lancer
-  le match depuis là.
-- **Page Club** complète (organigramme, stade, GPS, contacts).
-- **Page Coach** partageable (carte de visite).
-- **Onboarding émotionnel** repensé.
 - **Page Soutien projet** dédiée (pas paiement, juste présentation).
 - **Import district / FFF** (futur module ingestion).
-- **Mode visiteur public sur `?t=token`** : à BLOQUER (réponse Florian =
-  pas de visiteur public, tout le monde doit se logger).
 - **Photos manquantes** : Djibril TRAORE, Ilian LUNETEAU, Niels BRUDEY
   → Florian dit "pas important, joueurs d'une autre catégorie".
-- **QR code d'invitation** : si flow D livré est clair, peut être OK.
 
 ---
 
