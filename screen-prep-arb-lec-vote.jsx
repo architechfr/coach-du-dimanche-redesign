@@ -748,31 +748,127 @@ function ScreenLecteur({ go, tweaks }) {
             </div>
           );
         }
+        // Convention recevant à gauche pour l'affichage VS
+        const fmtVs = (m) => {
+          const opp = m.opponentName
+            || (m.venue === 'Domicile' ? m.away : m.home)
+            || m.away || '?';
+          const me = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.team) || 'FCMH';
+          return m.venue === 'Domicile' ? `${me} vs ${opp}` : `${opp} vs ${me}`;
+        };
+        const nextM = upcoming[0];
+        const rest = upcoming.slice(1);
+        // Infos pratiques du prochain match (stade, RDV, coup d'envoi)
+        const nextInfo = (_calTeamId && nextM?.id && window.CDD_MATCH_INFO?.get)
+          ? window.CDD_MATCH_INFO.get(_calTeamId, nextM.id) : null;
+        const venueLabel = nextM.venue === 'Domicile' ? 'DOMICILE' : 'EXTÉRIEUR';
+        const venueColor = nextM.venue === 'Domicile' ? '#c8f169' : '#fbbf24';
+        const dayLabel = (() => {
+          if (typeof nextM.daysLeft !== 'number') return null;
+          if (nextM.daysLeft === 0) return 'AUJOURD\'HUI';
+          if (nextM.daysLeft === 1) return 'DEMAIN';
+          return `J-${nextM.daysLeft}`;
+        })();
         return (
           <div className="lec-cal">
-            {upcoming.map((m, i) => {
-              const opp = m.opponentName
-                || (m.venue === 'Domicile' ? m.away : m.home)
-                || m.away || '?';
-              const venueLabel = m.venue === 'Domicile' ? 'DOMICILE' : 'EXTÉRIEUR';
-              return (
-                <div className="lec-cal-row" key={m.id || i}
-                     style={{background:'rgba(255,255,255,0.03)'}}>
-                  <span style={{fontSize:15, flexShrink:0}}>📅</span>
-                  <span className="lec-cal-opp">
-                    <em>{venueLabel}</em>
-                    {opp}
-                    {m.isAmical && (
-                      <span style={{marginLeft:6, fontSize:10, fontWeight:700, color:'#a78bfa',
-                        background:'rgba(167,139,250,0.12)', padding:'1px 6px', borderRadius:4}}>
-                        AMICAL
-                      </span>
-                    )}
-                  </span>
-                  <span className="lec-cal-d num">{m.date}</span>
+            {/* CARTE — Prochain match (enrichi) */}
+            <div style={{
+              background:'linear-gradient(135deg, rgba(200,241,105,0.08), rgba(255,255,255,0.02))',
+              border:'1px solid rgba(200,241,105,0.25)',
+              borderRadius:14, padding:'14px 16px', marginBottom:12,
+              display:'flex', flexDirection:'column', gap:10,
+            }}>
+              <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                <span style={{
+                  fontSize:10.5, fontWeight:800, letterSpacing:'.08em',
+                  padding:'3px 8px', borderRadius:5,
+                  background:'rgba(200,241,105,0.18)', color:'#c8f169',
+                  border:'1px solid rgba(200,241,105,0.4)',
+                }}>PROCHAIN MATCH</span>
+                {dayLabel && (
+                  <span style={{
+                    fontSize:10.5, fontWeight:800, letterSpacing:'.08em',
+                    padding:'3px 8px', borderRadius:5,
+                    background:'rgba(255,255,255,0.06)', color:'#fff',
+                    border:'1px solid rgba(255,255,255,0.18)',
+                  }}>{dayLabel}</span>
+                )}
+                {nextM.isAmical && (
+                  <span style={{
+                    fontSize:10.5, fontWeight:800, letterSpacing:'.06em',
+                    padding:'3px 8px', borderRadius:5,
+                    background:'rgba(167,139,250,0.15)', color:'#c4b5fd',
+                    border:'1px solid rgba(167,139,250,0.4)',
+                  }}>🤝 AMICAL</span>
+                )}
+              </div>
+              <div style={{fontSize:17, fontWeight:800, color:'#fff', letterSpacing:'-.01em'}}>
+                {fmtVs(nextM)}
+              </div>
+              <div style={{
+                display:'grid', gridTemplateColumns:'1fr 1fr', gap:8,
+                fontSize:12.5, color:'rgba(255,255,255,0.85)',
+              }}>
+                <div style={{display:'flex', alignItems:'center', gap:6}}>
+                  <span>📅</span><b>{nextM.date}</b>
                 </div>
-              );
-            })}
+                <div style={{display:'flex', alignItems:'center', gap:6}}>
+                  <span>📍</span>
+                  <b style={{color:venueColor}}>{venueLabel}</b>
+                </div>
+                {nextInfo?.kickoff && (
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <span>⚽</span><b>Coup d'envoi {nextInfo.kickoff}</b>
+                  </div>
+                )}
+                {nextInfo?.arrival && (
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <span>🕐</span><b>RDV {nextInfo.arrival}</b>
+                  </div>
+                )}
+                {nextInfo?.stadium?.name && (
+                  <div style={{display:'flex', alignItems:'center', gap:6, gridColumn:'1 / -1'}}>
+                    <span>🏟️</span>
+                    <b>{nextInfo.stadium.name}</b>
+                    {nextInfo.stadium.address && (
+                      <span style={{opacity:0.7, fontWeight:400}}> · {nextInfo.stadium.address}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* LISTE — Matchs suivants (compacts) */}
+            {rest.length > 0 && (
+              <>
+                <div className="sec-h" style={{marginTop:4}}>
+                  <span className="t">À suivre · {rest.length}</span>
+                </div>
+                {rest.map((m, i) => {
+                  const opp = m.opponentName
+                    || (m.venue === 'Domicile' ? m.away : m.home)
+                    || m.away || '?';
+                  const vL = m.venue === 'Domicile' ? 'DOMICILE' : 'EXTÉRIEUR';
+                  return (
+                    <div className="lec-cal-row" key={m.id || i}
+                         style={{background:'rgba(255,255,255,0.03)'}}>
+                      <span style={{fontSize:15, flexShrink:0}}>📅</span>
+                      <span className="lec-cal-opp">
+                        <em>{vL}</em>
+                        {opp}
+                        {m.isAmical && (
+                          <span style={{marginLeft:6, fontSize:10, fontWeight:700, color:'#a78bfa',
+                            background:'rgba(167,139,250,0.12)', padding:'1px 6px', borderRadius:4}}>
+                            AMICAL
+                          </span>
+                        )}
+                      </span>
+                      <span className="lec-cal-d num">{m.date}</span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         );
       })()}
