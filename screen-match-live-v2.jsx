@@ -229,148 +229,141 @@ function TeamBadgeBig({ team }) {
 // Match Header (sticky)
 // ──────────────────────────────────────────────────────────
 function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
+  // Refonte 2026-05-24 : layout scoreboard FIFA (logos+score sur 1 ligne,
+  // chrono géant dessous). Avant : tout était empilé dans la colonne centrale
+  // d'un grid 3-cols, le chrono XL refoulait le score hors viewport.
+  const realMs = MATCH_HELPERS.gRealMs ? MATCH_HELPERS.gRealMs(M) : 0;
+  const inHt = MATCH_HELPERS.isInHalftime ? MATCH_HELPERS.isInHalftime(M) : false;
+  const matchMs = MATCH_HELPERS.gMatch ? MATCH_HELPERS.gMatch(M) : 0;
+  const fmtH = (ts) => ts ? new Date(ts).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) : null;
+  const t1 = fmtH(M.startedAt);
+  const t2 = fmtH(M.periodStartedAt && M.periodStartedAt[2]);
+  const showChrono = M.st !== 'finished' && !M.notStarted;
+
   return (
     <div className="mv-header">
       <div className="mv-header-bg"/>
       <div className="mv-header-grad"/>
 
+      {/* Ligne 1 : scoreboard FIFA — Logo+Nom A | SCORE | Logo+Nom B */}
       <div className="mv-teams-row">
         <div className="mv-team mv-team-A">
           <TeamBadgeBig team={M.tA}/>
-          {/* Nom club bien lisible (#38 puis agrandissement demande par le coach) */}
           <div className="mv-team-n" style={{
-            fontSize:'clamp(20px, 5vw, 26px)', fontWeight:900,
-            letterSpacing:'.02em', lineHeight:1.05,
+            fontSize:'clamp(13px, 3.5vw, 18px)', fontWeight:900,
+            letterSpacing:'.02em', lineHeight:1.1,
           }}>{M.tA.n}</div>
         </div>
 
         <div className="mv-score-block">
           <div className="mv-score-row">
-            <span className="mv-score-num num">{M.sA}</span>
+            <span className="mv-score-num num">{M.sA ?? 0}</span>
             <span className="mv-score-dash" style={{
-              color:'rgba(255,255,255,0.45)', fontSize:'48px', fontWeight:300,
-              margin:'0 14px', lineHeight:1,
+              color:'rgba(255,255,255,0.55)', fontSize:'42px', fontWeight:300,
+              margin:'0 12px', lineHeight:1,
             }}>–</span>
-            <span className="mv-score-num num">{M.sB}</span>
+            <span className="mv-score-num num">{M.sB ?? 0}</span>
           </div>
-
-          {/* #36 — Gros chrono style arbitre */}
-          {M.st !== 'finished' && !M.notStarted && (() => {
-            const realMs = MATCH_HELPERS.gRealMs ? MATCH_HELPERS.gRealMs(M) : 0;
-            const pauseMs = MATCH_HELPERS.gPauseMs ? MATCH_HELPERS.gPauseMs(M) : 0;
-            const inHt = MATCH_HELPERS.isInHalftime ? MATCH_HELPERS.isInHalftime(M) : false;
-            const matchMs = MATCH_HELPERS.gMatch ? MATCH_HELPERS.gMatch(M) : 0;
-            return (
-              <div className="mv-chrono-block" style={{
-                margin:'8px auto 0', display:'flex', flexDirection:'column',
-                alignItems:'center', gap:4,
-              }}>
-                {/* GROS chrono jeu — taille XL pour lecture arbitre en plein soleil */}
-                <div style={{
-                  fontFamily: 'var(--f-display, sans-serif)',
-                  fontSize: 'clamp(72px, 18vw, 160px)',
-                  fontWeight: 900, letterSpacing: '.04em',
-                  color: M.st === 'live' ? '#c8f169' : '#fbbf24',
-                  fontVariantNumeric: 'tabular-nums', lineHeight: 0.95,
-                  textShadow: M.st === 'live' ? '0 0 32px rgba(200,241,105,.5)' : 'none',
-                  padding: '4px 0',
-                }}>
-                  {MATCH_HELPERS.fmtMMSS ? MATCH_HELPERS.fmtMMSS(matchMs) : minute + ":00"}
-                </div>
-                {/* Sous-titre LIVE/PAUSE + mi-temps — agrandi en proportion */}
-                <div style={{
-                  display:'flex', alignItems:'center', gap:10, fontSize:14, fontWeight:800,
-                  letterSpacing:'.12em', textTransform:'uppercase',
-                  color: M.st === 'live' ? '#c8f169' : inHt ? '#fbbf24' : '#ff8a3d',
-                }}>
-                  {M.st === 'live' && <span className="mv-live-dot" style={{animation:'pulse 1.2s infinite'}}/>}
-                  <span>{inHt ? 'MI-TEMPS' : M.st === 'live' ? 'LIVE' : 'PAUSE'}</span>
-                  <span style={{opacity:.5}}>·</span>
-                  <span>{M.ch === 1 ? '1ère' : M.ch + 'ème'} Mi-temps</span>
-                  {M.at > 0 && <><span style={{opacity:.5}}>·</span><span>+{M.at}'</span></>}
-                </div>
-                {/* Horodatages absolus — référence arbitre en cas de contestation */}
-                {(M.startedAt || (M.periodStartedAt && M.periodStartedAt[2])) && (() => {
-                  const fmtH = (ts) => ts ? new Date(ts).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) : null;
-                  const t1 = fmtH(M.startedAt);
-                  const t2 = fmtH(M.periodStartedAt && M.periodStartedAt[2]);
-                  return (
-                    <div style={{
-                      fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:4,
-                      letterSpacing:'.04em', display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap',
-                    }}>
-                      {t1 && <span>Coup d'envoi · {t1}</span>}
-                      {t2 && <span style={{opacity:.6}}>·</span>}
-                      {t2 && <span>2ème MT · {t2}</span>}
-                    </div>
-                  );
-                })()}
-                {/* Temps pause visible si en pause */}
-                {M.st === 'paused' && M.pauseStartedAt && (
-                  <div style={{
-                    fontSize: 12, color:'#ff8a3d', fontWeight:700,
-                    fontVariantNumeric:'tabular-nums', marginTop:2,
-                    display:'flex', gap:6, alignItems:'center',
-                  }}>
-                    <span>⏸</span>
-                    <span>Pause depuis {MATCH_HELPERS.fmtMMSS(Date.now() - M.pauseStartedAt)}</span>
-                  </div>
-                )}
-                {/* Temps reel ecoule (au cas ou) */}
-                {M.startedAt && (M.st === 'paused' || inHt) && (
-                  <div style={{fontSize:10, color:'rgba(255,255,255,.4)', marginTop:2}}>
-                    Temps réel depuis coup d'envoi : {MATCH_HELPERS.fmtMMSS(realMs)}
-                  </div>
-                )}
-
-                {/* #40 Countdown mi-temps : 15 min qui descendent vers 0 */}
-                {inHt && M.htStart && (() => {
-                  const htDurMs = (M.htDur || 15) * 60 * 1000;
-                  const elapsedHt = Date.now() - M.htStart;
-                  const remainHt = Math.max(0, htDurMs - elapsedHt);
-                  const isLow = remainHt < 60000;  // <1 min
-                  return (
-                    <div style={{
-                      marginTop: 10, padding: '10px 18px', borderRadius: 12,
-                      background: isLow ? 'rgba(255,80,80,.18)' : 'rgba(251,191,36,.14)',
-                      border: '1px solid ' + (isLow ? 'rgba(255,80,80,.4)' : 'rgba(251,191,36,.35)'),
-                      display: 'flex', alignItems: 'center', gap: 12,
-                    }}>
-                      <span style={{fontSize: 20}}>{isLow ? '🔔' : '☕'}</span>
-                      <div>
-                        <div style={{fontSize:10, fontWeight:800, letterSpacing:'.1em',
-                                     color: isLow ? '#ff9a9a' : '#fbbf24',
-                                     textTransform:'uppercase'}}>
-                          PAUSE MI-TEMPS · {Math.floor((M.htDur || 15))}min
-                        </div>
-                        <div style={{
-                          fontSize: 22, fontWeight: 900, fontVariantNumeric: 'tabular-nums',
-                          color: '#fff', marginTop: 2, lineHeight: 1,
-                          textShadow: isLow ? '0 0 8px rgba(255,80,80,.4)' : 'none',
-                        }}>
-                          {MATCH_HELPERS.fmtMMSS(remainHt)} restantes
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          })()}
-          {M.notStarted && <div className="mv-live-badge mv-pre">EN ATTENTE · COUP D'ENVOI</div>}
-          {M.st === 'finished' && <div className="mv-live-badge mv-end">MATCH TERMINÉ</div>}
+          {M.notStarted && <div className="mv-live-badge mv-pre" style={{marginTop:6}}>EN ATTENTE · COUP D'ENVOI</div>}
+          {M.st === 'finished' && <div className="mv-live-badge mv-end" style={{marginTop:6}}>MATCH TERMINÉ</div>}
         </div>
 
         <div className="mv-team mv-team-B">
           <TeamBadgeBig team={M.tB}/>
           <div className="mv-team-n" style={{
-            fontSize:'clamp(20px, 5vw, 26px)', fontWeight:900,
-            letterSpacing:'.02em', lineHeight:1.05,
+            fontSize:'clamp(13px, 3.5vw, 18px)', fontWeight:900,
+            letterSpacing:'.02em', lineHeight:1.1,
           }}>{M.tB.n}</div>
         </div>
       </div>
 
-      <div style={{display:'flex', gap:8, justifyContent:'center', padding:'0 14px 8px'}}>
+      {/* Ligne 2 : Chrono géant + sous-titres + horodatages + halftime */}
+      {showChrono && (
+        <div className="mv-chrono-row" style={{
+          position:'relative', zIndex:2, padding:'0 14px 10px',
+          display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+        }}>
+          {/* Gros chrono — taille adaptée pour rester visible sans masquer le score */}
+          <div style={{
+            fontFamily: 'var(--f-display, sans-serif)',
+            fontSize: 'clamp(56px, 14vw, 110px)',
+            fontWeight: 900, letterSpacing: '.04em',
+            color: M.st === 'live' ? '#c8f169' : '#fbbf24',
+            fontVariantNumeric: 'tabular-nums', lineHeight: 0.95,
+            textShadow: M.st === 'live' ? '0 0 32px rgba(200,241,105,.5)' : 'none',
+            padding: '2px 0',
+          }}>
+            {MATCH_HELPERS.fmtMMSS ? MATCH_HELPERS.fmtMMSS(matchMs) : minute + ":00"}
+          </div>
+          <div style={{
+            display:'flex', alignItems:'center', gap:10, fontSize:13, fontWeight:800,
+            letterSpacing:'.12em', textTransform:'uppercase',
+            color: M.st === 'live' ? '#c8f169' : inHt ? '#fbbf24' : '#ff8a3d',
+          }}>
+            {M.st === 'live' && <span className="mv-live-dot" style={{animation:'pulse 1.2s infinite'}}/>}
+            <span>{inHt ? 'MI-TEMPS' : M.st === 'live' ? 'LIVE' : 'PAUSE'}</span>
+            <span style={{opacity:.5}}>·</span>
+            <span>{M.ch === 1 ? '1ère' : M.ch + 'ème'} Mi-temps</span>
+            {M.at > 0 && <><span style={{opacity:.5}}>·</span><span>+{M.at}'</span></>}
+          </div>
+          {(t1 || t2) && (
+            <div style={{
+              fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:2,
+              letterSpacing:'.04em', display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap',
+            }}>
+              {t1 && <span>Coup d'envoi · {t1}</span>}
+              {t2 && <span style={{opacity:.6}}>·</span>}
+              {t2 && <span>2ème MT · {t2}</span>}
+            </div>
+          )}
+          {M.st === 'paused' && M.pauseStartedAt && (
+            <div style={{
+              fontSize:12, color:'#ff8a3d', fontWeight:700,
+              fontVariantNumeric:'tabular-nums', marginTop:2,
+              display:'flex', gap:6, alignItems:'center',
+            }}>
+              <span>⏸</span>
+              <span>Pause depuis {MATCH_HELPERS.fmtMMSS(Date.now() - M.pauseStartedAt)}</span>
+            </div>
+          )}
+          {M.startedAt && (M.st === 'paused' || inHt) && (
+            <div style={{fontSize:10, color:'rgba(255,255,255,.4)', marginTop:2}}>
+              Temps réel depuis coup d'envoi : {MATCH_HELPERS.fmtMMSS(realMs)}
+            </div>
+          )}
+          {inHt && M.htStart && (() => {
+            const htDurMs = (M.htDur || 15) * 60 * 1000;
+            const elapsedHt = Date.now() - M.htStart;
+            const remainHt = Math.max(0, htDurMs - elapsedHt);
+            const isLow = remainHt < 60000;
+            return (
+              <div style={{
+                marginTop:10, padding:'10px 18px', borderRadius:12,
+                background: isLow ? 'rgba(255,80,80,.18)' : 'rgba(251,191,36,.14)',
+                border: '1px solid ' + (isLow ? 'rgba(255,80,80,.4)' : 'rgba(251,191,36,.35)'),
+                display:'flex', alignItems:'center', gap:12,
+              }}>
+                <span style={{fontSize:20}}>{isLow ? '🔔' : '☕'}</span>
+                <div>
+                  <div style={{fontSize:10, fontWeight:800, letterSpacing:'.1em',
+                               color: isLow ? '#ff9a9a' : '#fbbf24', textTransform:'uppercase'}}>
+                    PAUSE MI-TEMPS · {Math.floor((M.htDur || 15))}min
+                  </div>
+                  <div style={{
+                    fontSize:22, fontWeight:900, fontVariantNumeric:'tabular-nums',
+                    color:'#fff', marginTop:2, lineHeight:1,
+                    textShadow: isLow ? '0 0 8px rgba(255,80,80,.4)' : 'none',
+                  }}>
+                    {MATCH_HELPERS.fmtMMSS(remainHt)} restantes
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      <div style={{display:'flex', gap:8, justifyContent:'center', padding:'0 14px 8px', position:'relative', zIndex:2}}>
         <button className="mv-show-only-btn" onClick={onShowOnly}
                 title="Avertissement sans enregistrer" style={{flex:1}}>
           🪪 Montrer carton

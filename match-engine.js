@@ -81,8 +81,18 @@ function buildDefaultTeams() {
   const players = window.CDD_PLAYERS || [];
   const club = window.CDD_CLUB || {};
   const byId = (id) => players.find(p => p.id === id);
+  // Helper : applique le num match (override match-specific) si défini, sinon num saison.
+  const matchNumOf = (p) => {
+    if (!p) return null;
+    try {
+      const tid = window.CDD?.getActiveTeam?.()?.id;
+      const mid = window.CDD_NEXT_MATCH?.id || 'placeholder';
+      if (window.CDD_JERSEY?.getNum) return window.CDD_JERSEY.getNum(tid, mid, p.id, p.num);
+    } catch (e) {}
+    return p.num;
+  };
   const toToken = (p, onField) => ({
-    num: p.num, first: p.first, last: p.last, id: p.id, onField,
+    num: matchNumOf(p), first: p.first, last: p.last, id: p.id, onField,
   });
 
   let starters = null, bench = null;

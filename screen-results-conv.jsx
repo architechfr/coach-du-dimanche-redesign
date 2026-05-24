@@ -296,6 +296,9 @@ function ScreenConvocations({ go, tweaks }) {
   const [statusDetailFor, setStatusDetailFor] = useState(null);
   // #49 — Modale fiche joueur en popup (pas navigation pleine page)
   const [ficheModalPlayer, setFicheModalPlayer] = useState(null);
+  // Modale numéros maillots match-specific. Mode 'edit' = simple édition ;
+  // mode 'pre-match' = vérification obligatoire avant LANCER LE MATCH.
+  const [jerseyModalMode, setJerseyModalMode] = useState(null); // null | 'edit' | 'pre-match'
   const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
 
   // Force re-render quand un statut/profil joueur change ailleurs (fiche, autre onglet)
@@ -511,10 +514,41 @@ function ScreenConvocations({ go, tweaks }) {
                 👟 MODE VESTIAIRE
               </button>
             </div>
+            {/* Numéros maillots match-specific — bouton 🔢 (orange = match) */}
+            {canEdit && (
+              <button
+                onClick={() => setJerseyModalMode('edit')}
+                style={{
+                  width:'100%', padding:'9px 12px', borderRadius:9,
+                  background:'rgba(249,115,22,0.10)', color:'#f97316',
+                  border:'1px solid rgba(249,115,22,0.35)',
+                  fontSize:12.5, fontWeight:700, letterSpacing:'.04em',
+                  cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                }}>
+                🔢 NUMÉROS MAILLOTS DU MATCH
+                {window.CDD_JERSEY?.hasOverrides?.(teamId, (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder') && (
+                  <span style={{
+                    fontSize:10, padding:'2px 7px', borderRadius:10,
+                    background:'rgba(249,115,22,0.25)', fontWeight:800,
+                  }}>modifiés ✓</span>
+                )}
+              </button>
+            )}
             {/* Phase 1E — Coup d'envoi direct depuis Convocations */}
             {canEdit && (
               <button
-                onClick={() => go("match")}
+                onClick={() => {
+                  // 1er lancement : on impose un passage par la modale numéros
+                  // pour éviter le "vrais maillots ≠ profils" reporté par le coach.
+                  const mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+                  const reviewed = window.CDD_JERSEY?.wasReviewed?.(teamId, mid);
+                  if (!reviewed) {
+                    setJerseyModalMode('pre-match');
+                  } else {
+                    go('match');
+                  }
+                }}
                 style={{
                   width:'100%', padding:'11px 16px', borderRadius:10,
                   background:'linear-gradient(135deg, rgba(200,241,105,0.18) 0%, rgba(200,241,105,0.08) 100%)',
@@ -864,6 +898,31 @@ function ScreenConvocations({ go, tweaks }) {
             const p = ficheModalPlayer;
             setFicheModalPlayer(null);
             go("fiche", p);
+          }}
+        />
+      )}
+
+      {/* Modale numéros maillots (édition ou vérif pré-match) */}
+      {jerseyModalMode && window.JerseyNumbersModal && (
+        <window.JerseyNumbersModal
+          teamId={teamId}
+          matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}
+          players={[...starterPlayers, ...benchPlayers]}
+          title={jerseyModalMode === 'pre-match' ? '🔢 NUMÉROS · AVANT COUP D\'ENVOI' : '🔢 NUMÉROS DU MATCH'}
+          subtitle={jerseyModalMode === 'pre-match'
+            ? <>Vérifie les numéros que portent réellement tes joueurs aujourd'hui. Les changements ne s'appliquent qu'à <b>ce match</b>.</>
+            : null}
+          confirmLabel={jerseyModalMode === 'pre-match' ? '✓ LANCER LE MATCH' : '💾 Enregistrer'}
+          showSkip={jerseyModalMode === 'pre-match'}
+          onClose={() => setJerseyModalMode(null)}
+          onConfirm={() => {
+            const mode = jerseyModalMode;
+            setJerseyModalMode(null);
+            if (mode === 'pre-match') {
+              // Rebuild puis lancement du match : les tokens auront les bons numéros.
+              if (window.CDD_REBUILD) window.CDD_REBUILD();
+              setTimeout(() => go('match'), 100);
+            }
           }}
         />
       )}

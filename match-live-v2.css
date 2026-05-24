@@ -80,7 +80,7 @@
 }
 .mv-score-num {
   font-family: var(--f-display);
-  font-size: 48px;
+  font-size: clamp(40px, 11vw, 60px);
   font-weight: 900;
   letter-spacing: -.03em;
   color: #fff;
@@ -88,7 +88,7 @@
     0 4px 16px rgba(0,0,0,.6),
     0 0 24px var(--acc-glow);
   line-height: 1;
-  min-width: 28px;
+  min-width: 32px;
   text-align: center;
 }
 
