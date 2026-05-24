@@ -552,6 +552,8 @@ function ScreenConvocations({ go, tweaks }) {
       const title = r.resp === 'yes' ? 'Parent : présent' : r.resp === 'no' ? 'Parent : absent' : 'Parent : peut-être';
       return <span className="cv-parent-resp" title={title} style={{marginLeft:6, fontSize:14, opacity:0.9}}>{label}</span>;
     }
+    // Bouton de relance WhatsApp = outil coach (parent n'a rien à relancer).
+    if (!canEdit) return null;
     const hasPhone = !!normalizePhone(p.parentPhone);
     return (
       <button
