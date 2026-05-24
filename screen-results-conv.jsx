@@ -299,6 +299,10 @@ function ScreenConvocations({ go, tweaks }) {
   // Modale numéros maillots match-specific. Mode 'edit' = simple édition ;
   // mode 'pre-match' = vérification obligatoire avant LANCER LE MATCH.
   const [jerseyModalMode, setJerseyModalMode] = useState(null); // null | 'edit' | 'pre-match'
+  // Modale infos du match (stade, horaires, covoiturage…)
+  const [matchInfoOpen, setMatchInfoOpen] = useState(false);
+  // Tick pour re-render quand on sauvegarde les infos match (event listener).
+  const [, forceMatchInfoUpdate] = useState({});
   const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
 
   // Force re-render quand un statut/profil joueur change ailleurs (fiche, autre onglet)
@@ -311,6 +315,13 @@ function ScreenConvocations({ go, tweaks }) {
       window.removeEventListener('cdd-player-changed', handler);
       window.removeEventListener('cdd-data-rebuilt',   handler);
     };
+  }, []);
+
+  // Re-render quand les infos du match sont mises à jour depuis la modale.
+  useEffect(() => {
+    const h = () => forceMatchInfoUpdate({});
+    window.addEventListener('cdd-match-info-changed', h);
+    return () => window.removeEventListener('cdd-match-info-changed', h);
   }, []);
 
   // #51 — Banc strict 3 à 5 (foot amateur). Picker numérique retiré.
@@ -482,10 +493,18 @@ function ScreenConvocations({ go, tweaks }) {
     if (digits.startsWith('0') && digits.length === 10) return '33' + digits.slice(1);
     return digits;
   };
-  const buildRelanceMsg = (playerFirst) => (
-    `Salut ! Petit rappel pour la convoc ${(CDD_CLUB && CDD_CLUB.team) || ''} ${next.home || ''} vs ${next.away || ''} (${next.date || ''}).\n\n` +
-    `Tu peux confirmer la présence de ${playerFirst} en 1 tap ici :\n${lecteurUrl}\n\nMerci 🙏`
-  );
+  const buildRelanceMsg = (playerFirst) => {
+    // Infos pratiques du match (stade, horaires, covoiturage) si renseignées.
+    const _mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+    const infoBlock = (teamId && window.CDD_MATCH_INFO?.formatForMessage)
+      ? window.CDD_MATCH_INFO.formatForMessage(window.CDD_MATCH_INFO.get(teamId, _mid))
+      : '';
+    return (
+      `Salut ! Petit rappel pour la convoc ${(CDD_CLUB && CDD_CLUB.team) || ''} ${next.home || ''} vs ${next.away || ''} (${next.date || ''}).\n\n` +
+      (infoBlock ? infoBlock + '\n\n' : '') +
+      `Tu peux confirmer la présence de ${playerFirst} en 1 tap ici :\n${lecteurUrl}\n\nMerci 🙏`
+    );
+  };
   const openRelanceWhatsApp = (player) => {
     const phone = normalizePhone(player.parentPhone);
     const txt = encodeURIComponent(buildRelanceMsg(player.first || 'ton enfant'));
@@ -528,6 +547,27 @@ function ScreenConvocations({ go, tweaks }) {
                 👟 MODE VESTIAIRE
               </button>
             </div>
+            {/* Infos pratiques du match (stade, horaires, covoiturage) */}
+            {canEdit && (
+              <button
+                onClick={() => setMatchInfoOpen(true)}
+                style={{
+                  width:'100%', padding:'9px 12px', borderRadius:9,
+                  background:'rgba(125,211,252,0.10)', color:'#7dd3fc',
+                  border:'1px solid rgba(125,211,252,0.35)',
+                  fontSize:12.5, fontWeight:700, letterSpacing:'.04em',
+                  cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                }}>
+                📋 INFOS DU MATCH (STADE · HORAIRES · COVOIT.)
+                {teamId && window.CDD_MATCH_INFO?.hasAny?.(teamId, (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder') && (
+                  <span style={{
+                    fontSize:10, padding:'2px 7px', borderRadius:10,
+                    background:'rgba(125,211,252,0.25)', fontWeight:800,
+                  }}>renseignées ✓</span>
+                )}
+              </button>
+            )}
             {/* Numéros maillots match-specific — bouton 🔢 (orange = match) */}
             {canEdit && (
               <button
@@ -577,6 +617,84 @@ function ScreenConvocations({ go, tweaks }) {
           </div>
         </div>
       </div>
+
+      {/* Carte récap des infos pratiques du match — visible si renseignées ou
+          avertissement si vides (gating UX pour pousser le coach à les saisir
+          AVANT d'envoyer la convocation). */}
+      {(() => {
+        const _mid = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder';
+        const info = (teamId && window.CDD_MATCH_INFO?.get?.(teamId, _mid)) || null;
+        const hasInfo = teamId && window.CDD_MATCH_INFO?.hasAny?.(teamId, _mid);
+        if (!hasInfo) {
+          return canEdit ? (
+            <div onClick={() => setMatchInfoOpen(true)}
+                 style={{
+                   margin:'8px 14px 14px', padding:'12px 14px', borderRadius:10,
+                   background:'rgba(255,170,40,0.08)', border:'1px dashed rgba(255,170,40,0.40)',
+                   cursor:'pointer', display:'flex', alignItems:'center', gap:10,
+                 }}>
+              <span style={{fontSize:20}}>⚠️</span>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:12.5, fontWeight:800, color:'#ffc788', marginBottom:3}}>
+                  Infos du match manquantes
+                </div>
+                <div style={{fontSize:11, color:'rgba(255,255,255,0.65)', lineHeight:1.4}}>
+                  Renseigne le stade, l'adresse, le RDV vestiaire et le coup d'envoi
+                  pour que la convocation envoyée aux parents soit exploitable.
+                </div>
+              </div>
+              <span style={{color:'#ffc788', fontSize:11, fontWeight:700, whiteSpace:'nowrap'}}>Renseigner →</span>
+            </div>
+          ) : null;
+        }
+        return (
+          <div style={{
+            margin:'8px 14px 14px', padding:'12px 14px', borderRadius:10,
+            background:'rgba(125,211,252,0.06)', border:'1px solid rgba(125,211,252,0.25)',
+          }}>
+            <div style={{
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              marginBottom:8, fontSize:11, fontWeight:800, letterSpacing:'.08em',
+              color:'#7dd3fc', textTransform:'uppercase',
+            }}>
+              <span>📋 Infos du match</span>
+              {canEdit && (
+                <button onClick={() => setMatchInfoOpen(true)}
+                        style={{
+                          background:'transparent', border:'none', color:'#7dd3fc',
+                          fontSize:11, fontWeight:700, cursor:'pointer', padding:0,
+                        }}>✎ Éditer</button>
+              )}
+            </div>
+            <div style={{fontSize:12.5, lineHeight:1.6, color:'rgba(255,255,255,0.88)'}}>
+              {(info.opponent?.name || info.opponent?.city) && (
+                <div>⚽ <b>{[info.opponent.name, info.opponent.city].filter(Boolean).join(' · ')}</b></div>
+              )}
+              {(info.stadium?.name || info.stadium?.address) && (
+                <div>🏟️ {info.stadium.name}{info.stadium.address ? <span style={{opacity:.7}}> — {info.stadium.address}</span> : null}</div>
+              )}
+              {(info.arrival || info.kickoff) && (
+                <div style={{display:'flex', gap:14, flexWrap:'wrap', marginTop:2}}>
+                  {info.arrival && <span>🕐 RDV vestiaire <b>{info.arrival}</b></span>}
+                  {info.kickoff && <span>⚽ Coup d'envoi <b>{info.kickoff}</b></span>}
+                </div>
+              )}
+              {info.carpool?.enabled && (info.carpool.place || info.carpool.time) && (
+                <div style={{marginTop:4, color:'#c8f169'}}>
+                  🚗 Covoit. {info.carpool.time && <>à <b>{info.carpool.time}</b> </>}
+                  {info.carpool.place && <>depuis <b>{info.carpool.place}</b></>}
+                </div>
+              )}
+              {info.notes && (
+                <div style={{marginTop:6, padding:'6px 8px', background:'rgba(255,255,255,0.04)',
+                             borderRadius:6, fontStyle:'italic', color:'rgba(255,255,255,0.75)', fontSize:11.5}}>
+                  {info.notes}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="cv-stats">
         <div className="cv-stat"><b className="num">{starterPlayers.length}</b><em>Titulaires</em></div>
@@ -926,6 +1044,16 @@ function ScreenConvocations({ go, tweaks }) {
             setFicheModalPlayer(null);
             go("fiche", p);
           }}
+        />
+      )}
+
+      {/* Modale infos pratiques du match (stade, horaires, covoiturage…) */}
+      {matchInfoOpen && window.MatchInfoModal && (
+        <window.MatchInfoModal
+          teamId={teamId}
+          matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}
+          matchLabel={`${next.home || ''} vs ${next.away || 'À déterminer'} · ${next.date || ''}`}
+          onClose={() => setMatchInfoOpen(false)}
         />
       )}
 
