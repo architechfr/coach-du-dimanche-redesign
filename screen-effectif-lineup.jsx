@@ -20,6 +20,11 @@ const SORTS = [
 ];
 
 function ScreenEffectif({ go, tweaks }) {
+  // canEdit : tout ce qui touche au pilotage coach (carnets envoyés,
+  // badges techniques, etc.) doit être masqué pour parent/lecteur/joueur.
+  const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
+    || window.CDD_ROLES.canDo('effectif');
+
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("grid"); // grid | list
   const [sort, setSort] = useState("num");
@@ -188,8 +193,9 @@ function ScreenEffectif({ go, tweaks }) {
         )}
       </div>
 
-      {/* Suivi diffusion Carnet du joueur — visible quand au moins 1 joueur dans la liste */}
-      {list.length > 0 && (() => {
+      {/* Suivi diffusion Carnet du joueur — OUTIL COACH, masqué pour
+          parent/lecteur/joueur (le suivi de diffusion ne les concerne pas). */}
+      {canEdit && list.length > 0 && (() => {
         const sharedCount = list.filter(p => carnetShared[p.id]).length;
         const pending = list.length - sharedCount;
         const allDone = pending === 0;
@@ -241,7 +247,8 @@ function ScreenEffectif({ go, tweaks }) {
           {list.map(p => (
             <div key={p.id} style={{position:'relative'}}>
               <FutCard player={p} size="md" onClick={() => go("fiche", p)} />
-              {carnetShared[p.id] && (
+              {/* Badge "carnet envoyé" : info coach uniquement (suivi diffusion) */}
+              {canEdit && carnetShared[p.id] && (
                 <span title={`Carnet envoyé au parent (${new Date(carnetShared[p.id].sharedAt).toLocaleDateString('fr-FR')})`}
                       style={{
                         position:'absolute', top:4, right:4, zIndex:2,
@@ -260,7 +267,8 @@ function ScreenEffectif({ go, tweaks }) {
           {list.map(p => (
             <div key={p.id} style={{position:'relative'}}>
               <FutCard player={p} variant="row" onClick={() => go("fiche", p)} />
-              {carnetShared[p.id] && (
+              {/* Badge "carnet envoyé" : info coach uniquement */}
+              {canEdit && carnetShared[p.id] && (
                 <span title={`Carnet envoyé au parent (${new Date(carnetShared[p.id].sharedAt).toLocaleDateString('fr-FR')})`}
                       style={{
                         position:'absolute', top:'50%', right:10, transform:'translateY(-50%)', zIndex:2,

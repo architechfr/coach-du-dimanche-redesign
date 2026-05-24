@@ -53,6 +53,9 @@ function ScreenFiche({ go, tweaks, player }) {
     : (p.status || 'active');
   const statusObj = STATUS_OPTIONS.find(s => s.id === currentStatus) || STATUS_OPTIONS[0];
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  // Modale "Parent signale une indispo" — version simplifiée du picker
+  // coach, accessible UNIQUEMENT pour la famille du joueur concerné.
+  const [showParentSignal, setShowParentSignal] = useState(false);
   // Modale détail (questions par statut) — null = fermée, sinon = statusId à éditer
   const [statusDetailFor, setStatusDetailFor] = useState(null);
 
@@ -177,11 +180,12 @@ function ScreenFiche({ go, tweaks, player }) {
           </div>
 
           {/* Status chip — règles d'affichage :
-              - Coach / adjoint (canEdit) → bouton cliquable pour modifier.
-              - Non-coach mais joueur lié au compte (parent qui regarde son
-                enfant, ou joueur qui regarde sa propre fiche) → span lecture.
-              - Non-coach qui regarde une autre fiche → masqué (donnée
-                médicale/disciplinaire = privée à la famille concernée). */}
+              - Coach / adjoint (canEdit) → picker COMPLET (5 statuts dont suspendu).
+              - Famille du joueur (parent ou joueur lui-même) → picker
+                SIMPLIFIÉ "Signaler une indispo" (blessé / indispo + durée).
+                Permet au parent de prévenir le coach sans avoir à
+                téléphoner. Visible coach/adjoint, masqué lecteur simple.
+              - Non-coach + fiche d'un autre joueur → masqué (donnée privée). */}
           <div className="fi-chips">
             {canEdit ? (
               <button className={`fi-chip ${statusObj.cls} fi-chip-btn`}
@@ -190,7 +194,11 @@ function ScreenFiche({ go, tweaks, player }) {
                 {statusObj.l} <span className="fi-chip-edit">✎</span>
               </button>
             ) : (_myLinkedPlayer && _myLinkedPlayer === p.id) ? (
-              <span className={`fi-chip ${statusObj.cls}`}>{statusObj.l}</span>
+              <button className={`fi-chip ${statusObj.cls} fi-chip-btn`}
+                      onClick={() => setShowParentSignal(true)}
+                      title="Signaler une blessure ou indispo">
+                {statusObj.l} <span className="fi-chip-edit">✎</span>
+              </button>
             ) : null}
             {p.license && <span className="fi-chip info">Licence FFF</span>}
             {p.isStarter && <span className="fi-chip ok">★ Titulaire</span>}
@@ -238,6 +246,18 @@ function ScreenFiche({ go, tweaks, player }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modale PARENT signale une indispo — version simplifiée pour
+          la famille du joueur. Ne propose que blessé / indispo / dispo
+          (jamais "suspendu" = sanction discipline réservée au coach). */}
+      {showParentSignal && (
+        <ParentSignalModal
+          player={p}
+          currentStatus={currentStatus}
+          onClose={() => setShowParentSignal(false)}
+          onApply={() => { setShowParentSignal(false); triggerRefresh(); }}
+        />
       )}
 
       {/* Status detail modal (questions par statut) */}
@@ -1182,3 +1202,145 @@ function ProfilTab({ player, onChange }) {
   );
 }
 window.ProfilTab = ProfilTab;
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// PARENT SIGNAL MODAL — picker simplifié pour la famille du joueur.
+// Permet au parent (ou au joueur lui-même) de signaler une blessure / indispo
+// + durée + note. Écrit dans les mêmes overrides que le coach (sync cloud
+// via CDD_COACH.setStatusOverride + setStatusMeta), avec un flag `source`
+// pour tracer que c'est saisi par la famille (utile pour audit coach).
+// PAS d'option "suspendu" (sanction discipline = réservé au staff).
+// ──────────────────────────────────────────────────────────────────────────
+function ParentSignalModal({ player, currentStatus, onClose, onApply }) {
+  const PARENT_OPTIONS = [
+    { id: 'active',  l: '✓ Disponible',     cls: 'ok',   desc: "Tout va bien, dispo pour le prochain match." },
+    { id: 'injured', l: '🩹 Blessé',        cls: 'bad',  desc: "Indispo sur blessure (entorse, contusion...)." },
+    { id: 'rest',    l: '⏸ Indisponible',  cls: 'warn', desc: "Empêchement (vacances, école, autre)." },
+  ];
+  const _initialMeta = (window.CDD_COACH?.getStatusMeta?.(player.id)) || {};
+  const [statusId, setStatusId] = React.useState(currentStatus || 'active');
+  const [until, setUntil]       = React.useState(_initialMeta.until || '');
+  const [reason, setReason]     = React.useState(_initialMeta.reason || '');
+  const [saving, setSaving]     = React.useState(false);
+  const [savedFlash, setSavedFlash] = React.useState(false);
+
+  const isDispo = statusId === 'active';
+
+  const apply = () => {
+    if (!window.CDD_COACH?.setStatusOverride) return;
+    setSaving(true);
+    try {
+      window.CDD_COACH.setStatusOverride(player.id, statusId);
+      if (isDispo) {
+        // Retour à dispo → on nettoie l'éventuel meta antérieur
+        window.CDD_STATUS_DETAIL?.clearMeta?.(player.id);
+      } else {
+        // Indispo → on enregistre durée + note + traçabilité parent
+        window.CDD_COACH.setStatusMeta?.(player.id, {
+          reason: reason.trim() || null,
+          until:  until || null,
+          source: 'parent',
+          updatedAt: Date.now(),
+        });
+      }
+      setSavedFlash(true);
+      setTimeout(() => { setSavedFlash(false); onApply && onApply(); }, 600);
+    } catch (e) {
+      console.warn('[parent-signal] échec:', e.message);
+      alert('Erreur de sauvegarde — réessaie dans quelques secondes.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fi-sp-overlay" onClick={onClose}>
+      <div className="fi-sp-sheet" onClick={e => e.stopPropagation()}
+           style={{maxWidth:440, width:'94%'}}>
+        <div className="fi-sp-h">
+          <span className="fi-sp-t">SIGNALER {(player.first||'').toUpperCase()}</span>
+          <button className="fi-sp-x" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:'10px 16px 6px', fontSize:12.5,
+                     color:'rgba(255,255,255,0.75)', lineHeight:1.4}}>
+          Préviens le coach que <b>{player.first}</b> est dispo ou non
+          pour les prochains matchs. Visible par le staff (coach et adjoints).
+        </div>
+        <div style={{padding:'8px 12px 4px'}}>
+          {PARENT_OPTIONS.map(s => (
+            <button key={s.id} type="button"
+              onClick={() => setStatusId(s.id)}
+              style={{
+                display:'flex', alignItems:'center', gap:10,
+                width:'100%', padding:'10px 12px', borderRadius:9,
+                background: statusId === s.id ? 'rgba(200,241,105,0.14)' : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${statusId === s.id ? 'rgba(200,241,105,0.45)' : 'rgba(255,255,255,0.08)'}`,
+                color:'#fff', fontFamily:'inherit', cursor:'pointer',
+                marginBottom:6, textAlign:'left',
+              }}>
+              <span style={{fontSize:14, fontWeight:800, minWidth:120}}>{s.l}</span>
+              <span style={{flex:1, fontSize:11.5, opacity:0.7}}>{s.desc}</span>
+              {statusId === s.id && <span style={{color:'#c8f169', fontWeight:900}}>✓</span>}
+            </button>
+          ))}
+        </div>
+
+        {!isDispo && (
+          <div style={{padding:'4px 16px 8px'}}>
+            <label style={{display:'block', marginBottom:8}}>
+              <span style={{display:'block', fontSize:10.5, fontWeight:800,
+                            letterSpacing:'.06em', opacity:0.7, marginBottom:4,
+                            textTransform:'uppercase'}}>
+                Retour prévu (optionnel)
+              </span>
+              <input type="date" value={until}
+                     onChange={e => setUntil(e.target.value)}
+                     style={{
+                       width:'100%', height:38, padding:'0 10px',
+                       background:'rgba(0,0,0,0.35)', color:'#fff',
+                       border:'1px solid rgba(255,255,255,0.12)', borderRadius:8,
+                       fontSize:13, outline:'none', fontFamily:'inherit',
+                     }}/>
+            </label>
+            <label style={{display:'block'}}>
+              <span style={{display:'block', fontSize:10.5, fontWeight:800,
+                            letterSpacing:'.06em', opacity:0.7, marginBottom:4,
+                            textTransform:'uppercase'}}>
+                Précision (optionnel)
+              </span>
+              <input type="text" value={reason}
+                     onChange={e => setReason(e.target.value.slice(0, 80))}
+                     placeholder={statusId === 'injured' ? 'ex: entorse cheville' : 'ex: vacances en famille'}
+                     style={{
+                       width:'100%', height:38, padding:'0 10px',
+                       background:'rgba(0,0,0,0.35)', color:'#fff',
+                       border:'1px solid rgba(255,255,255,0.12)', borderRadius:8,
+                       fontSize:13, outline:'none', fontFamily:'inherit',
+                     }}/>
+            </label>
+          </div>
+        )}
+
+        <div style={{display:'flex', gap:8, padding:'10px 14px 14px',
+                     borderTop:'1px solid rgba(255,255,255,0.06)'}}>
+          <button type="button" onClick={onClose}
+                  style={{flex:1, padding:'10px', borderRadius:9, cursor:'pointer',
+                          background:'rgba(255,255,255,0.06)',
+                          border:'1px solid rgba(255,255,255,0.15)',
+                          color:'#fff', fontSize:12.5, fontWeight:700, fontFamily:'inherit'}}>
+            Annuler
+          </button>
+          <button type="button" onClick={apply} disabled={saving}
+                  style={{flex:2, padding:'10px', borderRadius:9, cursor:'pointer',
+                          background: savedFlash ? 'rgba(200,241,105,0.40)' : 'var(--acc, #c8f169)',
+                          color:'#000', border:'none',
+                          fontSize:13, fontWeight:800, fontFamily:'inherit'}}>
+            {savedFlash ? '✓ Envoyé au coach' : (saving ? 'Envoi…' : '💾 Prévenir le coach')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+window.ParentSignalModal = ParentSignalModal;
