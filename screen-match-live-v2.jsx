@@ -745,6 +745,12 @@ function ScreenMatchV2({ go, tweaks }) {
       if (!Mref.current) {
         const teams = MATCH_HELPERS.buildDefaultTeams();
         Mref.current = MATCH_HELPERS.newMatch(teams.tA, teams.tB);
+        // Capture l'id du MATCH PROGRAMMÉ au moment du lancement.
+        // newMatch() génère un id local 'm_xxx' (timestamp) qui n'a aucun
+        // rapport avec l'id du match dans CDD_NEXT_MATCH / CDD_FRIENDLY.
+        // Sans cette capture, endMatch ne pourrait pas relier le live
+        // au match programmé → filtres post-match cassés (bug v119).
+        Mref.current.scheduledMatchId = (window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || null;
         // ⚠️ On N'écrit PAS cdd_match_current ici. Tant que le coach n'a pas
         // cliqué LANCER, le match reste un brouillon en mémoire — ni l'accueil
         // ni un autre device ne doivent le voir comme "match en cours".
@@ -950,10 +956,20 @@ function ScreenMatchV2({ go, tweaks }) {
     if (MATCH_HELPERS.releaseWakeLock)  MATCH_HELPERS.releaseWakeLock();
     if (MATCH_HELPERS.stopSilenceLoop)  MATCH_HELPERS.stopSilenceLoop();
     if (MATCH_HELPERS.exitFullscreen)   MATCH_HELPERS.exitFullscreen();
+    // ID DU MATCH PROGRAMMÉ : pour les filtres post-match, on a besoin
+    // de l'id qui figure dans CDD_NEXT_MATCH / CDD_FRIENDLY, PAS l'id
+    // local 'm_xxx' généré par newMatch. Sans ça, le filtre ne reconnaît
+    // pas le match comme terminé. M.id (= m_xxx) sert quand même au stockage
+    // local du match pour la feuille post-match / vote.
+    const _scheduledId = M.scheduledMatchId || M.id;
+    console.info('[endMatch] scheduledId=' + _scheduledId + ' (local M.id=' + M.id + ')');
     // Match terminé : cdd_match_current libéré pour qu'un nouveau match puisse être créé.
     // L'ID reste dans cdd_match_last_finished pour la page Vote post-match.
     try {
-      localStorage.setItem('cdd_match_last_finished', M.id);
+      // On stocke le scheduledId (= id reconnu par les filtres data-bridge /
+      // match-switcher / friendly-matches). Si pas de scheduled (match
+      // 100% improvisé sans CDD_NEXT_MATCH source), on garde M.id en fallback.
+      localStorage.setItem('cdd_match_last_finished', _scheduledId);
       localStorage.removeItem('cdd_match_current');
     } catch (e) {}
     // BASCULE POST-MATCH : marquer l'amical comme terminé (s'il y en a un)
@@ -962,8 +978,9 @@ function ScreenMatchV2({ go, tweaks }) {
     try {
       const _teamId = window.CDD?.getActiveTeam?.()?.id;
       if (_teamId && window.CDD_FRIENDLY?.markEnded && window.CDD_FRIENDLY?.get) {
-        if (window.CDD_FRIENDLY.get(_teamId, M.id)) {
-          window.CDD_FRIENDLY.markEnded(_teamId, M.id);
+        if (window.CDD_FRIENDLY.get(_teamId, _scheduledId)) {
+          window.CDD_FRIENDLY.markEnded(_teamId, _scheduledId);
+          console.info('[endMatch] amical marqué terminé : ' + _scheduledId);
         }
       }
     } catch (e) { console.warn('[match] markEnded failed', e); }
