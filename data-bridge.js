@@ -617,6 +617,43 @@ async function rebuildCDDGlobals() {
     noUpcoming: true, // ← flag pour l'UI : afficher un placeholder explicite
   };
 
+  // ─── Match AMICAL (hors-championnat) ───
+  // Si aucun match FFF n'est chargé (placeholder en cours), on regarde si le
+  // coach a créé un match amical à venir. Dans ce cas, l'amical devient le
+  // prochain match. Si FFF a déjà un vrai match, on le garde (les amicaux
+  // viendront dans un second temps via un onglet dédié).
+  if (!hasRealNext && activeTeam?.id && window.CDD_FRIENDLY?.nextUpcoming) {
+    try {
+      const fn = window.CDD_FRIENDLY.nextUpcoming(activeTeam.id);
+      if (fn) {
+        const myName = clubName || 'Mon équipe';
+        const isHome = fn.venue === 'H';
+        const home = isHome ? myName : (fn.opponent || 'Adversaire');
+        const away = isHome ? (fn.opponent || 'Adversaire') : myName;
+        // Format date affichage : YYYY-MM-DD → DD/MM/YYYY pour cohérence FFF
+        const dDisplay = (() => {
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fn.date || '');
+          return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (fn.date || '');
+        })();
+        window.CDD_NEXT_MATCH = {
+          id: fn.id,
+          date: dDisplay,
+          dateISO: fn.date,
+          time: fn.time || '',
+          home,
+          away,
+          homeBadge: (home || '?')[0],
+          awayBadge: (away || '?')[0],
+          venue: isHome ? 'Domicile' : 'Extérieur',
+          competition: 'Match amical',
+          isAmical: true,
+          daysLeft: 0,
+          noUpcoming: false,
+        };
+      }
+    } catch (e) {}
+  }
+
   // Default placeholders — overridden by FFF data
   // Mais on charge tout de suite les matchs arbitrés par le coach (cdd_match_*) pour qu'ils
   // apparaissent immédiatement sur l'accueil, sans attendre la sync FFF.
@@ -1298,6 +1335,8 @@ window.CDD_HELPERS = { normalizePosition, deriveRarity, deriveStats, resolvePhot
 // Auto-rebuild on club/team change
 window.addEventListener('cdd-active-club-changed', rebuildCDDGlobals);
 window.addEventListener('cdd-active-team-changed', rebuildCDDGlobals);
+// Match amical créé/modifié/supprimé → on rebuild CDD_NEXT_MATCH si concerné.
+window.addEventListener('cdd-friendly-changed', rebuildCDDGlobals);
 
 // Initial build (sync)
 if (window.CDD && window.CDD.getActiveClub) {

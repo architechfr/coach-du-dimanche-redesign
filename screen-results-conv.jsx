@@ -301,6 +301,8 @@ function ScreenConvocations({ go, tweaks }) {
   const [jerseyModalMode, setJerseyModalMode] = useState(null); // null | 'edit' | 'pre-match'
   // Modale infos du match (stade, horaires, covoiturage…)
   const [matchInfoOpen, setMatchInfoOpen] = useState(false);
+  // Modale création/édition d'un match amical
+  const [friendlyModalMode, setFriendlyModalMode] = useState(null); // null | 'create' | 'edit'
   // Tick pour re-render quand on sauvegarde les infos match (event listener).
   const [, forceMatchInfoUpdate] = useState({});
   const STATUS_QUICK = (window.CDD_COACH && window.CDD_COACH.STATUS_OPTIONS) || [];
@@ -527,10 +529,20 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-hero-bg"/>
         <div className="cv-hero-grad"/>
         <div className="cv-hero-in">
-          <div className="cv-hero-k">FEUILLE DE CONVOCATION</div>
+          <div className="cv-hero-k" style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+            <span>FEUILLE DE CONVOCATION</span>
+            {next.isAmical && (
+              <span style={{
+                fontSize:9.5, padding:'2px 8px', borderRadius:10,
+                background:'rgba(168,85,247,0.18)', color:'#c4b5fd',
+                border:'1px solid rgba(168,85,247,0.45)',
+                fontWeight:800, letterSpacing:'.08em',
+              }}>🤝 MATCH AMICAL</span>
+            )}
+          </div>
           <div className="cv-hero-title">{next.home}<br/>VS {next.away}</div>
           <div className="cv-hero-meta">
-            <span>📅 {next.date}</span>
+            <span>📅 {next.date}{next.time ? ` · ${next.time}` : ''}</span>
             <span>🏟️ {next.venue}</span>
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:8, width:'100%'}}>
@@ -546,6 +558,19 @@ function ScreenConvocations({ go, tweaks }) {
                       style={{background:'rgba(249,115,22,.12)', border:'1px solid rgba(249,115,22,.40)', color:'#f97316'}}>
                 👟 MODE VESTIAIRE
               </button>
+              {/* Match amical : créer un nouveau OU éditer celui en cours */}
+              {canEdit && !next.isAmical && (
+                <button className="btn-cta" onClick={() => setFriendlyModalMode('create')}
+                        style={{background:'rgba(168,85,247,.12)', border:'1px solid rgba(168,85,247,.40)', color:'#c4b5fd'}}>
+                  + MATCH AMICAL
+                </button>
+              )}
+              {canEdit && next.isAmical && (
+                <button className="btn-cta" onClick={() => setFriendlyModalMode('edit')}
+                        style={{background:'rgba(168,85,247,.12)', border:'1px solid rgba(168,85,247,.40)', color:'#c4b5fd'}}>
+                  ✎ ÉDITER L'AMICAL
+                </button>
+              )}
             </div>
             {/* Infos pratiques du match (stade, horaires, covoiturage) */}
             {canEdit && (
@@ -1054,6 +1079,19 @@ function ScreenConvocations({ go, tweaks }) {
           matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}
           matchLabel={`${next.home || ''} vs ${next.away || 'À déterminer'} · ${next.date || ''}`}
           onClose={() => setMatchInfoOpen(false)}
+        />
+      )}
+
+      {/* Modale création/édition d'un match amical */}
+      {friendlyModalMode && window.FriendlyMatchModal && teamId && (
+        <window.FriendlyMatchModal
+          teamId={teamId}
+          clubId={window.CDD?.getActiveTeam?.()?.clubId || null}
+          existing={friendlyModalMode === 'edit' && next.isAmical
+            ? window.CDD_FRIENDLY?.get?.(teamId, next.id)
+            : null}
+          onClose={() => setFriendlyModalMode(null)}
+          onSaved={() => setFriendlyModalMode(null)}
         />
       )}
 
