@@ -183,12 +183,13 @@ function ScreenFiche({ go, tweaks, player }) {
             {p.isStarter && <span className="fi-chip ok">★ Titulaire</span>}
           </div>
 
-          {/* Actions Carnet du joueur — distribution lien magique au parent + preview coach */}
-          <CarnetActions player={p} go={go}/>
+          {/* Actions Carnet du joueur — outils coach (distribution lien magique
+              parent + preview coach). Masqué pour parent/lecteur/joueur. */}
+          {canEdit && <CarnetActions player={p} go={go}/>}
 
-          {/* v43.79 : Convoc perso joueur — lien ciblé /lecteur/?t=&p= avec
-              statut convoc + RSVP (Je viens / Absent / Peut-être) */}
-          <ConvocPersoActions player={p} go={go}/>
+          {/* v43.79 : Convoc perso joueur — outil coach (lien ciblé +
+              push Firestore shared_teams). Masqué pour non-coach. */}
+          {canEdit && <ConvocPersoActions player={p} go={go}/>}
         </div>
       </div>
 
@@ -301,7 +302,8 @@ function ScreenFiche({ go, tweaks, player }) {
           {id:"profil", l:"Profil"},
           {id:"stats", l:"Stats"},
           {id:"saison", l:"Saison"},
-          {id:"obs",  l:"Observations"},
+          // Onglet Observations = notes coach internes → réservé aux coachs
+          ...(canEdit ? [{id:"obs",  l:"Observations"}] : []),
         ].map(t => (
           <button key={t.id} className={`fi-tab ${tab===t.id?"on":""}`} onClick={()=>setTab(t.id)}>
             {t.l}
@@ -359,7 +361,7 @@ function ScreenFiche({ go, tweaks, player }) {
 
           <div className="fi-attrs">
             <div className="fi-attrs-h">
-              <span className="fi-attrs-k">NOTATION COACH</span>
+              <span className="fi-attrs-k">{canEdit ? 'NOTATION COACH' : 'ATTRIBUTS'}</span>
               {/* #C5 — édition de la notation réservée à la capacité 'effectif'.
                   Sans le bouton Éditer, editingStats reste false → lecture seule. */}
               {canEdit && (
@@ -493,20 +495,25 @@ function ScreenFiche({ go, tweaks, player }) {
             <div className="fi-kpi"><b className="num">{p.yellow}</b><em>jaunes</em></div>
             <div className="fi-kpi"><b className="num">{p.red}</b><em>rouges</em></div>
           </div>
-          <div className="fi-form">
-            <div className="fi-form-l">FORME · {p.form}/10</div>
-            <div className="fi-form-bar">
-              <div className="fi-form-fill" style={{width:(p.form*10)+"%"}}/>
+          {/* FORME / CONDITION = appréciations subjectives saisies par le coach
+              → réservé aux coachs. Les KPI ci-dessus (mins, buts, etc.) restent
+              visibles à tous : ce sont des faits du match, pas des opinions. */}
+          {canEdit && (
+            <div className="fi-form">
+              <div className="fi-form-l">FORME · {p.form}/10</div>
+              <div className="fi-form-bar">
+                <div className="fi-form-fill" style={{width:(p.form*10)+"%"}}/>
+              </div>
+              <div className="fi-form-l">CONDITION · {p.fitness}%</div>
+              <div className="fi-form-bar">
+                <div className="fi-form-fill fitness" style={{width:p.fitness+"%"}}/>
+              </div>
             </div>
-            <div className="fi-form-l">CONDITION · {p.fitness}%</div>
-            <div className="fi-form-bar">
-              <div className="fi-form-fill fitness" style={{width:p.fitness+"%"}}/>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      {tab === "obs" && (
+      {tab === "obs" && canEdit && (
         <div className="fi-obs">
           {/* #C5 — ajout d'observation réservé à la capacité 'effectif'. */}
           {canEdit && (
@@ -1104,24 +1111,28 @@ function ProfilTab({ player, onChange }) {
           </label>
         </div>
 
-        <div className="fi-pf-section">
-          <div className="fi-pf-h">CONTACT</div>
-          <label className="fi-pf-l">
-            <span>Téléphone joueur</span>
-            <input className="fi-pf-i" type="tel" value={form.phone} onChange={set('phone')}
-                   placeholder="06 12 34 56 78"/>
-          </label>
-          <label className="fi-pf-l">
-            <span>Téléphone parent</span>
-            <input className="fi-pf-i" type="tel" value={form.parentPhone} onChange={set('parentPhone')}
-                   placeholder="06 12 34 56 78"/>
-          </label>
-          <label className="fi-pf-l">
-            <span>Email parent</span>
-            <input className="fi-pf-i" type="email" value={form.email} onChange={set('email')}
-                   placeholder="parent@email.fr"/>
-          </label>
-        </div>
+        {/* CONTACT — données privées (tel / email parent). Réservé aux coachs
+            pour éviter qu'un parent voie les coordonnées d'autres familles. */}
+        {canEdit && (
+          <div className="fi-pf-section">
+            <div className="fi-pf-h">CONTACT</div>
+            <label className="fi-pf-l">
+              <span>Téléphone joueur</span>
+              <input className="fi-pf-i" type="tel" value={form.phone} onChange={set('phone')}
+                     placeholder="06 12 34 56 78"/>
+            </label>
+            <label className="fi-pf-l">
+              <span>Téléphone parent</span>
+              <input className="fi-pf-i" type="tel" value={form.parentPhone} onChange={set('parentPhone')}
+                     placeholder="06 12 34 56 78"/>
+            </label>
+            <label className="fi-pf-l">
+              <span>Email parent</span>
+              <input className="fi-pf-i" type="email" value={form.email} onChange={set('email')}
+                     placeholder="parent@email.fr"/>
+            </label>
+          </div>
+        )}
 
         <div className="fi-pf-section">
           <div className="fi-pf-h">PHOTO</div>
