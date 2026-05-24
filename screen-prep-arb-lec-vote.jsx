@@ -1132,6 +1132,19 @@ window.ScreenLecteur = ScreenLecteur;
    ============================================================ */
 
 function ScreenVote({ go, tweaks }) {
+  // Liste de tous les matchs joués + arbitrés par le coach, pour permettre
+  // de noter n'importe quel match passé (pas seulement le dernier).
+  const playedMatches = (window.CDD_LAST_MATCHES || []).filter(m => m.coachArbitrated && m.id);
+  const defaultMatchId = (() => {
+    try {
+      const last = localStorage.getItem('cdd_match_last_finished');
+      if (last && playedMatches.some(m => m.id === last)) return last;
+    } catch (e) {}
+    return playedMatches[0]?.id || null;
+  })();
+  const [selectedMatchId, setSelectedMatchId] = useState(defaultMatchId);
+  const [showMatchPicker, setShowMatchPicker] = useState(false);
+
   const [votes, setVotes] = useState({}); // playerId -> 0-10 (demi-points)
   const [motm, setMotm] = useState(null); // playerId élu MOTM explicitement
   const [nsSet, setNsSet] = useState(new Set()); // playerIds "Pas vu jouer"
@@ -1139,14 +1152,20 @@ function ScreenVote({ go, tweaks }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
 
-  // Source des joueurs à noter : ceux qui ont VRAIMENT JOUÉ le dernier match terminé,
-  // pas la convocation du prochain match. Fallback : CDD_CONVO.starters si pas de
-  // match terminé en mémoire (cas démo / 1ère utilisation).
+  // Reset des états quand on change de match
+  React.useEffect(() => {
+    setVotes({});
+    setMotm(null);
+    setNsSet(new Set());
+    setSubmitted(false);
+    setSendError(null);
+  }, [selectedMatchId]);
+
+  // Charge le match sélectionné depuis localStorage
   const lastFinishedMatch = (() => {
     try {
-      const lastId = localStorage.getItem('cdd_match_last_finished');
-      if (!lastId || !window.MATCH_HELPERS?.loadMatch) return null;
-      return window.MATCH_HELPERS.loadMatch(lastId);
+      if (!selectedMatchId || !window.MATCH_HELPERS?.loadMatch) return null;
+      return window.MATCH_HELPERS.loadMatch(selectedMatchId);
     } catch (e) { return null; }
   })();
   const playedLineup = lastFinishedMatch?.tA?.p || [];
@@ -1186,10 +1205,11 @@ function ScreenVote({ go, tweaks }) {
     setSendError(null);
     try {
       if (window.cddSync?.sendVote) {
-        // Le vote doit pointer sur le match TERMINÉ (pas sur le prochain à préparer
-        // ni sur le match live en cours). On préfère lastFinishedMatchId, et on retombe
-        // sur matchId courant si aucun match terminé n'est connu (cas démo / proto).
-        const targetMatchId = window.cddSync.lastFinishedMatchId || window.cddSync.matchId;
+        // Le vote pointe sur le match SÉLECTIONNÉ dans le picker (qui defaulte
+        // au dernier match terminé). Permet de noter n'importe quel match passé.
+        const targetMatchId = selectedMatchId
+                           || window.cddSync.lastFinishedMatchId
+                           || window.cddSync.matchId;
         await window.cddSync.sendVote(
           targetMatchId,
           window.cddSync.voterId,
@@ -1296,6 +1316,52 @@ function ScreenVote({ go, tweaks }) {
           </div>
         );
       })() : null}
+
+      {playedMatches.length > 1 && (
+        <div style={{padding:'0 14px 10px'}}>
+          <button onClick={() => setShowMatchPicker(p => !p)}
+            style={{
+              width:'100%', padding:'10px 12px',
+              background:'rgba(255,255,255,.05)',
+              border:'1px solid rgba(255,255,255,.12)',
+              borderRadius:10, color:'#fff',
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              fontSize:12, cursor:'pointer',
+            }}>
+            <span style={{opacity:.7}}>📅 {playedMatches.length} matchs jouables</span>
+            <span style={{fontWeight:700}}>{showMatchPicker ? '▲ Fermer' : 'Changer de match ▼'}</span>
+          </button>
+          {showMatchPicker && (
+            <div style={{marginTop:6, display:'flex', flexDirection:'column', gap:4,
+                         maxHeight:240, overflowY:'auto',
+                         background:'rgba(0,0,0,.25)', borderRadius:10, padding:6}}>
+              {playedMatches.map(m => {
+                const isSel = m.id === selectedMatchId;
+                const resColor = m.result === 'W' ? '#c8f169' : m.result === 'L' ? '#ff8a8a' : '#fbbf24';
+                const resLabel = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : 'N';
+                return (
+                  <button key={m.id} onClick={() => { setSelectedMatchId(m.id); setShowMatchPicker(false); }}
+                    style={{
+                      padding:'10px 12px', textAlign:'left',
+                      background: isSel ? 'rgba(200,241,105,.12)' : 'rgba(255,255,255,.04)',
+                      border:'1px solid ' + (isSel ? 'var(--acc, #c8f169)' : 'rgba(255,255,255,.08)'),
+                      borderRadius:8, color:'#fff', cursor:'pointer',
+                      display:'flex', alignItems:'center', gap:10, fontSize:12,
+                    }}>
+                    <span style={{
+                      display:'inline-block', width:22, height:22, borderRadius:6,
+                      background:resColor + '22', color:resColor,
+                      fontWeight:900, fontSize:11, textAlign:'center', lineHeight:'22px',
+                    }}>{resLabel}</span>
+                    <span style={{flex:1}}>{m.date} · {m.opp}</span>
+                    <span className="num" style={{fontWeight:700}}>{m.score?.[0]}–{m.score?.[1]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="vote-progress">
         <div className="vote-progress-bar">

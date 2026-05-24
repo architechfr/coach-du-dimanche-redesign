@@ -1,7 +1,39 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-27 (post-match cleanup + audit vote V1)** (cache buster **v122**).
+> Document de reprise. Dernière mise à jour : **2026-05-25 (vague 1 vote + multi-fixes)** (cache buster **v131**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
+
+---
+
+## 🆕 Demandes Florian du 25 mai (à traiter EN PRIORITÉ — session suivante)
+
+### 1. Classement général saison (vote agrégé)
+Pouvoir agréger les votes de TOUS les matchs joués pour avoir un MVP saison,
+un top 5 joueurs, des moyennes. Aujourd'hui : un vote par match isolé, pas
+de cumul. **Nécessite :**
+- Nouvelle vue « Classement vote saison » (ou onglet dans la page Vote)
+- Fetch de tous les docs `votes/{matchId}` du club via Firestore
+- Agrégation côté client : moyenne pondérée par joueur sur N matchs
+- Tri par OVR vote moyen, par nb MOTM, par nb d'étoiles
+
+### 2. Pondération des votes par rôle
+Un coach principal devrait peser plus qu'un parent dans la note finale.
+**Schéma proposé :**
+- Coach principal / owner / admin : poids ×3
+- Coach adjoint : poids ×2
+- Parent / joueur / lecteur : poids ×1
+**Implémentation :**
+- `sendVote` ajoute `voterRole` au doc Firestore (depuis `CDD_ROLES.effectiveRole()`)
+- Agrégation pondérée : `Σ(note × poids) / Σ(poids)` au lieu de moyenne simple
+- Afficher le poids dans la synthèse pour transparence
+
+### 3. Automatisation FFF pour nouveaux clubs
+Aujourd'hui les 4 IDs FFF (`clubId`, `competId`, `phase`, `group`) sont
+hardcodés dans seed-real-data.json. Pour qu'un nouveau coach puisse créer
+son équipe et avoir les stats championnat auto-remplies, il faut :
+- UI de recherche FFF : tape le nom du club → liste des compétitions
+- Au clic → auto-fill des 4 IDs dans `team.fffConfig`
+- Trigger fetch immédiat post-création
 
 ---
 
