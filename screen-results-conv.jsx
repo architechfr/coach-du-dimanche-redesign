@@ -464,9 +464,39 @@ function ScreenConvocations({ go, tweaks }) {
     || window.CDD_ROLES.canDo('compo');
 
   const addPlayer = (pid) => {
-    if (!canEdit || !teamId || !window.CDD_CONVOC) return;
+    // Log de traçabilité pour diagnostiquer pourquoi l'ajout peut échouer
+    // silencieusement. État courant + résultat de addToConvoc.
+    const _diag = {
+      canEdit, teamId, pid,
+      benchLen: benchPlayers.length,
+      reserveLen: reservePlayers.length,
+      hasConvoc: !!window.CDD_CONVOC,
+      hasAdd: !!(window.CDD_CONVOC && window.CDD_CONVOC.addToConvoc),
+    };
+    if (!canEdit) {
+      console.warn('[convocs] addPlayer refusé : pas de permission', _diag);
+      return;
+    }
+    if (!teamId) {
+      console.warn('[convocs] addPlayer refusé : teamId manquant', _diag);
+      alert('Impossible d\'ajouter — aucune équipe active détectée. Recharge la page.');
+      return;
+    }
+    if (!window.CDD_CONVOC || !window.CDD_CONVOC.addToConvoc) {
+      console.warn('[convocs] addPlayer refusé : CDD_CONVOC non chargé', _diag);
+      return;
+    }
+    console.info('[convocs] addPlayer →', _diag);
     // addToConvoc gère lui-même le cap bench=5 et étend convocCount au besoin
-    window.CDD_CONVOC.addToConvoc(teamId, pid, 'bench');
+    const ok = window.CDD_CONVOC.addToConvoc(teamId, pid, 'bench');
+    console.info('[convocs] addPlayer résultat :', ok ? 'OK' : 'REFUSÉ (banc plein ou erreur)');
+    if (ok === false) {
+      // Le toast cdd-bench-full sera déjà déclenché, mais on confirme côté UI.
+      // Cas où l'UI affichait < BENCH_MAX mais le storage avait déjà plus :
+      // l'utilisateur voit du coup le toast et le compteur se met à jour.
+      setBenchFullToast(true);
+      setTimeout(() => setBenchFullToast(false), 2600);
+    }
   };
   const removePlayer = (pid) => {
     if (!canEdit || !teamId || !window.CDD_CONVOC) return;
