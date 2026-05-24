@@ -169,10 +169,21 @@ function ScreenMatchPrep({ go, tweaks }) {
             )}
           </div>
           <div className="cv-hero-title">{next.home}<br/>VS {next.away}</div>
-          <div className="cv-hero-meta">
-            <span>📅 {next.date}{next.time ? ` · ${next.time}` : ''}</span>
-            <span>🏟️ {next.venue}</span>
-          </div>
+          {(() => {
+            // Heure affichée = priorité au coup d'envoi saisi dans
+            // "Infos du match" (kickoff), fallback sur l'heure d'origine
+            // FFF/amical (next.time). Permet au coach de corriger une
+            // heure erronée sans devoir rééditer le match amical.
+            const _mInfo = (teamId && matchId && window.CDD_MATCH_INFO?.get)
+              ? window.CDD_MATCH_INFO.get(teamId, matchId) : null;
+            const _eff = (_mInfo && _mInfo.kickoff) || next.time || '';
+            return (
+              <div className="cv-hero-meta">
+                <span>📅 {next.date}{_eff ? ` · ${_eff}` : ''}</span>
+                <span>🏟️ {next.venue}</span>
+              </div>
+            );
+          })()}
           {canEdit && next.isAmical && (
             <button onClick={() => setFriendlyOpen('edit')}
               style={{
