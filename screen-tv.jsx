@@ -32,41 +32,63 @@ function loadSponsors() {
   } catch (e) { return []; }
 }
 
-function ScreenTV({ go, tweaks }) {
+function ScreenTV({ go, tweaks, source, matchId }) {
   const cardRef = useRefTV(null);
   const [busy, setBusy] = useStateTV(false);
   const [msg, setMsg] = useStateTV('');
   const [showSponsorEditor, setShowSponsorEditor] = useStateTV(false);
   const [sponsors, setSponsors] = useStateTV(loadSponsors);
 
-  // SOURCE DE VÉRITÉ UNIQUE (refonte 2026-05-23) : on lit DIRECTEMENT le
-  // template du coach (cdd_lineup_template[teamId]) — la même donnée que
-  // celle affichée dans la Feuille de match (screen-effectif-lineup).
-  //
-  // On NE passe PLUS par CDD_CONVO qui appliquait une logique de
-  // « convocation adaptative » (complétion à 14/16, exclusion des indispos,
-  // remplacement automatique des titulaires absents). Cette logique
-  // produisait des divergences entre Feuille de match et Mode Vestiaire,
-  // déroutantes pour le coach.
-  //
-  // Principe : le coach a UNE compo type. Il l'édite à la main quand un
-  // joueur est blessé/indispo. Les deux écrans affichent EXACTEMENT ce
-  // qu'il a posé — pas de magie automatique.
+  // Phase 1C — Source contextualisée :
+  //   source === 'match' + matchId → compo de match (cdd_match_lineup[tid][mid])
+  //                                   avec fallback sur la compo type si vide
+  //   sinon                         → compo type saison (cdd_lineup_template[tid])
+  //                                   comportement historique depuis Feuille de match
+  const isMatchSource = source === 'match' && !!matchId;
   let formation = '4-3-3';
   let templateStartersMap = {};
   let templateBench = [];
+  let sourceLabel = '';   // utilisé pour le bandeau
+  let sourceFound = false; // true si une compo de match existe vraiment
   try {
     const activeTeam = window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam();
     if (activeTeam) {
-      const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
-      const s = all[activeTeam.id];
-      if (s && s.starters) {
-        const f = s.formation;
-        if (f && window.CDD_FORMATIONS && window.CDD_FORMATIONS[f]) formation = f;
-        else if (s.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[s.basedOn]) formation = s.basedOn;
-        templateStartersMap = s.starters;
+      // ── Mode MATCH : tente d'abord cdd_match_lineup ──
+      if (isMatchSource) {
+        const allM = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
+        const ml = allM[activeTeam.id] && allM[activeTeam.id][matchId];
+        if (ml && ml.starters) {
+          const f = ml.formation;
+          if (f && window.CDD_FORMATIONS && window.CDD_FORMATIONS[f]) formation = f;
+          else if (ml.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[ml.basedOn]) formation = ml.basedOn;
+          templateStartersMap = ml.starters;
+          if (Array.isArray(ml.bench)) templateBench = ml.bench.slice();
+          sourceFound = true;
+        }
+        // Fallback → compo type si aucune compo de match encore posée
+        if (!sourceFound) {
+          const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+          const s = all[activeTeam.id];
+          if (s && s.starters) {
+            const f = s.formation;
+            if (f && window.CDD_FORMATIONS && window.CDD_FORMATIONS[f]) formation = f;
+            else if (s.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[s.basedOn]) formation = s.basedOn;
+            templateStartersMap = s.starters;
+          }
+          if (s && Array.isArray(s.bench)) templateBench = s.bench.slice();
+        }
+      } else {
+        // ── Mode SAISON : compo type ──
+        const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+        const s = all[activeTeam.id];
+        if (s && s.starters) {
+          const f = s.formation;
+          if (f && window.CDD_FORMATIONS && window.CDD_FORMATIONS[f]) formation = f;
+          else if (s.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[s.basedOn]) formation = s.basedOn;
+          templateStartersMap = s.starters;
+        }
+        if (s && Array.isArray(s.bench)) templateBench = s.bench.slice();
       }
-      if (s && Array.isArray(s.bench)) templateBench = s.bench.slice();
     }
   } catch (e) {}
 
@@ -74,9 +96,7 @@ function ScreenTV({ go, tweaks }) {
                 (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
   const playerOf = (pid) => pid && window.CDD_PLAYERS && window.CDD_PLAYERS.find(p => p.id === pid);
 
-  // Titulaires : exactement le template du coach, slot par slot. Si un slot
-  // est vide (le coach n'a pas posé tous ses titulaires), fallback ultime
-  // sur les joueurs marqués isStarter dans le seed (n'arrive pas en prod).
+  // Titulaires : exactement ce que le coach a posé, slot par slot.
   let starterPlayers = slots.map((slot, i) => {
     let pid = templateStartersMap[i];
     if (!pid) {
@@ -85,12 +105,9 @@ function ScreenTV({ go, tweaks }) {
     }
     return playerOf(pid);
   });
-  // Banc : exactement le bench posé par le coach (3 ou 5 joueurs, jamais
-  // complété automatiquement avec des joueurs de la réserve).
+  // Banc : exactement le bench posé par le coach.
   const benchPlayers = templateBench.map(playerOf).filter(Boolean);
-  // hasMatchOverlay reste exposé pour ne pas casser les écrans dépendants
-  // mais il vaut désormais toujours false côté Mode Vestiaire.
-  const hasMatchOverlay = false;
+  const hasMatchOverlay = false; // gardé pour compatibilité
 
   const club = window.CDD_CLUB || { name: 'MON CLUB', team: 'EQUIPE', colors: ['#22c55e', '#000'] };
   const match = window.CDD_NEXT_MATCH || {};
@@ -160,14 +177,27 @@ function ScreenTV({ go, tweaks }) {
         </div>
       )}
 
-      {/* Source : convoc adaptée pour ce match, ou compo type saison */}
+      {/* Source : compo de match (depuis Convocations) ou compo type saison */}
       <div className="tv-source-badge" style={{
         margin:'0 14px 10px', padding:'8px 12px', borderRadius:8,
-        background: hasMatchOverlay ? 'rgba(249,115,22,0.10)' : 'rgba(255,255,255,0.04)',
-        border: `1px solid ${hasMatchOverlay ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.10)'}`,
+        background: isMatchSource
+          ? (sourceFound ? 'rgba(249,115,22,0.10)' : 'rgba(255,200,40,0.07)')
+          : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${isMatchSource
+          ? (sourceFound ? 'rgba(249,115,22,0.35)' : 'rgba(255,200,40,0.30)')
+          : 'rgba(255,255,255,0.10)'}`,
         fontSize:11.5, color:'rgba(255,255,255,0.85)', letterSpacing:.2,
+        display:'flex', alignItems:'center', gap:8,
       }}>
-        <><b>Compo type saison</b> · {starterPlayers.filter(Boolean).length} titulaires · {benchPlayers.length} remplaçants</>
+        {isMatchSource ? (
+          sourceFound ? (
+            <><b style={{color:'#f97316'}}>📅 Compo match</b> · {match.date || ''} · {starterPlayers.filter(Boolean).length} titulaires · {benchPlayers.length} remplaçants</>
+          ) : (
+            <><b style={{color:'#ffc040'}}>⚠ Aucune compo de match</b> — affichage de la compo type saison · {starterPlayers.filter(Boolean).length} tit. · <a onClick={() => go('match-lineup')} style={{color:'#f97316', cursor:'pointer', textDecoration:'underline'}}>Créer la compo match</a></>
+          )
+        ) : (
+          <><b>🗓️ Compo type saison</b> · {starterPlayers.filter(Boolean).length} titulaires · {benchPlayers.length} remplaçants</>
+        )}
       </div>
 
       {/* ─── Zone capturée pour l'export ─── */}

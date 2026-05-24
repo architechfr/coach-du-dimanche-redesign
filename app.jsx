@@ -276,6 +276,7 @@ function App() {
       set: "RÉGLAGES",
       onb: "",
       tv: "MODE VESTIAIRE",
+      "tv-match": "MODE VESTIAIRE",
       carnet: "MON CARNET",
     };
     return map[screen] ?? "";
@@ -385,6 +386,8 @@ function App() {
             {screen === "fiche"        && <ScreenFiche go={go} tweaks={t} player={currentPlayer}/>}
             {screen === "fiche-match"  && <ScreenFicheMatch go={go} tweaks={t}/>}
             {screen === "tv"           && <ScreenTV go={go} tweaks={t}/>}
+            {screen === "tv-match"     && <ScreenTV go={go} tweaks={t} source="match"
+              matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}/>}
             {screen === "tactique"     && <ScreenTactique go={go} tweaks={t}/>}
             {screen === "carnet"       && window.ScreenCarnetJoueur && <window.ScreenCarnetJoueur go={go} tweaks={t} playerId={currentPlayer?.id}/>}
             {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
