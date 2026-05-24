@@ -1,56 +1,249 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-26 (session UX parent)** (cache buster **v104**).
+> Document de reprise. Dernière mise à jour : **2026-05-26 (session UX coach/adjoint + LIVE)** (cache buster **v116**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
 
 ## ⚡ Priorité absolue pour la PROCHAINE session
 
-**Nettoyage UX parent — la VAGUE PRINCIPALE EST FAITE** (10 commits
-v95 → v104, session 26 mai). Le compte parent voit désormais une UI
-adaptée : auto-sélection enfant, masquage outils coach, convention
-recevant à gauche partout, bouton Modifier après validation, calendrier
-enrichi, bottom nav "Ma convoc". Cf. section "Livré dans la session
-du 26 mai" plus bas pour le détail.
+### 🆕 GROS CHANTIER EN BACKLOG — Multi-formats (foot 5/8/11) + multi-équipes par groupe
 
-**Sujets ouverts à attaquer ensuite** :
+**Demande Florian (26 mai, fin de session)** : faire évoluer l'app pour
+gérer aussi le foot à 5 et le foot à 8, avec un coach principal qui
+répartit un groupe global de 20-30 joueurs sur plusieurs équipes A/B/C/D
+(typique foot des jeunes U7/U9/U11). Conserver le fonctionnement actuel
+foot à 11 mono-équipe (FCMH U15) intact.
 
-1. **Test E2E parent en prod** — à faire en premier. Tester avec
-   `luckyzedoggy@gmail.com` (lié à Léonis CLARISSE) que :
+**Plan d'attaque proposé (validé, à exécuter sur plusieurs sessions)** :
+
+- **Phase M1 — Format de jeu par équipe** : ajout d'un champ
+  `team.format = 'f5'|'f8'|'f11'`. Remplacer `BENCH_MAX = 5` en dur
+  partout par helper `getBenchMax(teamId)`. Adapter match-engine
+  (nombre titulaires). Ajouter formations 1-2-1, 2-1-1, 2-3-2, 3-2-2.
+  Migration : équipes existantes → `f11` par défaut. **Aucune UI
+  nouvelle.** Risque bas, valide l'approche.
+
+- **Phase M2 — Adaptation visuelle terrain & UI** : SVG terrain adapté
+  selon format, page Compo grid variable, Convocations compteurs
+  adaptés, sélecteur formation filtré par format.
+
+- **Phase M3 — Concept de GROUPE** : nouvelle collection Firestore
+  `groups` (clubId, category, season, playerIds[], responsibleCoachId).
+  Page "Mon groupe U9", création de teams rattachées au même group,
+  affectation joueur→team avec anti-doublon par créneau, rotation
+  agrégée par groupe.
+
+- **Phase M4 — PLATEAU (événement multi-matchs)** : nouvelle collection
+  `plateaus`. Création d'un plateau (date, lieu, plusieurs matchs en
+  parallèle, chacun avec son terrain/horaire/adversaire/coach adjoint).
+  Convocations groupées : 1 envoi parent avec équipe/horaire/terrain/
+  coach assignés.
+
+- **Phase M5 — Vue Responsable de groupe** : tableau de bord coach
+  principal. Drag&drop pour répartir joueurs entre teams du groupe.
+  Alertes doublons/non-affectés/absents. Équilibrage assisté
+  (niveau/poste/rotation).
+
+- **Phase M6 — Vue Coach adjoint scoped** : un adjoint sur une team ne
+  voit QUE cette team. Bandeau "Tu coaches l'Équipe B aujourd'hui".
+
+**Modèle de données proposé (extensions, tout optionnel = défaut
+comportement actuel)** :
+
+```js
+// EXTENSION team
+team.format       = 'f5' | 'f8' | 'f11'  // défaut 'f11'
+team.starterCount = 5 | 8 | 11           // dérivé
+team.benchMax     = 3 | 4 | 5            // configurable
+team.groupId      = null | 'grp_xxx'     // si multi-équipes
+
+// NOUVEAU group (optionnel)
+group = { id, clubId, category, season, name, format,
+          playerIds[], responsibleCoachId }
+
+// NOUVEAU plateau
+plateau = { id, groupId, date, venue, name, matchIds[] }
+
+// EXTENSION match
+match.plateauId         = null | 'pla_xxx'
+match.assistantCoachId  = null | uid
+match.terrain           = 'Terrain 1' (libre)
+```
+
+**Risques principaux** :
+- `BENCH_MAX = 5` en dur dans ~12 fichiers → traque systématique en M1.
+- `cdd_match_lineup` modèle slot→pid avec 11 slots fixes → migration auto en M2.
+- UX risque de complexification pour les coachs simples foot à 11 →
+  si `team.format === 'f11'` ET pas de `groupId` → UI strictement
+  identique à aujourd'hui (les nouveautés cachées).
+- Tests à chaque phase : compte FCMH U15 doit continuer à fonctionner
+  comme avant.
+
+**Stratégie de migration** : un coach FCMH U15 qui se connecte demain
+ne doit voir AUCUN changement tant qu'il ne crée pas explicitement un
+groupe ou un plateau. Feature flag implicite par présence des nouveaux
+champs.
+
+---
+
+### Sujets ouverts plus petits (peuvent passer avant M1)
+
+1. **Test E2E parent en prod** — toujours pas fait. Tester avec
+   `luckyzedoggy@gmail.com` (lié à Léonis CLARISSE) :
    - La réponse présence (JE VIENS) arrive bien chez le coach FCMH.
    - Les logs `[lecteur] sendResponse →` et `[convocs] watching matchId=`
-     donnent le MÊME `matchId` côté parent et côté coach. Si non →
-     CDD_NEXT_MATCH diverge entre les deux comptes, à investiguer.
-   - Tous les écrans coach sont bien masqués dans le menu ⋯.
+     donnent le MÊME `matchId` côté parent et côté coach.
+   - **Tester aussi le LIVE v116** : ouvrir le compte coach, lancer
+     un match, taper un BUT → vérifier que le compte parent (page
+     Lecteur) voit le bandeau "EN DIRECT" avec le score à jour.
 
-2. **Décisions reportées sur la fiche joueur** (v101 partiel) :
-   - **Licence FFF** (`screen-match-fiche.jsx` ~L280) : un parent voit
-     actuellement le N° licence de TOUS les joueurs. Légitime pour son
-     enfant, fuite pour les autres. Soit masquer pour non-coach, soit
-     filtrer (afficher seulement pour `playerId === getChildOfParent()`).
-   - **Chip statut "🩹 Blessé / ⛔ Suspendu"** (~L172) : info pratique
-     pour tous ou réservée aux coachs ? À arbitrer.
+2. **Couverture des autres écrans coach (défense en profondeur)** :
+   `tactique` a un guard (v95), mais `tv`, `tv-match`, `prep`, `share`,
+   `sync`, `transfert`, `arb`, `fiche-match`, `convoP`, `carnet` n'ont
+   PAS de guard interne. Le menu ⋯ les filtre (v102) et la bottom nav
+   est adaptée (v104), mais une URL directe ou un `go(id)` ailleurs
+   les rendrait.
 
-3. **Couverture des autres écrans coach** : `tactique` a un guard (v95),
-   mais `tv`, `tv-match`, `prep`, `share`, `sync`, `transfert`, `arb`,
-   `fiche-match`, `convoP`, `carnet` n'ont PAS de guard interne. Le menu
-   ⋯ les filtre (v102) mais une URL directe ou un `go(id)` ailleurs
-   les rendrait. Défense en profondeur à ajouter si besoin.
+3. **Améliorations LIVE post-v116** :
+   - Afficher la minute live + timeline des événements sur le bandeau
+     parent (actuellement juste le score)
+   - Bandeau aussi sur l'Accueil parent (pas seulement Lecteur)
+   - Notifications push natives si score change ?
 
-4. **Ajouter une tile "Ma convoc" sur l'Accueil parent** (équivalent
-   nav du bas) pour redondance pédagogique. Le bouton "VOIR MA CONVOCATION"
-   existe déjà dans le hero, ça peut suffire.
-
-5. **Filtrage Effectif pour parent** : l'onglet EFFECTIF montre encore
-   toute la liste. Idée pas encore implémentée : composant `<ChildOnlyView>`
-   qui filtre via `getChildOfParent(teamId)` pour ne montrer que l'enfant.
-   Décision Florian : utile ou pas ? L'effectif complet a aussi du sens
-   pour un parent (savoir qui sont les copains de son enfant).
+4. **Filtrage Effectif pour parent** : composant `<ChildOnlyView>` qui
+   filtre via `getChildOfParent(teamId)`. À arbitrer : utile ou pas ?
+   L'effectif complet a aussi du sens pour un parent (savoir qui sont
+   les copains de son enfant).
 
 ---
 
 ## 1. État au 26 mai 2026 — où on en est
+
+### ✅ Livré dans la session du 26 mai (suite, commits v105 → v116)
+
+Suite immédiate de la session UX parent — bascule progressive vers la
+**UX coach/adjoint** + amorce du **mode LIVE**.
+
+**v105** — `HANDOFF.md` updated (doc only, pas de bump cache buster).
+
+**v106** (commit `81d1842`) — Chip statut famille uniquement
+(`screen-match-fiche.jsx`) :
+- Helper `_myLinkedPlayer` via `getChildOfParent()`.
+- Statut "🩹 Blessé / ⛔ Suspendu" : coach voit bouton ✎ éditable,
+  parent du joueur concerné (ou joueur lui-même) voit en lecture,
+  autres parents → masqué (donnée médicale privée à la famille).
+- N° licence FFF : visible pour tous (décision Florian).
+
+**v107** (commit `b9134a7`) — Heure de coup d'envoi prioritaire
+(`screen-match-prep.jsx`, `screen-results-conv.jsx`) :
+- L'affichage utilise `CDD_MATCH_INFO.kickoff` en priorité sur
+  `next.time` (l'heure d'origine FFF/amical).
+- Bug : modifier l'heure dans "Infos du match" sauvait `kickoff`
+  mais l'écran continuait à lire `next.time` → affichage figé.
+
+**v108** (commit `851ef52`) — Page Prépa Match : 3 fixes
+(`screen-prep-arb-lec-vote.jsx`) :
+- Convention recevant à gauche (swap selon `next.venue === 'Domicile'`).
+- **Plus de fallback adversaire trompeur** : retrait du `standings.find(s => !s.me)`
+  qui prenait "le premier autre" du championnat quand l'adversaire
+  n'était pas trouvé (cas amical contre Ferrières → affichait V.F.F.A 77).
+  Maintenant si amical OU adversaire hors championnat → pas de section stats.
+- **Plus de placeholder "22/09 défaite 1-2"** : le `allerMatch` était
+  hardcodé en dur ligne 29 depuis le proto. Remplacé par recherche
+  réelle dans `CDD_LAST_MATCHES`. Si pas trouvé → carte masquée.
+
+**v109** (commit `566c161`) — Diag addPlayer (`screen-results-conv.jsx`) :
+- Logs `[convocs] addPlayer →` + `[convocs] addPlayer résultat :`
+  pour diagnostiquer le bug "Banc 4/5 + impossible d'ajouter" remonté
+  par Florian. Aussi : feedback explicite si addToConvoc retourne false.
+
+**v110** (commit `349e5e6`) — Match Live pré-remplissage + convention
+(`screen-match-live-v2.jsx`) :
+- `PreMatchSetup` : `oppName` auto-pré-rempli depuis
+  `CDD_NEXT_MATCH.opponentName`, `matchType` auto-sélectionné selon
+  `next.isAmical` / `fffMatchId`. Plus de "Adversaire" en dur.
+- **Scoreboard FIFA** : convention recevant à gauche via swap
+  `isAtHome ? teamA : teamB`. Le score `sA/sB` reste lié à l'équipe
+  (logique métier), seules les positions visuelles swappent.
+
+**v111** (commit `5bcbb24`) — RESPECT DU CHOIX COACH (data-bridge.js +
+`screen-results-conv.jsx`) :
+- **Cause racine identifiée et fixée** : `data-bridge.js` lignes 819-843
+  avait un `while (starters.length < 11)` qui auto-complétait les
+  titulaires depuis le banc puis la réserve. → Quand Florian retirait
+  un titulaire, un joueur du banc était auto-promu → effet domino
+  jusqu'à "Banc 5/5 figé impossible à modifier". Désactivé si
+  `cdd_match_lineup` existe (= coach a posé sa convoc, on respecte).
+- **Bouton ✓ "Marquer présent" côté coach** : à côté du 💬 WhatsApp,
+  permet au coach de valider la présence sans réponse parent (cas
+  texto / oral / parent sans app). Écrit dans Firestore comme une
+  réponse parent normale avec label "(saisi par coach)".
+
+**v112** (commit `441616e`) — Modale "Remplacer" (data-bridge.js +
+`screen-results-conv.jsx`) :
+- Nouvelle fonction `CDD_CONVOC.swapPlayers(teamId, outPid, inPid)`
+  qui swap explicitement 2 joueurs (4 cas : titulaire↔remplaçant,
+  titulaire↔réserve, remplaçant↔réserve, remplaçant↔titulaire).
+- Boutons − sur titulaires/remplaçants remplacés par **boutons ↔**
+  qui ouvrent une **modale "REMPLACER X par..."** avec la liste des
+  candidats (banc pour titulaire, réserve pour remplaçant).
+- Bouton "Retirer sans remplacer" dans la modale pour le cas où on
+  veut juste retirer (= comportement removePlayer d'avant).
+
+**v113** (commit `b56383e`) — Match Live : boutons swap + vérification
+numéros (`screen-match-live-v2.jsx`) :
+- **`ActionsMatrix`** : prend désormais `isAtHome`. Swap visuel des
+  colonnes BUT/JAUNE/CHANGE pour aligner avec le scoreboard. Le `side`
+  passé aux handlers reste 'A'/'B' (logique métier inchangée), seules
+  les positions visuelles changent.
+- **Nouvelle étape "PRÉ-MATCH · VÉRIFICATION"** entre `PreMatchSetup`
+  et le démarrage du chrono. Composant `PreMatchJerseyCheck` affiche
+  la compo avec numéros + bouton "Modifier les numéros" + boutons
+  "← Retour réglages" et "▶ COUP D'ENVOI". Plus de chrono qui démarre
+  automatiquement.
+
+**v114** (commit `f2d9f91`) — Jersey sync + détection doublons
+(`screen-match-live-v2.jsx`, `jersey-numbers-modal.jsx`) :
+- `PreMatchJerseyCheck` lit désormais `CDD_CONVO` + `CDD_JERSEY.ofPlayer()`
+  au lieu de `M.tA.p` (snapshot statique figé). Listeners sur
+  `cdd-jersey-changed` + `cdd-data-rebuilt` → re-render auto.
+- Détection doublons sur l'écran de vérification : bandeau rouge
+  "⚠️ Au moins 2 joueurs portent le même numéro" + ligne en rouge
+  avec badge "⚠ DOUBLON".
+- `JerseyNumbersModal` : changement OK passe en **vert** (au lieu
+  d'orange) — vert = "ça marche", rouge = "doublon".
+
+**v115** (commit `eff1822`) — Verrouillage écrans pré-match si live en cours
+(`screen-results-conv.jsx`, `screen-effectif-lineup.jsx`,
+`screen-match-prep.jsx`) :
+- Helper `_matchInProgress = !!MATCH_HELPERS.getLiveMatch()`.
+- `canEdit = baseCanEdit && !_matchInProgress` → désactive tous les
+  boutons d'édition pendant le live.
+- Bandeau orange "🔒 Match en cours" en tête de chaque écran pré-match
+  avec bouton "▶ Aller au match" qui redirige vers `screen-match`.
+
+**v116** (commit `bc17045`) — MODE LIVE (`screen-match-live-v2.jsx`,
+`screen-prep-arb-lec-vote.jsx`) :
+- **Push cloud automatique** pendant le match : helper `_pushLive(M)`
+  appelle `cddSync.saveMatchToCloud(M)` fire-and-forget à chaque
+  rerender + dans le tick auto-save 10s. Couvre toutes les actions
+  coach (BUT, JAUNE, ROUGE, CHANGE) + l'avancée du chrono.
+- **Bandeau LIVE sur la page Lecteur** : `watchMatchFromCloud(matchId)`
+  côté parent/lecteur/joueur. Si status === 'live' ou 'paused' →
+  affiche bandeau rouge "EN DIRECT" avec score temps réel (convention
+  recevant à gauche), point pulsant, compteur d'événements. Bandeau
+  jaune "PAUSE · MI-TEMPS" si paused. Disparaît à 'finished'.
+- **Infrastructure préexistante** : `saveMatchToCloud` /
+  `watchMatchFromCloud` existaient déjà dans `firebase-sync.js`
+  (collection `cdd_v2_matches`), juste pas branchés en auto.
+
+**Bilan v105 → v116** : 12 commits, ~24h de session continue. UX coach/
+adjoint considérablement améliorée (modale Remplacer, étape vérification
+numéros, verrou pendant live, doublons détectés). Nouvelle feature LIVE
+opérationnelle (push auto + viewer parent). Reste à tester E2E en prod.
+
+---
 
 ### ✅ Livré dans la session du 26 mai (UX parent, commits v95 → v104)
 
