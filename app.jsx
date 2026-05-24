@@ -186,6 +186,10 @@ function App() {
     try {
       const params = new URLSearchParams(window.location.search || '');
       const email = (localStorage.getItem('cdd_user_email') || '').trim();
+      // Carte de coach publique (?coach=UID) — pas besoin d'être connecté.
+      // C'est une carte de visite par nature publique (le coach choisit ce
+      // qu'il met dedans).
+      if (params.get('coach')) return 'coach-profile-public';
       // Lecteur partagé (vue collective) : EXIGE email sinon landing dédiée.
       // Décision Florian : pas de mode visiteur public, tout le monde se logge
       // pour voir les données privées du club (présences parents, convocations…).
@@ -279,6 +283,8 @@ function App() {
       "match-lineup": "COMPO DU MATCH",
       "match-prep": "PROCHAIN MATCH",
       club: "PAGE DU CLUB",
+      "coach-profile":        "MA CARTE DE COACH",
+      "coach-profile-public": "CARTE DE COACH",
       convocations: "CONVOCATIONS",
       results: "CHAMPIONNAT",
       match: "MATCH LIVE",
@@ -317,7 +323,7 @@ function App() {
   const _hasMagicToken = (() => {
     try {
       const p = new URLSearchParams(window.location.search || '');
-      return !!(p.get('t') || p.get('carnet') || p.get('joueur') || p.get('p') || p.get('invite'));
+      return !!(p.get('t') || p.get('carnet') || p.get('joueur') || p.get('p') || p.get('invite') || p.get('coach'));
     } catch (e) { return false; }
   })();
   const _forceLanding = !_authedNow && !_hasMagicToken && screen !== 'onb';
@@ -411,6 +417,12 @@ function App() {
               matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}/>}
             {screen === "match-prep"   && window.ScreenMatchPrep && <window.ScreenMatchPrep go={go} tweaks={t}/>}
             {screen === "club"         && window.ScreenClub      && <window.ScreenClub go={go} tweaks={t}/>}
+            {screen === "coach-profile" && window.ScreenCoachProfile && <window.ScreenCoachProfile go={go} tweaks={t}/>}
+            {screen === "coach-profile-public" && window.ScreenCoachProfile && (() => {
+              const params = new URLSearchParams(window.location.search || '');
+              const cUid = params.get('coach');
+              return <window.ScreenCoachProfile go={go} tweaks={t} uid={cUid} publicView={true}/>;
+            })()}
             {screen === "convocations" && <ScreenConvocations go={go} tweaks={t}/>}
             {screen === "results"      && <ScreenResults go={go} tweaks={t}/>}
             {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}

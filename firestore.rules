@@ -349,6 +349,28 @@ service cloud.firestore {
         && canEditTeam(resource.data.clubId, resource.data.teamId);
     }
 
+    // ═══ /coach_profiles/{uid} ═══════════════════════════════════════
+    // Carte de visite partageable d'un coach (2026-05-24).
+    // - Lecture PUBLIQUE : un parent / dirigeant peut consulter une fiche
+    //   coach sans être connecté, via un lien ?coach=UID.
+    // - Écriture : un user édite UNIQUEMENT son propre profil
+    //   (request.auth.uid == uid). L'admin peut aussi modérer.
+    //
+    // Pas d'infos ultra-sensibles ici : le coach choisit ce qu'il rend
+    // public (téléphone optionnel).
+    match /coach_profiles/{uid} {
+      allow read:   if true;
+      allow create: if isSignedIn()
+        && (isAdmin() || request.auth.uid == uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.size() <= 14;
+      allow update: if isSignedIn()
+        && (isAdmin() || request.auth.uid == uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.size() <= 14;
+      allow delete: if isSignedIn() && (isAdmin() || request.auth.uid == uid);
+    }
+
     // ═══ /friendly_matches/{matchId}  (id = 'fr_<random>') ═══════════
     // Matchs amicaux hors-championnat (2026-05-24). Le calendrier FFF ne
     // liste que les matchs officiels — les amicaux (prépa, tournoi, jubilé…)

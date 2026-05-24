@@ -524,6 +524,9 @@ if (auth) {
       if (user && user.email) {
         // Miroir de compat : le code existant route sur cdd_user_email.
         localStorage.setItem('cdd_user_email', user.email.toLowerCase());
+        // Miroir uid : utilisé par coach-profile.js (carte de visite,
+        // partage public via ?coach=UID).
+        if (user.uid) localStorage.setItem('cdd_user_uid', user.uid);
         // Applique le profil saisi avant connexion (nom + rôle en attente).
         const pendName = localStorage.getItem(AUTH_PENDING_NAME);
         const pendRole = localStorage.getItem(AUTH_PENDING_ROLE);
@@ -538,6 +541,7 @@ if (auth) {
       } else {
         // Pas de session authentifiée → on retire le miroir.
         localStorage.removeItem('cdd_user_email');
+        localStorage.removeItem('cdd_user_uid');
       }
     } catch (e) {}
     window.dispatchEvent(new CustomEvent('cdd-auth-changed', { detail: { user: user || null } }));
@@ -926,6 +930,33 @@ async function fetchFriendlyMatches(clubId) {
 async function deleteFriendlyMatch(matchId) {
   if (!db || !matchId) return { ok: false };
   try { await deleteDoc(doc(db, 'friendly_matches', String(matchId))); } catch (e) {}
+  return { ok: true };
+}
+
+// ─── Profil coach (carte de visite partageable) ───
+// Storage local : cdd_coach_profile_{uid} (voir coach-profile.js).
+// Cloud : collection coach_profiles, id = uid.
+// LECTURE PUBLIQUE (un parent peut consulter via ?coach=UID sans login).
+// Écriture : un user édite uniquement SON propre profil (request.auth.uid == uid).
+async function saveCoachProfile(uid, profile) {
+  if (!db || !uid) return { ok: false, reason: 'no-db' };
+  await setDoc(doc(db, 'coach_profiles', String(uid)), {
+    ...profile,
+    uid: String(uid),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return { ok: true };
+}
+async function fetchCoachProfile(uid) {
+  if (!db || !uid) return null;
+  try {
+    const snap = await getDoc(doc(db, 'coach_profiles', String(uid)));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) { console.warn('[coach-profile] fetch', e.message); return null; }
+}
+async function deleteCoachProfile(uid) {
+  if (!db || !uid) return { ok: false };
+  try { await deleteDoc(doc(db, 'coach_profiles', String(uid))); } catch (e) {}
   return { ok: true };
 }
 
@@ -2173,6 +2204,7 @@ window.cddData = {
   saveMatchInfo, fetchMatchInfos, deleteMatchInfo,
   saveJerseyNumbers, fetchJerseyNumbers, deleteJerseyNumbers,
   saveFriendlyMatch, fetchFriendlyMatches, deleteFriendlyMatch,
+  saveCoachProfile, fetchCoachProfile, deleteCoachProfile,
   pushAllLocalOverrides,
   saveClubLogoBase64,
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)
