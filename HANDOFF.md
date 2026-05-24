@@ -1,13 +1,268 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-24 (soir)** (cache buster **v82**).
+> Document de reprise. Dernière mise à jour : **2026-05-26 (session UX parent)** (cache buster **v104**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
 
-## 1. État au 24 mai 2026 — où on en est
+## ⚡ Priorité absolue pour la PROCHAINE session
 
-### ✅ Livré dans la session du 24 mai (commits post-v74)
+**Nettoyage UX parent — la VAGUE PRINCIPALE EST FAITE** (10 commits
+v95 → v104, session 26 mai). Le compte parent voit désormais une UI
+adaptée : auto-sélection enfant, masquage outils coach, convention
+recevant à gauche partout, bouton Modifier après validation, calendrier
+enrichi, bottom nav "Ma convoc". Cf. section "Livré dans la session
+du 26 mai" plus bas pour le détail.
+
+**Sujets ouverts à attaquer ensuite** :
+
+1. **Test E2E parent en prod** — à faire en premier. Tester avec
+   `luckyzedoggy@gmail.com` (lié à Léonis CLARISSE) que :
+   - La réponse présence (JE VIENS) arrive bien chez le coach FCMH.
+   - Les logs `[lecteur] sendResponse →` et `[convocs] watching matchId=`
+     donnent le MÊME `matchId` côté parent et côté coach. Si non →
+     CDD_NEXT_MATCH diverge entre les deux comptes, à investiguer.
+   - Tous les écrans coach sont bien masqués dans le menu ⋯.
+
+2. **Décisions reportées sur la fiche joueur** (v101 partiel) :
+   - **Licence FFF** (`screen-match-fiche.jsx` ~L280) : un parent voit
+     actuellement le N° licence de TOUS les joueurs. Légitime pour son
+     enfant, fuite pour les autres. Soit masquer pour non-coach, soit
+     filtrer (afficher seulement pour `playerId === getChildOfParent()`).
+   - **Chip statut "🩹 Blessé / ⛔ Suspendu"** (~L172) : info pratique
+     pour tous ou réservée aux coachs ? À arbitrer.
+
+3. **Couverture des autres écrans coach** : `tactique` a un guard (v95),
+   mais `tv`, `tv-match`, `prep`, `share`, `sync`, `transfert`, `arb`,
+   `fiche-match`, `convoP`, `carnet` n'ont PAS de guard interne. Le menu
+   ⋯ les filtre (v102) mais une URL directe ou un `go(id)` ailleurs
+   les rendrait. Défense en profondeur à ajouter si besoin.
+
+4. **Ajouter une tile "Ma convoc" sur l'Accueil parent** (équivalent
+   nav du bas) pour redondance pédagogique. Le bouton "VOIR MA CONVOCATION"
+   existe déjà dans le hero, ça peut suffire.
+
+5. **Filtrage Effectif pour parent** : l'onglet EFFECTIF montre encore
+   toute la liste. Idée pas encore implémentée : composant `<ChildOnlyView>`
+   qui filtre via `getChildOfParent(teamId)` pour ne montrer que l'enfant.
+   Décision Florian : utile ou pas ? L'effectif complet a aussi du sens
+   pour un parent (savoir qui sont les copains de son enfant).
+
+---
+
+## 1. État au 26 mai 2026 — où on en est
+
+### ✅ Livré dans la session du 26 mai (UX parent, commits v95 → v104)
+
+**Vague de nettoyage UX parent en 10 commits**. Compte de test :
+`luckyzedoggy@gmail.com` (parent de Léonis CLARISSE dans FCMH U15 A).
+
+**v95** — Nettoyage de base (commit `0294a25`) :
+- `screen-tactique.jsx` : guard `_canAccess` via `canDo('compo')` →
+  page 🔒 "réservée aux coachs" pour parent/lecteur/joueur.
+- `screen-onb-set.jsx` : InviteManager masqué (`myInvitable.length > 0
+  && isCoach`).
+- `screen-results-conv.jsx` : stat "Absents", section ABSENTS et section
+  "DISPONIBLES NON CONVOQUÉS" wrappées `{canEdit && ...}`.
+- `screen-effectif-lineup.jsx` : boutons TACTIQUE/VISUEL COMPO et section
+  Réserve cachés. CTA "PRÉPARER LE MATCH" remplacé par "👁 VOIR LA
+  CONVOCATION" pour parent.
+- `screen-prep-arb-lec-vote.jsx` : convention recevant à gauche (Ferrières
+  vs FCMH quand à l'extérieur), onglet EFFECTIF sans "Reste de l'effectif",
+  onglet CALENDRIER → matchs à venir via `CDD_MATCH_SWITCHER.listUpcoming()`.
+- `roles.js` : ajout `getChildOfParent(teamId)` exposé sur `window.CDD_ROLES`.
+
+**v96** — Convention recevant à gauche sur l'Accueil (commit `8c26d5b`) :
+- `screen-home.jsx` : hero match swap dynamique `isHome ? me/opp :
+  opp/me`. Classes CSS `hero-club-home`/`hero-club-away` paramétrées par
+  POSITION (gauche/droite), pas par statut domicile/extérieur.
+
+**v97** — Auto-sélection enfant sur Lecteur (commit `3e6a901`) :
+- `screen-prep-arb-lec-vote.jsx` : priorité de sélection :
+  1. URL `?p=XXX` (lien magique)
+  2. `getChildOfParent()` (enfant lié au compte)
+  3. Recherche manuelle (fallback lecteur tiers).
+- Parent connecté → sa fiche s'ouvre directement sans recherche.
+
+**v98** — Masquage WhatsApp relance (commit `13e6e67`) :
+- `screen-results-conv.jsx` : `respCell` retourne `null` si `!canEdit`,
+  donc plus de bouton 💬 ? à côté des joueurs non-respondants pour parent.
+
+**v99** — Bouton Modifier après validation (commit `0b3e9d5`) :
+- `screen-prep-arb-lec-vote.jsx` : state `editing`. Quand `resp && !editing`,
+  affiche résumé "✓ Réponse envoyée : présent" + bouton "✎ Modifier"
+  au lieu des 3 boutons JE VIENS/Absent/?. Reset `editing=false` au
+  changement de joueur/match et après chaque envoi.
+
+**v100** — Carte enrichie prochain match dans calendrier Lecteur
+(commit `0387959`) :
+- `screen-prep-arb-lec-vote.jsx` onglet CALENDRIER : premier match
+  affiché en carte mise en avant (badges PROCHAIN MATCH / J-X / AMICAL,
+  grille date/lieu/coup d'envoi/RDV + 🏟️ stade via `CDD_MATCH_INFO`).
+  Matchs suivants → sous-titre "À suivre · N" + lignes compactes.
+  Convention recevant à gauche aussi appliquée ici.
+
+**v101** — Nettoyage UX fiche joueur (commit `c757e2b`) :
+- `screen-match-fiche.jsx` :
+  - `<CarnetActions>` (preview + WhatsApp + lien magique) → wrap canEdit.
+  - `<ConvocPersoActions>` (lien ciblé + push Firestore) → wrap canEdit.
+  - Onglet "Observations" retiré de la barre pour non-coach + protection
+    `tab === "obs" && canEdit`.
+  - Section CONTACT du ProfilTab (téléphones/email parent) → wrap canEdit
+    pour éviter fuite contacts entre familles.
+  - FORME / CONDITION (appréciations subjectives coach) → wrap canEdit.
+    Les KPI factuels (mins, buts, passes, MVP, cartons) restent visibles.
+  - Label "NOTATION COACH" → "ATTRIBUTS" pour non-coach.
+
+**v102** — Filtrage menu ⋯ par capacité (commit `0106094`) :
+- `app.jsx` : nouveau champ optionnel `cap` sur chaque entrée NAV. Si
+  `cap: 'compo'`, l'item nécessite `canDo('compo')` pour être visible.
+- Helper `_navAllowed(item)` : si pas de cap → visible, sinon check via
+  `window.CDD_ROLES.canDo()`.
+- Items gatés : `prep`, `match`, `fiche-match`, `arb`, `convoP`, `share`,
+  `transfert`, `sync`, `tv`, `tactique`, `carnet`. Reste visible à
+  tous : `home`, `effectif`, `lineup`, `convocations`, `results`,
+  `fiche`, `vote`, `lecteur`, `set`, `onb`.
+
+**v103** — Traçabilité sync présence + garde-fou (commit `7a67a34`) :
+- `screen-prep-arb-lec-vote.jsx sendResponse` : refus si `matchId` est
+  `'demo'`/`'demo_default'`/vide (= aucun match courant détecté) avec
+  message "Aucun match en cours détecté — recharge la page". Console
+  log `[lecteur] sendResponse → {matchId, playerId, firestorePath}`.
+- `screen-results-conv.jsx watchConvocResponses` : console log
+  `[convocs] watching matchId=XXX` + `[convocs] snapshot reçu : N
+  réponse(s)`. Permet à Florian de comparer les matchIds parent/coach
+  via chrome://inspect mobile.
+
+**v104** — Bottom nav adaptative (commit `9eece17`) :
+- `app.jsx` bottom-nav : si l'item est `lineup` et que l'user n'a pas
+  `canDo('compo')`, remplace par `{id:'lecteur', label:'Ma convoc'}`.
+  Le parent voit donc ⌂ Accueil · ◧ Effectif · ◉ **Ma convoc** ·
+  ☷ Convocs · ♛ Champ.
+
+**Bilan parent post-v104** :
+- Hero accueil : convention respectée, CTA "VOIR MA CONVOCATION".
+- Bottom nav adaptée → accès direct à la page Lecteur.
+- Page Lecteur : auto-sélect enfant, calendrier enrichi, bouton Modifier.
+- Fiche joueur : outils coach masqués, contacts privés masqués.
+- Convocations : pas d'ABSENTS/RÉSERVE, pas de bouton WhatsApp.
+- Compo : pas de TACTIQUE/VISUEL COMPO, pas de Réserve.
+- Tactique : 🔒 page réservée aux coachs.
+- Menu ⋯ : 12 écrans coach masqués.
+- Réglages : pas d'InviteManager.
+
+---
+
+### ✅ Livré dans la session du 25 mai nuit (commits post-v82)
+
+**Page Club complète** (commit 0feda67) :
+- Nouveau `screen-club.jsx` (`window.ScreenClub`) : hero, sections Stade,
+  Contacts (tel/email cliquables), Fédération/district, Réseaux sociaux.
+- Édition gated par `canDo('club')`. Push cloud via `saveClub` (collection
+  `clubs` existante, pas de nouvelle règle nécessaire).
+- `match-info-modal` pré-remplit le stade du club si match à domicile.
+- Tile **🏢 Mon club** sur l'Accueil.
+
+**Page Coach partageable** (commit d95da7b) :
+- Module `coach-profile.js` (`window.CDD_COACH_PROFILE`) : storage par uid,
+  helpers, compression photo 400px JPEG.
+- `screen-coach-profile.jsx` : view/edit + mode public lecture seule.
+- Collection Firestore `coach_profiles/{uid}` (lecture publique, write
+  self-only). `firestore.rules` à jour, publiées.
+- Lien public `?coach=UID` → page de visite sans login.
+- Miroir `cdd_user_uid` au sign-in dans firebase-sync.js.
+- Tile **🪪 Ma carte coach** sur l'Accueil.
+
+**QR codes** (commit 71bcb73) :
+- Modale réutilisable `qr-share-modal.jsx` (`window.QRShareModal`) :
+  QR 220px + URL + 3 boutons (Copier / Partager natif / **Imprimer**
+  qui ouvre une fenêtre standalone avec QR 280px prête à imprimer).
+- Bouton 📱 sur chaque ligne d'invitation en attente (`invite-manager`).
+- Bouton 📱 QR Code sur `screen-coach-profile`.
+- Cas d'usage : vestiaire, réunion parents, affiche club imprimée.
+
+**Onboarding émotionnel** (commit 2ae10c8) :
+- `screen-emo-onb.jsx` (`window.ScreenEmoOnb`) : parcours en 5 écrans
+  plein écran, ton complice 'côté banc'.
+  · Hook 'Salut coach. Tu te lèves le dimanche à 7h…'
+  · Reconnaissance : checklist interactive des galères
+  · Promesse : 4 cartes bénéfices
+  · Engagement : 'Pourquoi tu coaches ?' multi-select
+  · Conclusion + 3 CTA (Coach / Lien / Reconnexion)
+- Déclenché AU PREMIER CONTACT (pas connecté + pas de token + pas fait).
+- Storage `cdd_emo_onb_done` + `cdd_emo_onb_data` (pains, motiv pour
+  personnalisation future).
+- Bouton 'Passer →' toujours dispo en haut.
+
+**Sélecteur multi-matchs FFF + amicaux** (commit 8cac784) :
+- Module `match-switcher.js` (`window.CDD_MATCH_SWITCHER`) :
+  · `listUpcoming(teamId)` combine FFF + amicaux en format unifié
+  · `getActive/setActive/hasExplicitChoice`
+  · Storage `cdd_active_match_{teamId}`.
+- `data-bridge.js` expose `window.CDD_FFF_UPCOMING` + détecte choix
+  explicite → override `CDD_NEXT_MATCH` priorité 0.
+- `screen-match-prep.jsx` : rangée tuiles horizontales 'Quel match
+  préparer ?' (visible si >1 match upcoming) avec badges colorés
+  🏆 Champ. (vert) vs 🤝 Amical (violet).
+
+**Refactor Convocations — 1 seul CTA dynamique** (commit f4a0563 + fix d67fbec) :
+- Suppression des 7 boutons hero (Partager, Compo, Vestiaire, +Amical,
+  Infos, Numéros, Lancer) — surcharge cognitive.
+- 1 CTA primaire qui change selon l'état :
+  · Pas de match → 🤝 CRÉER UN MATCH AMICAL
+  · 0 réponse → ↗ ENVOYER LA CONVOCATION
+  · Partagé partiel → 📣 RELANCER LES N PARENTS RESTANTS
+  · 100% répondu → 🏁 LANCER LE MATCH (N confirmés)
+- Bug noUpcoming non défini → fix calcul inline depuis next.
+- Autres actions (compo, vestiaire, numéros, infos) accessibles via
+  match-prep (le hub).
+
+**Bugs UX flow création match** (commit b7779d1) :
+- Avertissement 'Infos du match manquantes' ne s'affiche plus quand pas
+  de match programmé (placeholder).
+- `match-info-modal` pré-remplit l'adversaire depuis CDD_NEXT_MATCH
+  (next.away si domicile, next.home si extérieur) + coup d'envoi depuis
+  next.time. Plus de re-saisie.
+
+**Mini-vue terrain dans Convocations** (commit b0765d1) :
+- Bloc terrain SVG en lecture seule dans Convocations entre le CTA et
+  la carte infos match. Joueurs aux positions de la formation avec
+  photos rondes + badges numéros (avec matchNum override si défini).
+- Header source : '🎯 Compo du match' orange si cdd_match_lineup,
+  '🗓️ Compo type' vert sinon.
+- Bouton ✎ Modifier → match-lineup (éditeur drag&drop complet).
+- Affiché seulement si vrai match programmé.
+
+**Filtrage Accueil par rôle** (commit a56e561) :
+- `screen-home.jsx` lit `CDD_ROLES.effectiveRole()` et filtre les tiles :
+  · Coach/Owner/Adjoint/Admin → tout
+  · Parent/Joueur → tile **📋 Ma convocation** (→ lecteur), Vote, Mon
+    club, Championnat, Réglages
+  · Lecteur → Championnat + Page lecteur + Réglages
+- Tile 'Convocations' (vue coach 'N à relancer') masquée pour parent/
+  joueur, remplacée par 'Ma convocation' → go('lecteur').
+
+**Fix 'FCMH vs FCMH'** (commit d05a41a) :
+- `data-bridge.js` ajoute 3 champs unifiés dans CDD_NEXT_MATCH
+  (calculés dans les 3 constructeurs : switcher, fallback amical, FFF) :
+  · `opponentName` : adversaire selon venue (next.home si extérieur,
+    next.away si domicile)
+  · `opponentLogo` : logo correspondant
+  · `myClubName` : nom de notre club
+- `screen-home`, `screen-prep`, `screen-prep-arb-lec-vote` (page lecteur)
+  utilisent ces champs avec fallback robuste. Plus de confusion 'nous
+  vs nous' quand on est l'équipe `away`.
+
+**Nettoyage UX parent (1er passage)** (commit en cours, prêt à push) :
+- Bannière 'X parents pas répondu' sur Accueil → masquée pour non-coach.
+- Hero CTA 'PRÉPARER LA COMPO' remplacé par :
+  · Coach → 'PRÉPARER LE MATCH' → match-prep
+  · Parent/Joueur → 'VOIR MA CONVOCATION' → lecteur
+- Convocations : bandeau 'SUIVI PRÉSENCES' + relance groupée masqués
+  pour non-coach. Bandeau technique 'Convocation adaptée pour ce match
+  / Source : compo type' masqué pour non-coach.
+
+### ✅ Livré dans la session du 24 mai SOIR (post-v76, commits c0945a0 → 01aa9e7)
 
 **Phase 1C — Mode Vestiaire contextualisé** (commit 31a9caa) :
 - Nouveau screen `tv-match` → lit `cdd_match_lineup` (compo du match).
@@ -210,32 +465,41 @@ le même commit prennent le même `?v=NN`. Le push suivant incrémente
 de 1 (v74 → v75 → v76…). **Pas de réutilisation d'un numéro.**
 Versions notables : v76 (bouchon UX + cache buster homogène),
 v78 (numéros maillots + match-info), v79 (sync cloud match-info+jersey),
-v80 (match amical), v81 (cloud amical + onglet Champ.), **v82** (page
-Match dédiée — actuelle).
+v80 (match amical), v81 (cloud amical + onglet Champ.), v82 (page
+Match dédiée), v83 (Page Club), v84 (Page Coach), v85 (QR codes),
+v86 (Onboarding émotionnel), v87 (sélecteur multi-matchs),
+v88 (Convocations 1 CTA), v90 (fix bugs UX match), v91 (mini-vue
+terrain Convocations), v92 (tiles Accueil par rôle), v93 (fix FCMH
+vs FCMH), **v94** (nettoyage UX parent — actuelle).
 
 ---
 
 ## 2. Sujet suivant — backlog priorisé
 
-### Page Club complète (priorité 1)
-- Logo, stade principal (nom + adresse + GPS), couleurs, contacts
-  (coachs, secrétaire, dirigeant, président).
-- Sert de **référentiel** pour pré-remplir les infos match : si le match
-  est à domicile, on devrait reproposer le stade du club par défaut dans
-  la modale `match-info`.
+### PRIORITÉ 1 : Nettoyage UX parent (suite)
+Voir la section ⚡ "Priorité absolue pour la prochaine session" en haut
+du document. 5 sujets précis identifiés par Florian :
+1. Page Tactique cachée pour parent
+2. Section Invitations dans Réglages cachée pour parent
+3. Page Compo : ne montrer que son enfant pour parent (filtrage liste)
+4. Page Convocations : ne montrer que son enfant pour parent (au lieu
+   de la liste complète des titulaires/banc)
+5. Mode Vestiaire : à masquer pour parent si pertinent
 
-### Page Coach partageable (priorité 2)
-- Fiche publique du coach : avatar, nom, expérience, contact.
-- Carte de visite à partager aux parents/joueurs/dirigeants.
+Approche recommandée : centraliser dans `roles.js` :
+- `canSeeFullSquad()` (= isCoachLike)
+- Helper `getChildOfParent(membership)` → playerId de l'enfant lié
 
-### Autres pistes
-- Onboarding émotionnel repensé.
-- Page Soutien projet dédiée (pas paiement, juste présentation).
-- Import district / FFF (futur module ingestion).
-- QR code d'invitation (le flow Phase D est livré et stable).
-- Match amical avec coexistence FFF : pour l'instant l'amical n'apparaît
-  comme prochain match QUE si le calendrier FFF est vide. À raffiner si
-  le coach a un FFF + un amical : sélecteur multi-matchs.
+### PRIORITÉ 2 : Page Soutien projet
+- Page de présentation du projet (pas paiement, juste présentation et
+  contact). Modèle économique / sponsoring / appel au don volontaire.
+
+### Autres pistes (long terme)
+- Import district / FFF (futur module ingestion automatique).
+- Refonte des pages partage parent (`?p=`, `?carnet=`) cohérente avec
+  la nouvelle UX parent.
+- Animations/transitions plus fluides entre les écrans.
+- PWA installable (manifest + service worker pour offline).
 
 ---
 
