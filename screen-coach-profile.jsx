@@ -33,6 +33,7 @@ function ScreenCoachProfile({ go, tweaks, uid: uidFromProps, publicView }) {
   const [loading, setLoading] = useStateCP(isPublic);
   const [notFound, setNotFound] = useStateCP(false);
   const [copiedLink, setCopiedLink] = useStateCP(false);
+  const [qrOpen, setQrOpen] = useStateCP(false);
 
   // En mode public, on fetch le profil depuis le cloud (le local n'a probablement rien).
   useEffectCP(() => {
@@ -224,6 +225,13 @@ function ScreenCoachProfile({ go, tweaks, uid: uidFromProps, publicView }) {
                 }}>
                 {copiedLink ? '✓ Lien copié' : '↗ Partager ma fiche'}
               </button>
+              <button onClick={() => setQrOpen(true)}
+                style={{
+                  padding:'9px 14px', borderRadius:9, cursor:'pointer',
+                  background:'rgba(168,85,247,0.10)', color:'#c4b5fd',
+                  border:'1px solid rgba(168,85,247,0.40)',
+                  fontSize:12, fontWeight:700, letterSpacing:'.04em',
+                }}>📱 QR Code</button>
             </div>
           )}
         </div>
@@ -428,6 +436,16 @@ function ScreenCoachProfile({ go, tweaks, uid: uidFromProps, publicView }) {
           Carte de visite générée par<br/>
           <b>Coach du Dimanche</b>
         </div>
+      )}
+
+      {/* Modale QR code de partage */}
+      {qrOpen && uid && window.QRShareModal && (
+        <window.QRShareModal
+          title={`📱 ${fullName}`}
+          url={`${window.location.origin}/?coach=${encodeURIComponent(uid)}`}
+          subtitle="Scanne ce QR pour ouvrir ma carte de coach sur ton téléphone."
+          onClose={() => setQrOpen(false)}
+        />
       )}
     </div>
   );

@@ -59,6 +59,8 @@ function InviteManager() {
   const [error, setError]     = React.useState('');
   const [invites, setInvites] = React.useState(null);
   const [copied, setCopied]   = React.useState(false);
+  // Modale QR code pour partage physique (réunion parents, vestiaire…)
+  const [qrInvite, setQrInvite] = React.useState(null);
 
   const players = window.CDD_PLAYERS || [];
   const signedIn = !!(window.cddAuth && window.cddAuth.currentUser && window.cddAuth.currentUser());
@@ -331,14 +333,28 @@ function InviteManager() {
             </div>
             <span className={`inv-badge inv-badge-${st.k}`}>{st.l}</span>
             {st.k === 'wait' && (
-              <button className="inv-row-btn" title="Copier le lien"
-                      onClick={() => copyLink(window.cddData.inviteUrl(inv.token))}>⧉</button>
+              <>
+                <button className="inv-row-btn" title="QR code (partage physique)"
+                        onClick={() => setQrInvite(inv)}>📱</button>
+                <button className="inv-row-btn" title="Copier le lien"
+                        onClick={() => copyLink(window.cddData.inviteUrl(inv.token))}>⧉</button>
+              </>
             )}
             <button className="inv-row-btn inv-row-del" title="Révoquer"
                     onClick={() => revoke(inv.token)}>✕</button>
           </div>
         );
       })}
+
+      {/* Modale QR code pour invitations — partage physique réunion / vestiaire */}
+      {qrInvite && window.QRShareModal && window.cddData?.inviteUrl && (
+        <window.QRShareModal
+          title={`📱 ${(qrInvite.label || roleLabel(qrInvite.role))}`}
+          url={window.cddData.inviteUrl(qrInvite.token)}
+          subtitle={`Invitation ${roleLabel(qrInvite.role)}${qrInvite.playerName ? ` pour ${qrInvite.playerName}` : ''}. Scanne pour rejoindre le club.`}
+          onClose={() => setQrInvite(null)}
+        />
+      )}
     </div>
   );
 }
