@@ -422,7 +422,7 @@ function listCoachFinishedMatches() {
           opp: m.tB?.n || 'Adversaire',
           home: m.tA?.n || 'Mon équipe',
           away: m.tB?.n || 'Adversaire',
-          venue: '?',
+          venue: m.isAtHome === true ? 'H' : m.isAtHome === false ? 'E' : '?',
           score: [sA, sB],
           result,
           journee: null,

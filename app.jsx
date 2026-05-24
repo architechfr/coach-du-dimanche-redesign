@@ -636,7 +636,7 @@ function ScreenFicheMatch({ go, tweaks }) {
           {resultLabel}
         </div>
         <div style={{fontSize:13, opacity:0.6, marginBottom:8}}>
-          {m.date} · {m.venue === "H" ? "DOMICILE" : "EXTÉRIEUR"}
+          {m.date}{m.venue === "H" ? " · DOMICILE" : m.venue === "E" ? " · EXTÉRIEUR" : ""}
         </div>
         {(() => {
           const myShort = m.home || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';

@@ -1572,6 +1572,8 @@ function PreMatchSetup({ M, onStart, rerender, canEdit }) {
   const [htd, setHtd] = useStateMV(M.cfg?.htd || 15);
   const [hs, setHs] = useStateMV(M.cfg?.hs || 2);
   const [matchType, setMatchType] = useStateMV(_autoType);
+  const _autoAtHome = M.isAtHome !== undefined ? M.isAtHome : (_next.venue === 'Domicile');
+  const [isAtHome, setIsAtHome] = useStateMV(_autoAtHome);
 
   const MATCH_TYPES = [
     { id: 'championnat',  ic: '🏆', label: 'Championnat (FFF)' },
@@ -1589,6 +1591,7 @@ function PreMatchSetup({ M, onStart, rerender, canEdit }) {
     M.cfg.htd = parseInt(htd, 10) || 15;
     M.cfg.hs  = parseInt(hs, 10)  || 2;
     M.matchType = matchType || 'amical'; // par defaut si non choisi
+    M.isAtHome = isAtHome;
     rerender();
     setTimeout(onStart, 50);
   };
@@ -1687,6 +1690,38 @@ function PreMatchSetup({ M, onStart, rerender, canEdit }) {
             ⚠️ Tu peux choisir plus tard, par defaut le match sera classe en Amical.
           </div>
         )}
+      </div>
+
+      {/* Lieu du match — domicile ou extérieur */}
+      <div style={{
+        background:'rgba(0,0,0,.35)', borderRadius:12, padding:'14px 16px',
+        marginBottom:14, width:'min(420px, 92%)',
+        border:'1px solid rgba(255,255,255,.08)',
+      }}>
+        <div style={{fontSize:11, fontWeight:800, letterSpacing:'.1em',
+                     color:'rgba(255,255,255,.7)', marginBottom:8,
+                     textTransform:'uppercase'}}>
+          Lieu du match
+        </div>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+          {[
+            { val: true,  ic: '🏠', label: 'Domicile' },
+            { val: false, ic: '✈️', label: 'Extérieur' },
+          ].map(opt => (
+            <button key={String(opt.val)} type="button" onClick={() => setIsAtHome(opt.val)}
+                    style={{
+                      padding:'10px 12px', borderRadius:9,
+                      border:'1px solid ' + (isAtHome === opt.val ? 'var(--acc, #c8f169)' : 'rgba(255,255,255,.12)'),
+                      background: isAtHome === opt.val ? 'rgba(200,241,105,.18)' : 'rgba(0,0,0,.3)',
+                      color: isAtHome === opt.val ? '#c8f169' : '#fff',
+                      fontSize:13, fontWeight:700, cursor:'pointer',
+                      display:'flex', alignItems:'center', gap:8,
+                    }}>
+              <span style={{fontSize:16}}>{opt.ic}</span>
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {canEdit ? (
