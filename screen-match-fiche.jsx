@@ -28,6 +28,14 @@ function ScreenFiche({ go, tweaks, player }) {
   const canEdit = !window.CDD_ROLES || !window.CDD_ROLES.canDo
     || window.CDD_ROLES.canDo('effectif');
 
+  // Id du joueur lié au compte courant (parent → enfant, joueur → lui-même).
+  // Sert à gater certaines infos sensibles (ex: statut médical/disciplinaire)
+  // qui doivent rester visibles à la famille mais cachées aux autres parents.
+  const _myLinkedPlayer = (() => {
+    try { return window.CDD_ROLES?.getChildOfParent?.() || null; }
+    catch (e) { return null; }
+  })();
+
   // ----- Status override -----
   // Fallback IDs alignés sur ceux exposés par CDD_COACH.STATUS_OPTIONS
   // (active / rest / injured / suspended / reserve) pour éviter les
@@ -168,7 +176,12 @@ function ScreenFiche({ go, tweaks, player }) {
             <span>Pied {p.foot}</span>
           </div>
 
-          {/* Status chips — cliquable seulement si le rôle peut éditer */}
+          {/* Status chip — règles d'affichage :
+              - Coach / adjoint (canEdit) → bouton cliquable pour modifier.
+              - Non-coach mais joueur lié au compte (parent qui regarde son
+                enfant, ou joueur qui regarde sa propre fiche) → span lecture.
+              - Non-coach qui regarde une autre fiche → masqué (donnée
+                médicale/disciplinaire = privée à la famille concernée). */}
           <div className="fi-chips">
             {canEdit ? (
               <button className={`fi-chip ${statusObj.cls} fi-chip-btn`}
@@ -176,9 +189,9 @@ function ScreenFiche({ go, tweaks, player }) {
                       title="Changer le statut">
                 {statusObj.l} <span className="fi-chip-edit">✎</span>
               </button>
-            ) : (
+            ) : (_myLinkedPlayer && _myLinkedPlayer === p.id) ? (
               <span className={`fi-chip ${statusObj.cls}`}>{statusObj.l}</span>
-            )}
+            ) : null}
             {p.license && <span className="fi-chip info">Licence FFF</span>}
             {p.isStarter && <span className="fi-chip ok">★ Titulaire</span>}
           </div>
