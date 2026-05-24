@@ -1283,6 +1283,26 @@ function ScreenVote({ go, tweaks }) {
           : '';
         const myColors = [M.tA?.c || '#c8f169', M.tA?.c2 || '#0a0e14'];
         const oppColors = [M.tB?.c || '#3b82f6', M.tB?.c2 || '#fff'];
+        // Convention foot : recevant à gauche. Le venue vient :
+        //   1. directement de M.isAtHome (toggle au lancement, v124+)
+        //   2. sinon de CDD_LAST_MATCHES (dérivé via friendly match en fallback)
+        const matchMeta = playedMatches.find(pm => pm.id === selectedMatchId);
+        const derivedVenue = M.isAtHome === true ? 'H'
+                           : M.isAtHome === false ? 'E'
+                           : (matchMeta?.venue || '?');
+        const isAway = derivedVenue === 'E';
+        const venueLabel = derivedVenue === 'H' ? 'DOMICILE' : derivedVenue === 'E' ? 'EXTÉRIEUR' : '';
+        const leftName   = isAway ? (M.tB?.n || 'Adversaire') : (M.tA?.n || 'Mon équipe');
+        const rightName  = isAway ? (M.tA?.n || 'Mon équipe') : (M.tB?.n || 'Adversaire');
+        const leftScore  = isAway ? (M.sB||0) : (M.sA||0);
+        const rightScore = isAway ? (M.sA||0) : (M.sB||0);
+        const leftColors  = isAway ? oppColors : myColors;
+        const rightColors = isAway ? myColors  : oppColors;
+        const leftLogo    = isAway ? (M.tB?.logoDataUrl || null) : (M.tA?.logoDataUrl || null);
+        const rightLogo   = isAway ? (M.tA?.logoDataUrl || null) : (M.tB?.logoDataUrl || null);
+        const myClubId    = M.clubId || window.CDD?.getActiveClub?.()?.id;
+        const leftClubId  = isAway ? null : myClubId;
+        const rightClubId = isAway ? myClubId : null;
         return (
           <div className="vote-hero">
             <div className="vote-hero-bg"/>
@@ -1292,24 +1312,24 @@ function ScreenVote({ go, tweaks }) {
               <div className="vote-hero-title">Note les joueurs<br/>du match</div>
               <div className="vote-hero-score" style={{display:'flex', alignItems:'center', justifyContent:'center', gap:14, flexWrap:'wrap'}}>
                 {window.ClubBadge && (
-                  <window.ClubBadge clubId={M.clubId || window.CDD?.getActiveClub?.()?.id}
-                                    clubName={M.tA?.n || 'F'} colors={myColors}
-                                    forceLogo={M.tA?.logoDataUrl || null}
+                  <window.ClubBadge clubId={leftClubId}
+                                    clubName={leftName} colors={leftColors}
+                                    forceLogo={leftLogo}
                                     size={36} shape="circle"/>
                 )}
-                <span>{M.tA?.n || 'Mon équipe'}</span>
-                <b className="num">{M.sA||0}–{M.sB||0}</b>
-                <span>{M.tB?.n || 'Adversaire'}</span>
+                <span>{leftName}</span>
+                <b className="num">{leftScore}–{rightScore}</b>
+                <span>{rightName}</span>
                 {window.ClubBadge && (
-                  <window.ClubBadge clubId={null}
-                                    clubName={M.tB?.n || '?'} colors={oppColors}
-                                    forceLogo={M.tB?.logoDataUrl || null}
+                  <window.ClubBadge clubId={rightClubId}
+                                    clubName={rightName} colors={rightColors}
+                                    forceLogo={rightLogo}
                                     size={36} shape="circle"/>
                 )}
               </div>
-              {(dateLabel || teamLabel) && (
+              {(dateLabel || teamLabel || venueLabel) && (
                 <div className="vote-hero-sub">
-                  {[dateLabel, teamLabel].filter(Boolean).join(' · ')}
+                  {[dateLabel, venueLabel, teamLabel].filter(Boolean).join(' · ')}
                 </div>
               )}
             </div>
