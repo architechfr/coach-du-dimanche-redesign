@@ -1642,39 +1642,79 @@ function PreMatchSetup({ M, onStart, rerender, canEdit }) {
 // chance d'ajuster la compo / les numéros.
 // ──────────────────────────────────────────────────────────
 function PreMatchJerseyCheck({ M, onConfirm, onBack, onEditJerseys, canEdit }) {
-  // Lit la compo titulaires + remplaçants depuis M.tA (= mon équipe).
-  const starters = (M.tA?.p || []);
-  const bench    = (M.tA?.bench || []);
-  // Détermine le numéro affiché pour chaque entrée. M.tA.p[i] est typiquement
-  // une chaîne "#N Prénom" — on extrait le numéro et le nom proprement.
-  const parsePlayer = (lbl) => {
-    if (lbl && typeof lbl === 'object') {
-      return { num: lbl.num || '?', name: `${lbl.first || ''} ${lbl.last || ''}`.trim() };
-    }
-    const s = String(lbl || '').trim();
-    const m = s.match(/^#?(\d+)\s+(.+)$/);
-    if (m) return { num: parseInt(m[1], 10), name: m[2] };
-    return { num: '?', name: s };
+  // Re-render quand les numéros changent (event dispatché par CDD_JERSEY.setNum).
+  // Sans ce listener, les modifs faites dans la modale ne s'affichaient pas
+  // au retour sur cet écran — le coach pensait que ses changements étaient perdus.
+  const [, _forceTick] = useStateMV({});
+  useEffectMV(() => {
+    const h = () => _forceTick({});
+    window.addEventListener('cdd-jersey-changed', h);
+    window.addEventListener('cdd-data-rebuilt', h);
+    return () => {
+      window.removeEventListener('cdd-jersey-changed', h);
+      window.removeEventListener('cdd-data-rebuilt', h);
+    };
+  }, []);
+
+  // Source unique : CDD_CONVO (à jour avec les choix coach + numéros match).
+  // M.tA.p est un cache snapshot posé à la création du match — pas fiable
+  // pour refléter les édits ultérieurs.
+  const conv = window.CDD_CONVO || { starters: [], bench: [] };
+  const allPlayers = window.CDD_PLAYERS || [];
+  const findPlayer = (pid) => allPlayers.find(p => p.id === pid) || null;
+  // Numéro à afficher : priorité au num match-specific (CDD_JERSEY).
+  const displayNum = (p) => {
+    if (!p) return '?';
+    if (window.CDD_JERSEY?.ofPlayer) return window.CDD_JERSEY.ofPlayer(p);
+    return p.num || '?';
   };
 
-  const row = (lbl, i, isStarter) => {
-    const p = parsePlayer(lbl);
+  // Convertit les ids de CDD_CONVO en objets player enrichis avec num à jour.
+  const starters = conv.starters
+    .map(pid => findPlayer(pid))
+    .filter(Boolean)
+    .map(p => ({ pid: p.id, num: displayNum(p), name: `${p.first} ${(p.last || '').toUpperCase()}`.trim() }));
+  const bench = conv.bench
+    .map(pid => findPlayer(pid))
+    .filter(Boolean)
+    .map(p => ({ pid: p.id, num: displayNum(p), name: `${p.first} ${(p.last || '').toUpperCase()}`.trim() }));
+
+  // Détection des doublons : un même numéro porté par 2 joueurs convoqués
+  // = ERREUR à signaler avant le coup d'envoi (arbitre = carton possible).
+  const allNums = [...starters, ...bench].map(p => p.num).filter(n => n !== '?' && n !== null);
+  const numCounts = allNums.reduce((acc, n) => { acc[n] = (acc[n] || 0) + 1; return acc; }, {});
+  const isDup = (num) => numCounts[num] > 1;
+  const hasDups = Object.values(numCounts).some(c => c > 1);
+
+  const row = (p, i, isStarter) => {
+    const dup = isDup(p.num);
+    const baseColor = isStarter ? '#c8f169' : '#7dd3fc';
+    const baseBg    = isStarter ? 'rgba(200,241,105,0.18)' : 'rgba(125,211,252,0.18)';
+    const baseBorder = isStarter ? 'rgba(200,241,105,0.45)' : 'rgba(125,211,252,0.45)';
     return (
       <div key={i} style={{
         display:'flex', alignItems:'center', gap:10, padding:'8px 10px',
-        background:'rgba(255,255,255,0.03)',
-        border:'1px solid rgba(255,255,255,0.08)',
+        background: dup ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.03)',
+        border: `1px solid ${dup ? 'rgba(239,68,68,0.45)' : 'rgba(255,255,255,0.08)'}`,
         borderRadius:8, marginBottom:4,
       }}>
         <span style={{
           minWidth:36, height:36, borderRadius:'50%',
-          background: isStarter ? 'rgba(200,241,105,0.18)' : 'rgba(125,211,252,0.18)',
-          border: `1px solid ${isStarter ? 'rgba(200,241,105,0.45)' : 'rgba(125,211,252,0.45)'}`,
-          color: isStarter ? '#c8f169' : '#7dd3fc',
+          background: dup ? 'rgba(239,68,68,0.2)' : baseBg,
+          border: `1px solid ${dup ? 'rgba(239,68,68,0.55)' : baseBorder}`,
+          color: dup ? '#fca5a5' : baseColor,
           display:'flex', alignItems:'center', justifyContent:'center',
           fontWeight:900, fontSize:14,
         }}>{p.num}</span>
         <span style={{flex:1, fontSize:13, fontWeight:600}}>{p.name}</span>
+        {dup && (
+          <span style={{
+            fontSize:10, fontWeight:800, letterSpacing:'.04em',
+            color:'#fca5a5', padding:'2px 6px',
+            background:'rgba(239,68,68,0.18)', borderRadius:4,
+            textTransform:'uppercase',
+          }}>⚠ doublon</span>
+        )}
         <span style={{
           fontSize:10, fontWeight:800, letterSpacing:'.06em',
           opacity:0.6, textTransform:'uppercase',
@@ -1696,6 +1736,20 @@ function PreMatchJerseyCheck({ M, onConfirm, onBack, onEditJerseys, canEdit }) {
         de maillot si nécessaire (ex : maillot perdu, échange dernière minute).
       </div>
 
+      {hasDups && (
+        <div style={{
+          width:'min(420px, 92%)', marginBottom:10,
+          padding:'10px 14px', borderRadius:10,
+          background:'rgba(239,68,68,0.10)',
+          border:'1px solid rgba(239,68,68,0.45)',
+          color:'#fca5a5', fontSize:12.5, fontWeight:700,
+          display:'flex', alignItems:'center', gap:8,
+        }}>
+          <span style={{fontSize:18}}>⚠️</span>
+          <span>Au moins 2 joueurs portent le même numéro — corrige les doublons avant le coup d'envoi (l'arbitre peut sanctionner).</span>
+        </div>
+      )}
+
       <div style={{
         width:'min(420px, 92%)', background:'rgba(0,0,0,.35)',
         borderRadius:12, padding:'12px 14px', marginBottom:12,
@@ -1709,7 +1763,7 @@ function PreMatchJerseyCheck({ M, onConfirm, onBack, onEditJerseys, canEdit }) {
           <div style={{padding:'10px', fontSize:12, opacity:0.6, textAlign:'center'}}>
             Aucun titulaire défini.
           </div>
-        ) : starters.map((lbl, i) => row(lbl, i, true))}
+        ) : starters.map((p, i) => row(p, i, true))}
 
         {bench.length > 0 && (
           <>
@@ -1717,7 +1771,7 @@ function PreMatchJerseyCheck({ M, onConfirm, onBack, onEditJerseys, canEdit }) {
               fontSize:11, fontWeight:800, letterSpacing:'.08em',
               color:'#7dd3fc', marginTop:14, marginBottom:8, textTransform:'uppercase',
             }}>🪑 Remplaçants · {bench.length}</div>
-            {bench.map((lbl, i) => row(lbl, i, false))}
+            {bench.map((p, i) => row(p, i, false))}
           </>
         )}
       </div>

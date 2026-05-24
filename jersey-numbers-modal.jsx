@@ -143,7 +143,12 @@ function JerseyNumbersModal({ teamId, matchId, players, onClose, onConfirm, titl
                   <div style={{fontSize:10, color:'rgba(255,255,255,0.45)', marginTop:2,
                                display:'flex', gap:8, alignItems:'center'}}>
                     <span>Saison : #{seasonNum ?? '—'}</span>
-                    {isOverride && <span style={{color:'#f97316', fontWeight:700}}>· match #{matchNum}</span>}
+                    {isOverride && !isDupe && (
+                      <span style={{color:'#c8f169', fontWeight:700}}>· match #{matchNum} ✓</span>
+                    )}
+                    {isOverride && isDupe && (
+                      <span style={{color:'#ff9a9a', fontWeight:700}}>· match #{matchNum} ⚠</span>
+                    )}
                   </div>
                 </div>
                 <input
@@ -153,14 +158,15 @@ function JerseyNumbersModal({ teamId, matchId, players, onClose, onConfirm, titl
                   placeholder={seasonNum != null ? String(seasonNum) : '#'}
                   style={{
                     width:64, height:44, padding:'0 8px',
+                    // 3 états : doublon (rouge), changement OK (vert), neutre.
                     background: isDupe
                       ? 'rgba(255,80,80,0.14)'
-                      : isOverride ? 'rgba(249,115,22,0.14)' : 'rgba(0,0,0,0.35)',
+                      : isOverride ? 'rgba(200,241,105,0.16)' : 'rgba(0,0,0,0.35)',
                     border: '1px solid ' + (isDupe
                       ? 'rgba(255,80,80,0.55)'
-                      : isOverride ? 'rgba(249,115,22,0.45)' : 'rgba(255,255,255,0.15)'),
+                      : isOverride ? 'rgba(200,241,105,0.50)' : 'rgba(255,255,255,0.15)'),
                     borderRadius:9,
-                    color: isDupe ? '#ff9a9a' : isOverride ? '#f97316' : '#fff',
+                    color: isDupe ? '#ff9a9a' : isOverride ? '#c8f169' : '#fff',
                     fontSize:20, fontWeight:900, textAlign:'center',
                     outline:'none', fontVariantNumeric:'tabular-nums',
                   }}
