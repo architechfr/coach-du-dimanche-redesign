@@ -79,7 +79,8 @@ function ScreenHome({ go, tweaks }) {
     <div className="scr scr-home fade-in" data-screen-label="01 Home">
 
       {/* Alerte présences : visible quand match dans <= 7j ET parents pas tous répondu */}
-      {!liveMatch && pendingCount > 0 && next && !next.noUpcoming && (next.daysLeft || 0) <= 7 && (
+      {/* Bandeau 'X parents pas répondu' — réservé aux coachs (action de relance). */}
+      {isCoachLike && !liveMatch && pendingCount > 0 && next && !next.noUpcoming && (next.daysLeft || 0) <= 7 && (
         <button onClick={() => go('convocations')}
                 style={{
                   width:'calc(100% - 28px)', margin:'14px 14px 0',
@@ -261,10 +262,17 @@ function ScreenHome({ go, tweaks }) {
         </div>
 
         <div className="home-hero-cta">
-          <button className="btn-cta" onClick={() => go("lineup")}>
-            <span>PRÉPARER LA COMPO</span>
-            <span className="arr">→</span>
-          </button>
+          {isCoachLike ? (
+            <button className="btn-cta" onClick={() => go("match-prep")}>
+              <span>PRÉPARER LE MATCH</span>
+              <span className="arr">→</span>
+            </button>
+          ) : (isParent || isJoueur) ? (
+            <button className="btn-cta" onClick={() => go("lecteur")}>
+              <span>VOIR MA CONVOCATION</span>
+              <span className="arr">→</span>
+            </button>
+          ) : null}
         </div>
       </div>
 

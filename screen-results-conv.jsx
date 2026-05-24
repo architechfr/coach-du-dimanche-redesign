@@ -988,7 +988,9 @@ function ScreenConvocations({ go, tweaks }) {
         <div className="cv-stat warn"><b className="num">{absentEntries.length}</b><em>Absents</em></div>
       </div>
 
-      {/* Suivi présences — bandeau + section actionnable non-respondants */}
+      {/* Suivi présences — RÉSERVÉ AUX COACHS (info pilotage). Parent/joueur/
+          lecteur n'ont pas à voir 'X parents pas répondu' ni la relance groupée. */}
+      {canEdit && (
       <div className="cv-parent-bar" style={{
         margin:"8px 14px 14px", padding:"12px 14px",
         background:"rgba(200,241,105,0.06)", borderRadius:12, border:"1px solid rgba(200,241,105,0.18)",
@@ -1051,8 +1053,11 @@ function ScreenConvocations({ go, tweaks }) {
           </div>
         )}
       </div>
+      )}
 
-      {/* Bandeau Compo type vs Convocation match (séparation des 3 couches) */}
+      {/* Bandeau Compo type vs Convocation match — RÉSERVÉ AUX COACHS.
+          Info technique (pilotage compo). Parent/joueur/lecteur ne voient pas. */}
+      {canEdit && (
       <div style={{
         margin:"0 14px 12px", padding:"10px 12px",
         background: conv.hasMatchOverlay ? "rgba(249,115,22,0.08)" : "rgba(255,255,255,0.03)",
@@ -1085,6 +1090,7 @@ function ScreenConvocations({ go, tweaks }) {
           </button>
         )}
       </div>
+      )}
 
       {/* Warnings convoc (#33) — 11 titulaires + taille atteinte */}
       {conv.warnings && conv.warnings.length > 0 && (

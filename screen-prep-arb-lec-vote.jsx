@@ -418,7 +418,16 @@ function ScreenLecteur({ go, tweaks }) {
 
       {tab === "prochain" && (() => {
         const myShort = (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
-        const oppShort = (next && next.away && next.away !== 'À déterminer') ? next.away : 'À venir';
+        // Adversaire calculé selon venue (fix 'FCMH vs FCMH' quand à l'extérieur).
+        const oppShort = (() => {
+          const candidate = next?.opponentName
+                        || (next?.venue === 'Domicile' ? next?.away : next?.home);
+          if (!candidate || candidate === 'À déterminer') return 'À venir';
+          return candidate;
+        })();
+        const oppLogo = next?.opponentLogo
+                    || (next?.venue === 'Domicile' ? next?.awayLogoDataUrl : next?.homeLogoDataUrl)
+                    || null;
         const myColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
         return (
         <div className="lec-prochain">
@@ -438,7 +447,7 @@ function ScreenLecteur({ go, tweaks }) {
                 {window.ClubBadge && (
                   <window.ClubBadge clubId={null} clubName={oppShort}
                                     colors={['#3b82f6','#fff']}
-                                    forceLogo={next?.awayLogoDataUrl || null}
+                                    forceLogo={oppLogo}
                                     size={42} shape="circle"/>
                 )}
                 <span>{oppShort}</span>
