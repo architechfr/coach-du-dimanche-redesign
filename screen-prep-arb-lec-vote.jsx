@@ -327,10 +327,18 @@ function ScreenLecteur({ go, tweaks }) {
     if (q) return new URLSearchParams(q).get('p');
     return null;
   })();
-  // Pas de pré-sélection si l'URL ne précise pas ?p= : le parent doit chercher
-  // son enfant lui-même. Évite le piège "Ilian s'affiche tout le temps" du seed
-  // démo (avant: fallback sur CDD_PLAYERS[0]).
-  const [selectedPlayerId, setSelectedPlayerId] = useState(playerIdFromUrl || null);
+  // Priorité de pré-sélection :
+  //   1. URL ?p=XXX  (lien partagé)
+  //   2. Enfant lié au compte parent connecté (membership team.playerId)
+  //   3. Aucun → l'utilisateur cherche manuellement (lecteur tiers, etc.)
+  // On garde la possibilité de "×" pour vérifier un autre joueur si besoin.
+  const _autoChildId = (() => {
+    try { return window.CDD_ROLES?.getChildOfParent?.() || null; }
+    catch (e) { return null; }
+  })();
+  const [selectedPlayerId, setSelectedPlayerId] = useState(
+    playerIdFromUrl || _autoChildId || null
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const playerId = selectedPlayerId;
   const playerDisplay = (() => {
