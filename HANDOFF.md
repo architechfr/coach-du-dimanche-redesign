@@ -1,6 +1,6 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-26 (session UX coach/adjoint + LIVE)** (cache buster **v116**).
+> Document de reprise. Dernière mise à jour : **2026-05-26 (session UX coach/adjoint + LIVE + parent signal)** (cache buster **v118**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
 
 ---
@@ -238,10 +238,37 @@ numéros (`screen-match-live-v2.jsx`) :
   `watchMatchFromCloud` existaient déjà dans `firebase-sync.js`
   (collection `cdd_v2_matches`), juste pas branchés en auto.
 
-**Bilan v105 → v116** : 12 commits, ~24h de session continue. UX coach/
-adjoint considérablement améliorée (modale Remplacer, étape vérification
-numéros, verrou pendant live, doublons détectés). Nouvelle feature LIVE
-opérationnelle (push auto + viewer parent). Reste à tester E2E en prod.
+**v117** (commit `1ca79ba`) — Effectif parent + signal indispo
+(`screen-effectif-lineup.jsx`, `screen-match-fiche.jsx`) :
+- **Page Effectif** : `ScreenEffectif` reçoit son propre `canEdit` (capacité
+  `effectif`). Bandeau "X/N carnets envoyés aux parents" masqué pour non-coach
+  (outil de pilotage diffusion). Badge "🎴 ENVOYÉ" sur les cartes joueur
+  (vue grid + vue list) masqué pour parent/lecteur/joueur.
+- **Fiche joueur — nouvelle modale `ParentSignalModal`** : sur la fiche
+  de son enfant, le parent voit le chip statut **cliquable** (au lieu de
+  juste lecture en v106). Au clic → modale épurée avec 3 options
+  (Disponible / Blessé / Indisponible), date de retour optionnelle et
+  note libre. PAS d'option "Suspendu" (réservé staff). Sauvegarde via
+  `CDD_COACH.setStatusOverride` + `setStatusMeta` avec flag
+  `source: 'parent'` pour audit coach. Sync Firestore automatique.
+
+**v118** (commit `b02bbd9`) — Fix calendrier + LIVE cliquable
+(`screen-prep-arb-lec-vote.jsx`) :
+- **Bug "? vs FCMH" résolu** : sur l'onglet CALENDRIER, le titre du
+  prochain match affichait "?" car le code v100 attendait le format
+  `CDD_NEXT_MATCH` (`opponentName`, `venue:'Domicile'`) mais la source
+  réelle (`CDD_MATCH_SWITCHER.listUpcoming`) renvoie `opponent`,
+  `venue:'H'/'E'`, `kind:'amical'`. Helpers `_isHomeOf(m)` et `_oppOf(m)`
+  qui acceptent les 2 formats. Appliqués à `fmtVs`, `venueLabel`,
+  `venueColor`, badge AMICAL (prochain + suivants).
+- **Bandeau LIVE cliquable** : ajout d'un bouton CTA "▶ SUIVRE LE MATCH
+  EN DÉTAIL →" sous le score qui fait `go('match')`. La page ScreenMatch
+  V2 est déjà gérée en lecture seule pour non-coach (`canEdit` retourne
+  false → scoreboard + timeline visibles, boutons d'action cachés).
+
+**Bilan v105 → v118** : 14 commits, ~24h de session continue. UX coach/
+adjoint et parent considérablement améliorée. Nouvelle feature LIVE
+opérationnelle. Reste à tester E2E en prod.
 
 ---
 
