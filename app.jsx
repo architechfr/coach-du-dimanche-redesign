@@ -498,17 +498,25 @@ function App() {
             </ScreenErrorBoundary>
           </div>
 
-          {/* Bottom nav */}
+          {/* Bottom nav — adaptée par rôle :
+              - Coach/adjoint/admin : onglet "Compo" (id=lineup)
+              - Parent/lecteur/joueur : remplacé par "Ma convoc" (id=lecteur),
+                puisqu'un parent ne prépare pas la compo. La page Lecteur
+                affiche directement "Mon enfant est-il convoqué ?" */}
           {screen !== "onb" && (
             <div className="bottom-nav">
               {NAV.filter(n => n.bottom).map(n => {
-                const Icon = n.icon;
+                let item = n;
+                if (n.id === 'lineup' && !_navAllowed({cap:'compo'})) {
+                  item = { ...n, id:'lecteur', label:'Ma convoc' };
+                }
+                const Icon = item.icon;
                 return (
-                  <button key={n.id}
-                    className={`bn-item ${screen===n.id?"on":""}`}
-                    onClick={() => go(n.id)}>
+                  <button key={item.id}
+                    className={`bn-item ${screen===item.id?"on":""}`}
+                    onClick={() => go(item.id)}>
                     <span className="ic"><Icon/></span>
-                    <span>{n.label}</span>
+                    <span>{item.label}</span>
                   </button>
                 );
               })}
