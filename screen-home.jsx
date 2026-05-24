@@ -269,10 +269,10 @@ function ScreenHome({ go, tweaks }) {
           <span className="tile-t">Compo</span>
           <span className="tile-s">Équipe type saison</span>
         </button>
-        <button className="tile tile-match" onClick={() => go("match")}>
+        <button className="tile tile-match" onClick={() => go("match-prep")}>
           <span className="tile-ic" style={{color:"#ef4444"}}>●</span>
-          <span className="tile-t">Match live</span>
-          <span className="tile-s">Score · timeline</span>
+          <span className="tile-t">Prochain match</span>
+          <span className="tile-s">Préparer · lancer</span>
         </button>
         <button className="tile tile-champ" onClick={() => go("results")}>
           <span className="tile-ic">🏆</span>

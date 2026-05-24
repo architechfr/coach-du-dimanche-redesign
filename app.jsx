@@ -277,6 +277,7 @@ function App() {
       effectif: "EFFECTIF",
       lineup: "ÉQUIPE TYPE",
       "match-lineup": "COMPO DU MATCH",
+      "match-prep": "PROCHAIN MATCH",
       convocations: "CONVOCATIONS",
       results: "CHAMPIONNAT",
       match: "MATCH LIVE",
@@ -407,6 +408,7 @@ function App() {
             {screen === "lineup"       && <ScreenLineup go={go} tweaks={t}/>}
             {screen === "match-lineup" && <ScreenLineup go={go} tweaks={t}
               matchId={(window.CDD_NEXT_MATCH && window.CDD_NEXT_MATCH.id) || 'placeholder'}/>}
+            {screen === "match-prep"   && window.ScreenMatchPrep && <window.ScreenMatchPrep go={go} tweaks={t}/>}
             {screen === "convocations" && <ScreenConvocations go={go} tweaks={t}/>}
             {screen === "results"      && <ScreenResults go={go} tweaks={t}/>}
             {screen === "match"        && <ScreenMatch go={go} tweaks={t}/>}
