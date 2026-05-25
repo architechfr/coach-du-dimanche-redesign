@@ -30,6 +30,8 @@ function ScreenClub({ go, tweaks }) {
     short:        activeClub.short || '',
     description:  activeClub.description || '',
     foundedYear:  activeClub.foundedYear || '',
+    palmares:     activeClub.palmares || '',
+    presidentWord: activeClub.presidentWord || '',
     stadium:      {
       name:    activeClub.stadium?.name || '',
       address: activeClub.stadium?.address || '',
@@ -86,6 +88,8 @@ function ScreenClub({ go, tweaks }) {
         short:       data.short.trim() || all[i].short,
         description: (data.description || '').trim(),
         foundedYear: (data.foundedYear || '').toString().trim(),
+        palmares:    (data.palmares || '').trim(),
+        presidentWord: (data.presidentWord || '').trim(),
         stadium:     { ...data.stadium,
                        name: data.stadium.name.trim(),
                        address: data.stadium.address.trim(),
@@ -186,6 +190,42 @@ function ScreenClub({ go, tweaks }) {
 
       {/* SECTIONS — view ou edit */}
 
+      {/* Bouton recharger depuis le cloud — utile quand la page semble vide
+          (cas typique : autre device / cache local effacé). Visible pour le
+          coach principal/owner/admin uniquement, et seulement en mode lecture. */}
+      {canEdit && !edit && window.cddData?.pullCloudData && (
+        <div style={{padding:'0 14px 8px'}}>
+          <button onClick={async () => {
+            try {
+              const btn = event.currentTarget;
+              btn.disabled = true;
+              btn.textContent = '⟳ Chargement…';
+              await window.cddData.pullCloudData();
+              if (window.CDD_REBUILD) window.CDD_REBUILD();
+              window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+              setData(buildInitial());
+              btn.textContent = '✓ Rechargé depuis le cloud';
+              setTimeout(() => { btn.disabled = false; btn.textContent = '⟳ Recharger depuis le cloud'; }, 1500);
+            } catch (e) {
+              alert('Echec du rechargement : ' + (e.message || e));
+            }
+          }}
+          style={{
+            width:'100%', padding:'9px 12px',
+            background:'rgba(125,211,252,0.06)',
+            border:'1px dashed rgba(125,211,252,0.30)',
+            borderRadius:9, color:'#7dd3fc',
+            fontSize:11, fontWeight:700, cursor:'pointer',
+            letterSpacing:'.04em',
+          }}>
+            ⟳ Recharger depuis le cloud
+          </button>
+          <div style={{fontSize:10, opacity:.5, textAlign:'center', marginTop:4}}>
+            Si la page semble vide alors que tu avais déjà rempli — récupère la dernière version sauvée en Firestore.
+          </div>
+        </div>
+      )}
+
       {/* À PROPOS — description + année de fondation */}
       <div style={sectionStyle}>
         <div style={sectionHeader}><span>📝</span><span>À propos du club</span></div>
@@ -219,26 +259,94 @@ function ScreenClub({ go, tweaks }) {
         )}
       </div>
 
+      {/* MOT DU PRÉSIDENT — citation courte mise en avant */}
+      <div style={sectionStyle}>
+        <div style={sectionHeader}><span>💬</span><span>Mot du président</span></div>
+        {edit ? (
+          <label style={{display:'block'}}>
+            <span style={labelText}>CITATION COURTE (1-2 PHRASES)</span>
+            <textarea value={data.presidentWord || ''}
+              onChange={e => setData(d => ({...d, presidentWord: e.target.value}))}
+              placeholder='ex : "Le FCMH c\'est plus qu\'un club, c\'est une famille. Ici on forme des joueurs et des hommes."'
+              rows={3}
+              style={{...inputStyle, resize:'vertical', minHeight:70, lineHeight:1.4, fontStyle:'italic'}}/>
+          </label>
+        ) : (
+          data.presidentWord ? (
+            <div style={{
+              fontSize:14, lineHeight:1.5, fontStyle:'italic',
+              color:'#fff', padding:'4px 8px',
+              borderLeft:'3px solid #c8f169',
+            }}>
+              « {data.presidentWord} »
+            </div>
+          ) : (
+            <div style={{fontSize:13, color:'rgba(255,255,255,.4)', fontStyle:'italic'}}>Non renseigné</div>
+          )
+        )}
+      </div>
+
+      {/* PALMARÈS — titres et anecdotes */}
+      <div style={sectionStyle}>
+        <div style={sectionHeader}><span>🏆</span><span>Palmarès & histoire</span></div>
+        {edit ? (
+          <label style={{display:'block'}}>
+            <span style={labelText}>TITRES, MOMENTS MARQUANTS, HISTOIRE</span>
+            <textarea value={data.palmares || ''}
+              onChange={e => setData(d => ({...d, palmares: e.target.value}))}
+              placeholder={`ex :
+- Champion départemental U15 (2022-2023)
+- Demi-finale Coupe Île-de-France U13 (2024)
+- Fondé par un groupe de parents bénévoles en 1995.`}
+              rows={5}
+              style={{...inputStyle, resize:'vertical', minHeight:110, lineHeight:1.5, whiteSpace:'pre-wrap'}}/>
+          </label>
+        ) : (
+          <div style={{fontSize:13, lineHeight:1.5, color:data.palmares ? '#fff' : 'rgba(255,255,255,.4)',
+                       fontStyle:data.palmares ? 'normal' : 'italic', whiteSpace:'pre-wrap'}}>
+            {data.palmares || 'Non renseigné'}
+          </div>
+        )}
+      </div>
+
       {/* ÉQUIPES DU CLUB — lecture seule, dérivé des teams existantes */}
       {(() => {
         const teams = (window.CDD?.getTeams?.() || []).filter(t => t && t.clubId === clubId);
         if (teams.length === 0) return null;
+        const totalPlayers = teams.reduce((sum, t) => sum + ((t.players || []).length || 0), 0);
         return (
           <div style={sectionStyle}>
-            <div style={sectionHeader}><span>⚽</span><span>Équipes du club ({teams.length})</span></div>
+            <div style={sectionHeader}>
+              <span>⚽</span>
+              <span>Équipes du club</span>
+              <span style={{marginLeft:'auto', fontSize:10, opacity:.7, fontWeight:700, letterSpacing:'.04em'}}>
+                {teams.length} équipe{teams.length > 1 ? 's' : ''} · {totalPlayers} joueur{totalPlayers > 1 ? 's' : ''}
+              </span>
+            </div>
             <div style={{display:'flex', flexDirection:'column', gap:6}}>
-              {teams.map(t => (
-                <div key={t.id} style={{
-                  padding:'8px 12px', borderRadius:8,
-                  background:'rgba(255,255,255,.03)',
-                  border:'1px solid rgba(255,255,255,.06)',
-                  display:'flex', alignItems:'center', justifyContent:'space-between',
-                  fontSize:13,
-                }}>
-                  <span style={{fontWeight:700}}>{t.name || 'Équipe'}</span>
-                  {t.category && <span style={{fontSize:11, opacity:.7}}>{t.category}</span>}
-                </div>
-              ))}
+              {teams.map(t => {
+                const pl = (t.players || []).length;
+                return (
+                  <div key={t.id} style={{
+                    padding:'8px 12px', borderRadius:8,
+                    background:'rgba(255,255,255,.03)',
+                    border:'1px solid rgba(255,255,255,.06)',
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    fontSize:13,
+                  }}>
+                    <span style={{fontWeight:700}}>{t.name || 'Équipe'}</span>
+                    <span style={{display:'flex', gap:8, alignItems:'center'}}>
+                      {t.category && <span style={{fontSize:11, opacity:.7}}>{t.category}</span>}
+                      {pl > 0 && (
+                        <span style={{
+                          fontSize:10, fontWeight:900, padding:'2px 6px', borderRadius:5,
+                          background:'rgba(200,241,105,.10)', color:'#c8f169',
+                        }}>{pl} j.</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
