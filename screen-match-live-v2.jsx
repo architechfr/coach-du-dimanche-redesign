@@ -1007,25 +1007,36 @@ function ScreenMatchV2({ go, tweaks }) {
 
   const togglePause = () => {
     if (M.notStarted) return;
+    const _now = Date.now();
     if (M.st === 'live') {
-      M.tOff += Date.now() - M.tSt;
+      // live → paused
+      M.tOff += _now - M.tSt;
       M.st = 'paused';
-      M.pauseStartedAt = Date.now();
+      M.pauseStartedAt = _now;
+      // Event sourcing : push 'pause' avec ts absolu (source de vérité chrono)
+      M.ev.push({ tp:'pause', mn: MATCH_HELPERS.gMin(M), ch: M.ch, ts: _now });
     } else if (M.st === 'paused') {
-      // Cumuler le temps passe en pause
+      // paused → live (reprise normale OU sortie de mi-temps)
       if (M.pauseStartedAt) {
-        M.pauseTotalMs = (M.pauseTotalMs || 0) + (Date.now() - M.pauseStartedAt);
+        M.pauseTotalMs = (M.pauseTotalMs || 0) + (_now - M.pauseStartedAt);
         M.pauseStartedAt = null;
       }
+      const wasHalftime = !!M.inHalftime;
       // Capture l'horodatage de reprise de la période (utile à l'arbitre en cas
       // de contestation). On enregistre une seule fois par période.
-      if (M.inHalftime && !M.periodStartedAt?.[M.ch]) {
+      if (wasHalftime && !M.periodStartedAt?.[M.ch]) {
         M.periodStartedAt = M.periodStartedAt || {};
-        M.periodStartedAt[M.ch] = Date.now();
+        M.periodStartedAt[M.ch] = _now;
       }
-      M.inHalftime = false; // si on reprend, on sort de la mi-temps
-      M.tSt = Date.now();
+      M.inHalftime = false;
+      M.tSt = _now;
       M.st = 'live';
+      // Event sourcing : 'period_start' à la sortie de mi-temps (début nouvelle
+      // période), 'resume' à la reprise d'une pause classique.
+      M.ev.push({
+        tp: wasHalftime ? 'period_start' : 'resume',
+        mn: MATCH_HELPERS.gMin(M), ch: M.ch, ts: _now,
+      });
     }
     rerender();
   };

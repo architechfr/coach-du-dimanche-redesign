@@ -164,13 +164,81 @@ function buildDefaultTeams() {
   };
 }
 
+// ─── Event sourcing du chrono (cross-device safe) ────────────────────────
+// Au lieu de stocker tSt (timestamp de période) et tOff (offset cumulé) qui
+// se perdent en cross-device, on dérive le chrono des EVÈNEMENTS timestampés :
+//   - M.startedAt          = coup d'envoi (timestamp absolu)
+//   - M.ev[tp='pause']     = passage en pause (ts absolu)
+//   - M.ev[tp='resume']    = reprise depuis pause (ts absolu)
+//   - M.ev[tp='half']      = mi-temps sifflée (ts absolu) — fin de période N
+//   - M.ev[tp='period_start'] = reprise après mi-temps (ts absolu) — début de période N+1
+//   - M.endedAt            = coup de sifflet final (timestamp absolu)
+// Le chrono = "temps écoulé dans la période courante", calculé à chaque seconde.
+// Cette approche est robuste car les ts sont absolus et M.ev est synchronisé
+// avec Firestore (déjà dans le payload saveMatchToCloud). Tous les devices
+// calculent le même chrono à partir des mêmes events. Plus de NaN, plus de
+// chrono epoch absurde si tSt est perdu.
+
+function _findPeriodStartTs(M) {
+  if (!M || !M.ch) return null;
+  if (M.ch === 1) return M.startedAt || null;
+  // Périodes 2+ : chercher l'event 'period_start' le plus récent pour cette ch
+  const evs = M.ev || [];
+  for (let i = evs.length - 1; i >= 0; i--) {
+    const e = evs[i];
+    if (!e) continue;
+    if (e.ch === M.ch && (e.tp === 'period_start' || e.tp === 'resume_after_half')) {
+      return e.ts || null;
+    }
+  }
+  // Fallback : periodStartedAt[ch] si dispo (ancien code)
+  if (M.periodStartedAt && M.periodStartedAt[M.ch]) return M.periodStartedAt[M.ch];
+  return null;
+}
+
+// Calcule le temps écoulé en ms dans la période courante à partir des events.
+// Retourne null si pas calculable (matchs très anciens sans startedAt).
+function computeChronoMs(M) {
+  if (!M || M.notStarted) return 0;
+  const periodStart = _findPeriodStartTs(M);
+  if (!periodStart) return null;
+  const now = M.endedAt || Date.now();
+  if (now <= periodStart) return 0;
+
+  // Soustraire les durées de pauses dans la période courante
+  let pauseMs = 0;
+  let openPauseTs = null;
+  const evs = M.ev || [];
+  for (const e of evs) {
+    if (!e || !e.ts || e.ts < periodStart) continue;
+    if (e.tp === 'pause') {
+      if (!openPauseTs) openPauseTs = e.ts;
+    } else if (e.tp === 'resume' || e.tp === 'half' || e.tp === 'end' || e.tp === 'period_start' || e.tp === 'resume_after_half') {
+      if (openPauseTs) {
+        pauseMs += Math.max(0, e.ts - openPauseTs);
+        openPauseTs = null;
+      }
+    }
+  }
+  // Si toujours en pause à l'instant courant
+  if (openPauseTs) {
+    pauseMs += Math.max(0, now - openPauseTs);
+  } else if (M.st === 'paused' && M.pauseStartedAt && M.pauseStartedAt >= periodStart) {
+    // Fallback : état 'paused' sans event 'pause' correspondant (matchs legacy
+    // d'avant le déploiement event sourcing). On utilise pauseStartedAt.
+    pauseMs += Math.max(0, now - M.pauseStartedAt);
+  }
+  return Math.max(0, now - periodStart - pauseMs);
+}
+
 // Chrono helpers
 function gMatch(M) {
   if (!M) return 0;
-  // Garde-fou : si tSt est null/undefined (cas cross-device où le doc cloud
-  // n'a pas encore les nouveaux champs chrono), retourner tOff au lieu de
-  // Date.now() - 0 = Date.now() (qui produit des chronos absurdes type
-  // 29662334 minutes — l'epoch unix en minutes).
+  if (M.notStarted) return 0;
+  // Source primaire : event sourcing (robuste cross-device, pas de tSt fragile)
+  const fromEvents = computeChronoMs(M);
+  if (fromEvents !== null && !isNaN(fromEvents)) return fromEvents;
+  // Fallback : ancien tSt/tOff (matchs très anciens sans M.startedAt)
   if (M.st === 'live') {
     if (!M.tSt) return M.tOff || 0;
     return (M.tOff || 0) + (Date.now() - M.tSt);
@@ -524,6 +592,7 @@ Object.assign(window.MATCH_HELPERS, {
   startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
   getLiveMatch, listCoachFinishedMatches, computeExploits, editEvent,
   gPauseMs, gRealMs, fmtMMSS, isInHalftime, fmtMatchMinute,
+  computeChronoMs,
 });
 if (!window.MATCH_SFX) window.MATCH_SFX = {};
 Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });
