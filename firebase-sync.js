@@ -662,6 +662,57 @@ async function saveTeam(team) {
   return { ok: true, id: team.id };
 }
 
+// Pointeur "match en cours" stocké sur le doc team. Permet à tous les
+// autres appareils (adjoint, parent, joueur, lecteur, coach sur 2e device)
+// de savoir qu'un match tourne. Sans ce mécanisme, cdd_match_current était
+// purement local — le 2e device voyait l'app comme "pas de match" alors
+// que le coach principal était en plein live (bug Florian 26/05/2026).
+async function setTeamLiveMatch(teamId, matchId) {
+  if (!db || !teamId || !matchId) return { ok: false };
+  try {
+    await setDoc(doc(db, 'teams', String(teamId)), {
+      liveMatch: {
+        matchId: String(matchId),
+        startedAt: Date.now(), // ms numérique (sert au filtre "abandonné > 6h")
+        startedBy: _uid() || null,
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return { ok: true };
+  } catch (e) {
+    console.warn('[liveMatch] setTeamLiveMatch failed', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+async function clearTeamLiveMatch(teamId) {
+  if (!db || !teamId) return { ok: false };
+  try {
+    await setDoc(doc(db, 'teams', String(teamId)), {
+      liveMatch: null,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return { ok: true };
+  } catch (e) {
+    console.warn('[liveMatch] clearTeamLiveMatch failed', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// Récupère un match individuel depuis le cloud (collection cdd_v2_matches).
+// Utilisé pour qu'un device qui n'a pas créé le match puisse quand même le
+// charger en local quand il détecte un liveMatch sur sa team active.
+async function fetchMatch(matchId) {
+  if (!db || !matchId) return null;
+  try {
+    const d = await getDoc(doc(db, COLL_MATCHES, String(matchId)));
+    return d.exists() ? d.data() : null;
+  } catch (e) {
+    console.warn('[liveMatch] fetchMatch failed', e.message);
+    return null;
+  }
+}
+
 async function savePlayer(player, teamId, clubId) {
   if (!db || !player || !player.id) throw new Error('db/player.id requis');
   await setDoc(doc(db, 'players', String(player.id)), {
@@ -2157,6 +2208,68 @@ async function pullCloudData() {
   // Membership retrouvée → on efface le flag de révocation (s'il existait).
   try { localStorage.removeItem('cdd_access_revoked'); } catch (e) {}
 
+  // ── PROPAGATION "MATCH EN COURS" CROSS-DEVICE ────────────────────
+  // Pour chaque équipe pullée, si elle a un liveMatch.matchId, on fetch
+  // le match individuel et on positionne cdd_match_current localement.
+  // Permet à un adjoint / parent / joueur / 2e device coach de voir le
+  // match qui tourne sur le téléphone du coach principal.
+  try {
+    const teamsWithLive = mergedTeams.filter(t => t && t.liveMatch && t.liveMatch.matchId);
+    for (const t of teamsWithLive) {
+      const lm = t.liveMatch;
+      const lmId = String(lm.matchId);
+      // Anti-match-fantôme : si "started > 6h", on considère abandonné.
+      const startedMs = (typeof lm.startedAt === 'number') ? lm.startedAt : 0;
+      const SIX_H = 6 * 60 * 60 * 1000;
+      if (startedMs && (Date.now() - startedMs) > SIX_H) continue;
+      // Fetch le match individuel depuis cdd_v2_matches → écrire en local
+      // sous la même clé que match-engine attend (cdd_match_{id}).
+      const matchDoc = await fetchMatch(lmId).catch(() => null);
+      if (matchDoc) {
+        try {
+          // match-engine.js stocke chaque match sous cdd_match_{id}.
+          // Le format cloud (saveMatchToCloud) ≠ format local exact, mais
+          // contient les champs critiques (teamA, teamB, score, ev, st, ch).
+          // On reconstruit un objet local-compatible :
+          const localShape = {
+            id: matchDoc.id || lmId,
+            teamId: t.id,
+            clubId: t.clubId || null,
+            tA: matchDoc.teamA ? {
+              n: matchDoc.teamA.n, c: matchDoc.teamA.c,
+              p: matchDoc.teamA.players || [],
+              bench: matchDoc.teamA.bench || [],
+            } : null,
+            tB: matchDoc.teamB ? {
+              n: matchDoc.teamB.n, c: matchDoc.teamB.c,
+              p: matchDoc.teamB.players || [],
+              bench: matchDoc.teamB.bench || [],
+            } : null,
+            sA: matchDoc.teamA ? matchDoc.teamA.score : 0,
+            sB: matchDoc.teamB ? matchDoc.teamB.score : 0,
+            st: matchDoc.status,
+            ch: matchDoc.period,
+            cfg: matchDoc.config || {},
+            ev: matchDoc.events || [],
+            yA: matchDoc.yellows ? matchDoc.yellows.A : 0,
+            yB: matchDoc.yellows ? matchDoc.yellows.B : 0,
+            rA: matchDoc.reds    ? matchDoc.reds.A    : 0,
+            rB: matchDoc.reds    ? matchDoc.reds.B    : 0,
+            uA: matchDoc.subs    ? matchDoc.subs.A    : 0,
+            uB: matchDoc.subs    ? matchDoc.subs.B    : 0,
+            at: matchDoc.addTime || 0,
+            savedAt: Date.now(),
+          };
+          localStorage.setItem('cdd_match_' + lmId, JSON.stringify(localShape));
+          localStorage.setItem('cdd_match_current', lmId);
+          console.info('[liveMatch] ✓ match en cours pulled du cloud :', lmId, 'team', t.id);
+        } catch (e) {
+          console.warn('[liveMatch] propagation locale échouée', e.message);
+        }
+      }
+    }
+  } catch (e) { console.warn('[liveMatch] pull cross-device', e.message); }
+
   try {
     window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
@@ -2410,6 +2523,7 @@ async function consumeInvite(token) {
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
+  setTeamLiveMatch, clearTeamLiveMatch, fetchMatch,
   saveLineupTemplate,
   saveMatchLineup, fetchMatchLineups, deleteMatchLineup,
   saveMatchInfo, fetchMatchInfos, deleteMatchInfo,

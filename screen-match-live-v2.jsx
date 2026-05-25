@@ -839,6 +839,15 @@ function ScreenMatchV2({ go, tweaks }) {
     // Le pointeur cdd_match_current est positionné maintenant (et pas au bootstrap)
     // pour que les autres écrans (accueil) ne voient pas de fantôme prematch.
     try { localStorage.setItem('cdd_match_current', M.id); } catch (e) {}
+    // Push cloud du pointeur "match en cours" pour propagation cross-device :
+    // adjoints, parents, joueurs, lecteurs, et 2e device du coach verront le
+    // match au prochain pull (fire-and-forget, ne bloque pas le coup d'envoi).
+    try {
+      if (window.cddData?.setTeamLiveMatch && M.teamId) {
+        window.cddData.setTeamLiveMatch(M.teamId, M.id)
+          .catch(e => console.warn('[liveMatch] push start', e.message));
+      }
+    } catch (e) {}
     MATCH_SFX.playWhistle();
     MATCH_SFX.vibrate(200);
     if (MATCH_HELPERS.requestWakeLock) MATCH_HELPERS.requestWakeLock();
@@ -988,6 +997,14 @@ function ScreenMatchV2({ go, tweaks }) {
       // 100% improvisé sans CDD_NEXT_MATCH source), on garde M.id en fallback.
       localStorage.setItem('cdd_match_last_finished', _scheduledId);
       localStorage.removeItem('cdd_match_current');
+    } catch (e) {}
+    // Clear le pointeur cloud "match en cours" pour les autres devices.
+    try {
+      const _teamForClear = (M && M.teamId) || window.CDD?.getActiveTeam?.()?.id;
+      if (_teamForClear && window.cddData?.clearTeamLiveMatch) {
+        window.cddData.clearTeamLiveMatch(_teamForClear)
+          .catch(e => console.warn('[liveMatch] clear end', e.message));
+      }
     } catch (e) {}
     // BASCULE POST-MATCH : marquer l'amical comme terminé (s'il y en a un)
     // pour qu'il disparaisse de la liste "à venir". Pour les FFF, c'est
