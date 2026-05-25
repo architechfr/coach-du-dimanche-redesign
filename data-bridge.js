@@ -654,7 +654,16 @@ async function rebuildCDDGlobals() {
     try { return localStorage.getItem('cdd_match_last_finished') || null; }
     catch (e) { return null; }
   })();
+  // ⚠ Garde "même équipe" : si l'utilisateur a changé d'équipe active, le
+  // CDD_NEXT_MATCH précédent appartenait à l'AUTRE équipe et ne doit PAS
+  // être préservé. Sans ce check, un amical créé pour USDF apparaissait
+  // dans l'écran de préparation de FCMH (bug remonté Florian 26/05/2026).
+  const _activeTeamIdGate = activeTeam?.id || null;
+  const _prevTeamMatches = !prevNext
+                         || !prevNext.teamId
+                         || prevNext.teamId === _activeTeamIdGate;
   const hasRealNext = prevNext
+    && _prevTeamMatches
     && !prevNext.noUpcoming
     && prevNext.away
     && prevNext.away !== 'À déterminer'
@@ -663,6 +672,7 @@ async function rebuildCDDGlobals() {
     // ⚠ id sûr pour Firestore : les ids encadrés par '__..__' sont RÉSERVÉS et
     // refusés à l'écriture. Ne jamais revenir à '__placeholder__'.
     id: 'placeholder',
+    teamId: _activeTeamIdGate, // ← traçabilité : à quelle équipe ce match appartient
     date: "À déterminer",
     home: clubName || "Mon équipe",
     away: "À déterminer",
@@ -694,6 +704,7 @@ async function rebuildCDDGlobals() {
         })();
         window.CDD_NEXT_MATCH = {
           id: active.id,
+          teamId: activeTeam.id, // ← traçabilité équipe (anti cross-team)
           date: dDisplay,
           dateISO: active.dateISO,
           time: active.time || '',
@@ -736,6 +747,7 @@ async function rebuildCDDGlobals() {
         })();
         window.CDD_NEXT_MATCH = {
           id: fn.id,
+          teamId: activeTeam.id, // ← traçabilité équipe (anti cross-team)
           date: dDisplay,
           dateISO: fn.date,
           time: fn.time || '',
@@ -1044,8 +1056,15 @@ async function rebuildCDDGlobals() {
 }
 
 async function applyFFFData(fffCfg, clubName, players) {
-  // Build a target name for matching — prefer myTeamName if present, else clubName
+  // Stratégie de matching "notre équipe dans le classement / calendrier FFF" :
+  //   • PRIORITÉ : par cl_no (= fffCfg.clubId) — universel, marche pour tous
+  //     les clubs indépendamment de leur nom local. Exemple : "USDF 35 ans +"
+  //     en local vs "FERRIERES BRIE USD" côté FFF → seul le cl_no=500466
+  //     identifie de façon fiable.
+  //   • FALLBACK : matching textuel via myTeamName (souvent en échec quand
+  //     le nom local diffère du short_name FFF).
   const myTeamName = fffCfg.myTeamName || clubName;
+  const matchOpts = { myTeamName, myClubId: fffCfg.clubId || null };
 
   const [rankRes, matchRes] = await Promise.allSettled([
     window.CDD_FFF.getRanking(fffCfg, { force: window.CDD_FFF_FORCE_REFRESH }),
@@ -1057,7 +1076,7 @@ async function applyFFFData(fffCfg, clubName, players) {
   // Standings
   if (rankRes.status === 'fulfilled' && rankRes.value.ok && rankRes.value.data.length > 0) {
     const standings = rankRes.value.data.map((r,i) =>
-      window.CDD_FFF.normalizeRankRow(r, i, myTeamName));
+      window.CDD_FFF.normalizeRankRow(r, i, matchOpts));
     const me = standings.find(s => s.me);
     window.CDD_STANDINGS = standings;
     if (me) {
@@ -1074,7 +1093,7 @@ async function applyFFFData(fffCfg, clubName, players) {
   // Matches
   if (matchRes.status === 'fulfilled' && matchRes.value.ok && matchRes.value.data.length > 0) {
     const myMatches = matchRes.value.data
-      .map(m => window.CDD_FFF.normalizeMatchRow(m, myTeamName))
+      .map(m => window.CDD_FFF.normalizeMatchRow(m, matchOpts))
       .filter(m => m.venue !== "?")
       .sort((a,b) => new Date(b.dateRaw) - new Date(a.dateRaw));
 
@@ -1172,8 +1191,11 @@ async function applyFFFData(fffCfg, clubName, players) {
       const daysLeft = isValid ? Math.max(0, Math.ceil((d - Date.now()) / 86400000)) : 0;
 
       const _isHomeFff = next.venue === 'H';
+      // _activeTeamForNext est dispo via closure depuis applyFFFData (param activeTeam non passé ici)
+      const _activeTeamForNext = (window.CDD?.getActiveTeam?.()?.id) || null;
       window.CDD_NEXT_MATCH = {
         id: `${next.away || 'inconnu'}__${next.dateRaw || next.date || 'sans-date'}`,
+        teamId: _activeTeamForNext, // ← traçabilité équipe (anti cross-team)
         date: isValid ? `${dayLabel} ${dayNum} ${monthLabel}${hour ? ' · ' + hour : ''}` : next.date,
         home: next.home,
         away: next.away,
