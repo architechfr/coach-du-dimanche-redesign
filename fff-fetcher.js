@@ -304,6 +304,10 @@
       }
 
       // ── 1. Requête purement numérique → lookup direct par cl_no.
+      // STRICT : on n'accepte QUE les résultats dont le cl_no matche
+      // exactement la requête. DOFA ignore souvent les filtres et renvoie
+      // la première page de clubs → sans cette vérification, on retournerait
+      // des clubs au pif (CANNES, SAINT MALO, …).
       if (/^\d+$/.test(raw)) {
         const cacheKey = `clubById:${raw}`;
         const cached = getCache(cacheKey);
@@ -313,33 +317,50 @@
         }
         const idAttempts = [
           `/clubs/${encodeURIComponent(raw)}.json`,
+          `/clubs/${encodeURIComponent(raw)}`,
           `/clubs.json?cl_no=${encodeURIComponent(raw)}`,
           `/clubs.json?filter[]=&cl_no=${encodeURIComponent(raw)}`,
+          `/clubs.json?filter[cl_no]=${encodeURIComponent(raw)}`,
         ];
+        const targetId = String(raw);
         for (const path of idAttempts) {
           try {
             const data = await fffFetch(path);
             // Réponse soit un objet club unique, soit une liste Hydra.
             const arr = Array.isArray(data) ? data
-                      : data['hydra:member'] ? data['hydra:member']
-                      : (data.cl_no ? [data] : []);
-            if (arr.length > 0) {
-              const top = arr.map(c => ({
-                cl_no:    c.cl_no || c.id || null,
-                shortName: c.short_name || '',
-                name:     c.name || c.short_name || '',
-                locality: c.locality || c.city || '',
-                logo:     c.logo || null,
-              })).filter(c => c.cl_no);
-              if (top.length > 0) {
-                console.log('[FFF.searchClubs] ✓ lookup direct cl_no:', raw, '→', top);
-                setCache(cacheKey, top);
-                return { ok: true, data: top, source: 'live' };
-              }
+                      : data && data['hydra:member'] ? data['hydra:member']
+                      : (data && (data.cl_no || data.id) ? [data] : []);
+            console.log('[FFF.searchClubs] tried', path, '→', arr.length, 'brut(s)');
+            if (arr.length === 0) continue;
+            // FILTRE STRICT : ne garder que les clubs dont cl_no/id matche.
+            const strict = arr.filter(c => String(c.cl_no || c.id || '') === targetId);
+            if (strict.length === 0) {
+              console.warn('[FFF.searchClubs] ignore — réponse contient', arr.length,
+                'clubs mais aucun cl_no =', targetId,
+                '(DOFA ignore le filtre, exemple :', arr[0] && (arr[0].name || arr[0].short_name), ')');
+              continue;
             }
-          } catch (e) { /* try next */ }
+            const top = strict.map(c => ({
+              cl_no:    c.cl_no || c.id || null,
+              shortName: c.short_name || '',
+              name:     c.name || c.short_name || '',
+              locality: c.locality || c.city || '',
+              logo:     c.logo || null,
+            })).filter(c => c.cl_no);
+            if (top.length > 0) {
+              console.log('[FFF.searchClubs] ✓ club trouvé pour cl_no=' + targetId, top[0]);
+              setCache(cacheKey, top);
+              return { ok: true, data: top, source: 'live' };
+            }
+          } catch (e) {
+            console.log('[FFF.searchClubs] erreur sur', path, '—', e.message);
+          }
         }
-        return { ok: false, data: [], error: 'Aucun club trouvé pour le n° ' + raw + ' (DOFA ne le retrouve pas — vérifie le numéro).' };
+        return { ok: false, data: [], error:
+          'Le n° ' + raw + ' ne renvoie aucun club côté FFF.\n\n'
+          + 'Vérifie le n° (visible dans l\'URL FFF, ex : /club/500466-…). '
+          + 'Si le numéro est exact, l\'API DOFA est peut-être down — '
+          + 'ré-essaie dans 1 minute, ou utilise la méthode ① (coller l\'URL).' };
       }
 
       // ── 2. Recherche textuelle. DOFA s'avère capricieux : on essaie
@@ -421,21 +442,42 @@
         return { ok: true, data: cached.v, source: 'cache' };
       }
 
-      // Étape 1 : équipes du club
+      // Étape 1 : équipes du club. On essaie plein de variantes parce que
+      // DOFA n'expose pas ses ressources de la même façon partout. On garde
+      // SEULEMENT les équipes dont le club.cl_no matche réellement clubId
+      // (DOFA ignore souvent les filtres → on filtre côté client).
       let teams = [];
+      const targetClubId = String(clubId);
       const teamsAttempts = [
         `/clubs/${encodeURIComponent(clubId)}/equipes.json`,
+        `/clubs/${encodeURIComponent(clubId)}/equipes`,
         `/equipes.json?filter[]=&club.cl_no=${encodeURIComponent(clubId)}`,
+        `/equipes.json?club.cl_no=${encodeURIComponent(clubId)}`,
+        `/equipes.json?club=${encodeURIComponent(clubId)}`,
+        `/equipes.json?filter[club.cl_no]=${encodeURIComponent(clubId)}`,
       ];
       for (const path of teamsAttempts) {
         try {
           const data = await fffFetch(path);
           const arr = Array.isArray(data) ? data : (data['hydra:member'] || data.data || []);
-          if (arr.length > 0) { teams = arr; break; }
+          console.log('[FFF.getClubCompetitions] tried', path, '→', arr.length, 'brut(s)');
+          if (arr.length === 0) continue;
+          // Filtre client : on garde uniquement les équipes du club ciblé
+          const strict = arr.filter(t => {
+            const tc = (t.club && (t.club.cl_no || t.club.id)) || t.cl_no || t.club_id;
+            return tc == null || String(tc) === targetClubId;
+          });
+          if (strict.length > 0) { teams = strict; break; }
+          console.warn('[FFF.getClubCompetitions] ignoré — réponse contient', arr.length,
+            'équipes mais aucune du club', targetClubId);
         } catch (e) { /* try next */ }
       }
       if (teams.length === 0) {
-        return { ok: false, data: [], error: 'Aucune équipe trouvée pour ce club.' };
+        return { ok: false, data: [], error:
+          'L\'API FFF ne nous donne pas la liste des équipes pour le club n° ' + clubId + '.\n\n'
+          + 'C\'est une limitation actuelle de DOFA. Tu peux saisir manuellement '
+          + 'le competId et le group dans la section ② (visibles dans l\'URL FFF de '
+          + 'la page classement de ton équipe).' };
       }
 
       // Étape 2 : engagements de chaque équipe (en parallèle, max 15)
