@@ -1152,6 +1152,39 @@ function ScreenVote({ go, tweaks }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
   const [restoredFromPrevious, setRestoredFromPrevious] = useState(false);
+  // Classement collectif live (agrégation des votes de TOUS les votants)
+  const [collective, setCollective] = useState([]); // [{ pid, avg, count, motmCount }]
+  const [voterCount, setVoterCount] = useState(0);
+
+  // Watcher live des votes collectifs pour le match sélectionné
+  React.useEffect(() => {
+    setCollective([]); setVoterCount(0);
+    if (!selectedMatchId || !window.cddSync?.watchVotes) return;
+    const unsub = window.cddSync.watchVotes(selectedMatchId, (voters) => {
+      const voterIds = Object.keys(voters || {});
+      setVoterCount(voterIds.length);
+      const agg = {}; // pid -> { sum, count, motmCount }
+      voterIds.forEach(vid => {
+        const v = voters[vid] || {};
+        Object.entries(v.ratings || {}).forEach(([pid, r]) => {
+          if (typeof r !== 'number') return;
+          if (!agg[pid]) agg[pid] = { sum: 0, count: 0, motmCount: 0 };
+          agg[pid].sum += r;
+          agg[pid].count += 1;
+        });
+        if (v.motm) {
+          if (!agg[v.motm]) agg[v.motm] = { sum: 0, count: 0, motmCount: 0 };
+          agg[v.motm].motmCount += 1;
+        }
+      });
+      const list = Object.entries(agg)
+        .map(([pid, a]) => ({ pid, avg: a.count > 0 ? a.sum / a.count : 0, count: a.count, motmCount: a.motmCount }))
+        .filter(c => c.count > 0)
+        .sort((a, b) => b.avg - a.avg);
+      setCollective(list);
+    });
+    return () => { try { unsub && unsub(); } catch (e) {} };
+  }, [selectedMatchId]);
 
   // Reset + RESTAURATION : quand on change de match, on remet à zéro PUIS
   // on tente de recharger un vote déjà soumis pour ce match (depuis le cache
@@ -1288,14 +1321,74 @@ function ScreenVote({ go, tweaks }) {
           <div className="vote-success-d">Tes notes sont prises en compte dans la synthèse collective de l'équipe.</div>
           {displayMvp && displayMvp.r >= 0 && (
             <div className="vote-success-mvp">
-              <div className="vote-success-mvp-k">{motmPlayer ? 'HOMME DU MATCH' : 'TON MEILLEUR JOUEUR'}</div>
+              <div className="vote-success-mvp-k">{motmPlayer ? 'HOMME DU MATCH (ton vote)' : 'TON MEILLEUR JOUEUR'}</div>
               <div className="vote-success-mvp-name">
                 <span>{displayMvp.p.first}</span><b>{displayMvp.p.last}</b>
               </div>
               <div className="vote-success-mvp-rate">{displayMvp.r.toFixed(1)}<span style={{fontSize:14,opacity:.6}}>/10</span></div>
             </div>
           )}
-          <button className="btn-cta ghost" onClick={() => setSubmitted(false)}>← Modifier mes notes</button>
+          {/* Classement collectif live sur l'écran de succès */}
+          {voterCount > 0 && collective.length > 0 && (() => {
+            const motmElect = collective.filter(c => c.motmCount > 0).sort((a, b) => b.motmCount - a.motmCount)[0];
+            const top3 = collective.slice(0, 3);
+            const medal = ['🥇', '🥈', '🥉'];
+            return (
+              <div style={{
+                width:'100%', marginTop:18, padding:'14px 16px',
+                background:'linear-gradient(135deg, rgba(245,196,81,.10), rgba(255,255,255,.02))',
+                border:'1px solid rgba(245,196,81,.30)',
+                borderRadius:14, boxSizing:'border-box',
+              }}>
+                <div style={{
+                  fontSize:11, fontWeight:900, letterSpacing:'.10em',
+                  color:'#f5c451', marginBottom:10, textTransform:'uppercase',
+                  textAlign:'center',
+                }}>📊 Classement collectif · {voterCount} votant{voterCount > 1 ? 's' : ''}</div>
+                {motmElect && (() => {
+                  const p = starters.find(p => p.id === motmElect.pid)
+                         || CDD_PLAYERS.find(p => p.id === motmElect.pid);
+                  if (!p) return null;
+                  return (
+                    <div style={{
+                      padding:'8px 10px', marginBottom:10, borderRadius:8,
+                      background:'rgba(245,196,81,.14)',
+                      border:'1px solid rgba(245,196,81,.35)',
+                      fontSize:12, color:'#fff', textAlign:'center',
+                    }}>
+                      ★ <b>HDM élu :</b> {p.first} {p.last}
+                      <span style={{opacity:.7, marginLeft:6}}>({motmElect.motmCount}/{voterCount})</span>
+                    </div>
+                  );
+                })()}
+                <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                  {top3.map((c, i) => {
+                    const p = starters.find(p => p.id === c.pid)
+                           || CDD_PLAYERS.find(p => p.id === c.pid);
+                    if (!p) return null;
+                    return (
+                      <div key={c.pid} style={{
+                        display:'flex', alignItems:'center', gap:8,
+                        padding:'6px 10px', borderRadius:6,
+                        background: i === 0 ? 'rgba(245,196,81,.06)' : 'rgba(0,0,0,.25)',
+                        fontSize:13,
+                      }}>
+                        <span style={{width:24, textAlign:'center', fontSize:14}}>{medal[i]}</span>
+                        <span style={{flex:1, color:'#fff', textAlign:'left'}}>
+                          {p.first} <b>{p.last}</b>
+                        </span>
+                        <span style={{
+                          fontFamily:'var(--f-display)', fontWeight:900, fontSize:15,
+                          color: c.avg >= 7 ? '#c8f169' : c.avg >= 5 ? '#fbbf24' : '#ff8a8a',
+                        }}>{c.avg.toFixed(1)}<span style={{fontSize:10, opacity:.6}}>/10</span></span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+          <button className="btn-cta ghost" style={{marginTop:14}} onClick={() => setSubmitted(false)}>← Modifier mes notes</button>
           {playedMatches.length > 1 && (
             <button className="btn-cta ghost"
               style={{marginTop:8}}
@@ -1460,6 +1553,80 @@ function ScreenVote({ go, tweaks }) {
           ✓ Vote précédent restauré — modifie et resoumets pour mettre à jour
         </div>
       )}
+
+      {/* CLASSEMENT COLLECTIF — visible une fois que l'utilisateur a voté.
+          Encourage à voter en cachant le résultat tant qu'on n'a pas participé. */}
+      {restoredFromPrevious && voterCount > 0 && collective.length > 0 && (() => {
+        const motmElect = collective
+          .filter(c => c.motmCount > 0)
+          .sort((a, b) => b.motmCount - a.motmCount)[0];
+        const top5 = collective.slice(0, 5);
+        const medal = ['🥇', '🥈', '🥉', '4.', '5.'];
+        return (
+          <div style={{
+            margin:'0 14px 14px', padding:'12px 14px',
+            background:'linear-gradient(135deg, rgba(245,196,81,.08), rgba(255,255,255,.02))',
+            border:'1px solid rgba(245,196,81,.25)',
+            borderRadius:12,
+          }}>
+            <div style={{
+              fontSize:11, fontWeight:900, letterSpacing:'.08em',
+              color:'#f5c451', marginBottom:10, textTransform:'uppercase',
+              display:'flex', alignItems:'center', justifyContent:'space-between',
+            }}>
+              <span>📊 Classement collectif</span>
+              <span style={{opacity:.7, fontSize:10}}>· {voterCount} votant{voterCount > 1 ? 's' : ''}</span>
+            </div>
+            {motmElect && (() => {
+              const p = starters.find(p => p.id === motmElect.pid)
+                     || CDD_PLAYERS.find(p => p.id === motmElect.pid);
+              if (!p) return null;
+              return (
+                <div style={{
+                  padding:'8px 10px', marginBottom:8, borderRadius:8,
+                  background:'rgba(245,196,81,.12)',
+                  border:'1px solid rgba(245,196,81,.30)',
+                  fontSize:12, color:'#fff',
+                }}>
+                  ★ <b>Homme du match élu :</b> {p.first} {p.last}
+                  <span style={{opacity:.7, marginLeft:6}}>
+                    ({motmElect.motmCount}/{voterCount} vote{motmElect.motmCount > 1 ? 's' : ''})
+                  </span>
+                </div>
+              );
+            })()}
+            <div style={{display:'flex', flexDirection:'column', gap:4}}>
+              {top5.map((c, i) => {
+                const p = starters.find(p => p.id === c.pid)
+                       || CDD_PLAYERS.find(p => p.id === c.pid);
+                if (!p) return null;
+                const isMine = votes[c.pid] !== undefined;
+                return (
+                  <div key={c.pid} style={{
+                    display:'flex', alignItems:'center', gap:8,
+                    padding:'6px 8px', borderRadius:6,
+                    background: i === 0 ? 'rgba(245,196,81,.06)' : 'rgba(0,0,0,.2)',
+                    fontSize:12,
+                  }}>
+                    <span style={{width:20, textAlign:'center', fontWeight:900}}>{medal[i]}</span>
+                    <span style={{flex:1, color:'#fff'}}>
+                      {p.first} <b>{p.last}</b>
+                      {isMine && <span style={{marginLeft:6, fontSize:10, color:'#c8f169'}}>· ta note : {votes[c.pid].toFixed(1)}</span>}
+                    </span>
+                    <span style={{
+                      fontFamily:'var(--f-display)', fontWeight:900, fontSize:14,
+                      color: c.avg >= 7 ? '#c8f169' : c.avg >= 5 ? '#fbbf24' : '#ff8a8a',
+                    }}>{c.avg.toFixed(1)}<span style={{fontSize:10, opacity:.6}}>/10</span></span>
+                    <span style={{fontSize:9, opacity:.5, minWidth:30, textAlign:'right'}}>
+                      {c.count} avis
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="vote-progress">
         <div className="vote-progress-bar">
