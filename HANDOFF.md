@@ -1,7 +1,154 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-25 (nuit) — chantier sécurité accès & membership** (cache buster **v159**).
+> Document de reprise. Dernière mise à jour : **2026-05-26 — chantier UX coach + sync cloud cross-device + ICS agenda** (cache buster **v162** / data-bridge **v134**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
+
+---
+
+## 🚀 Session du 26 mai — UX coach, sync cross-device, ICS
+
+Très grosse session. **20+ commits**, dont plusieurs fix critiques qui touchent au cœur du fonctionnement multi-device.
+
+### ⚠️ TÂCHE EN COURS À L'OUVERTURE DU NEXT CHAT
+
+Le **match en cours cross-device** n'est PAS encore validé en pratique :
+- Le code est livré (commit `6f98c0e`)
+- Mais le user n'a pas eu le temps de tester en conditions réelles après mon dernier push
+- Étape attendue : lui demander de force-refresh téléphone, ouvrir l'écran live, vérifier dans F12 console PC qu'il voit :
+  ```
+  [liveMatch] équipes avec match en cours : 1 [...]
+  [liveMatch] ✓ match en cours pulled du cloud : <id>
+  ```
+- Si non → le tick 10s va probablement rattraper si on attend assez longtemps
+
+### Travail livré
+
+#### 1. Admin app distinctif (carte dorée, sections coach masquées)
+- `roles.js` : label `'Admin club'` → `'Admin App'`
+- `screen-onb-set.jsx` : profil doré + sections "Mon club / équipe / Inviter" masquées pour admin
+- Affichage spécifique partout (badge `🛡️ ADMIN APP`, "Toute l'application")
+
+#### 2. Auto-fill FFF par recherche nom / numéro de club
+- Nouveau `searchClubs(q)` : si q numérique → lookup direct `/clubs/{cl_no}.json`,
+  sinon cascade text_filter + filtre CLIENT strict pour éviter résultats hors-sujet
+- Nouveau `getClubCompetitions(cl_no)` : équipes + engagements DOFA (6 endpoints essayés)
+- `parseFFFUrl` gère 2 formats : ancien (`?competition=&group=&scl=`) et NOUVEAU
+  (`epreuves.fff.fr/competition/club/{cl_no}-slug/equipe/{annee}_{X}_{cat}_{n}`)
+- IMPORTANT : dans le nouveau format, le nombre après l'année (ex `541`) est
+  l'identifiant **club-saison**, PAS un competId. Toutes les équipes du même
+  club partagent cette valeur.
+
+#### 3. Texte "parents" → "joueurs" auto-détecté pour équipes adultes
+- `data-bridge.js` expose `window.CDD_TEAM_HELPERS.activeTeamIsAdult()`
+- Heuristique : `U6→U18` = mineurs ; `Sénior / Vét / +35/+40 / 35 ans / Loisir` = adultes
+- 5 textes UI adaptés : `screen-home.jsx` bandeau, `screen-results-conv.jsx` bouton/info,
+  `screen-effectif-lineup.jsx` carnets, `screen-match-prep.jsx` checklist
+
+#### 4. Matching FFF par cl_no (universel)
+- `fff-fetcher.js` : `normalizeRankRow` et `normalizeMatchRow` acceptent un objet
+  `{ myTeamName, myClubId }` au lieu d'un simple string
+- `data-bridge.js → applyFFFData` passe `myClubId: fffCfg.clubId`
+- Résout : "USDF" local ≠ "FERRIERES BRIE USD" côté FFF → matching par `cl_no=500466` universel
+- Marche pour TOUS les futurs clubs
+
+#### 5. Cross-team contamination FIXÉE (bug critique)
+- `data-bridge.js` : `CDD_NEXT_MATCH` porte désormais un `teamId`
+- Le check `prevNext.teamId === activeTeam.id` empêche l'amical d'USDF d'apparaître
+  comme prochain match de FCMH U15A
+- C'était un bug d'isolation grave
+
+#### 6. Calendrier .ics (📅 Ajouter à mon agenda)
+- Nouveau fichier `calendar-export.js` (`window.CDD_CAL`)
+- `buildMatchICS(match, info)` : RFC 5545 standard, alarme 2h avant
+- `downloadMatchICS(match, info)` : téléchargement multi-plateforme (Apple, Google, Outlook)
+- Bouton bleu visible pour TOUS (coach, adjoint, parent, joueur) sur `screen-match-prep.jsx`
+
+#### 7. Bouton "J'ai contrôlé" sur Numéros maillots
+- Évite au coach satisfait des numéros saison de devoir bidouiller pour valider la checklist
+- Réutilise `CDD_JERSEY.wasReviewed/markReviewed` qui existaient déjà mais n'étaient pas branchés à la checklist
+- `hasJerseys = hasOverrides OR wasReviewed`
+- Libellé bouton adaptatif : "💾 Enregistrer" si changes, sinon "✓ J'ai contrôlé"
+
+#### 8. Accueil pendant un match en cours
+- Tile "Convocations" affiche "⚽ Match en cours" au lieu de "0/14 répondus"
+- Tile "Prochain match" devient "Match en cours · Reprendre le live" (clic → écran match)
+- Badge hero "J-0 · À VENIR" devient "● MATCH EN COURS" (rouge)
+- Bouton CTA hero "PRÉPARER LE MATCH" devient "▶ REPRENDRE LE MATCH"
+
+#### 9. Fix `saveClub` undefined (Firestore reject)
+- `firebase-sync.js` : nouveau helper `_stripUndefined` qui parcourt récursivement
+  le payload et remplace `undefined` par `null` (Firestore refuse undefined)
+- `screen-club.jsx` : fallback `short → name → ''` pour ne plus produire undefined
+- `save()` est désormais `async/await` avec **alert d'erreur visible** si le cloud refuse
+
+#### 10. Firestore rules — publication manuelle effectuée
+Le user a publié les nouvelles rules dans la console Firebase. Changements :
+- `/clubs` create/update size : 20 → **50** (fiche club enrichie avec stadium, contacts, etc.)
+- `/coach_profiles` AJOUTÉE (carte de visite coach, lecture publique)
+- `/friendly_matches` AJOUTÉE (résout permission denied au pull)
+
+#### 11. Match en cours cross-device (CRITIQUE)
+- Nouveau champ `team.liveMatch = { matchId, startedAt, startedBy }` sur le doc team
+- Backend `firebase-sync.js` :
+  - `setTeamLiveMatch(teamId, matchId)` — push au start du match
+  - `clearTeamLiveMatch(teamId)` — clear à la fin
+  - `fetchMatch(matchId)` — lit un match individuel (cdd_v2_matches)
+- `screen-match-live-v2.jsx` :
+  - Push au `_startMatch` (siffle de coup d'envoi)
+  - Push au **mount du screen** (rattrapage pour matchs existants)
+  - **Push aussi à chaque tick auto-save 10s** (auto-rattrapage si mount loupe)
+  - Fallback `teamId` via `getActiveTeam()?.id` si `M.teamId` est undefined
+- `firebase-sync.js → pullCloudData` :
+  - Scan toutes les équipes pullées
+  - Pour chaque team avec `liveMatch.matchId` → `fetchMatch` → reconstruction format local → write `cdd_match_<id>` + `cdd_match_current`
+  - Filtre "match abandonné > 6h"
+- Logs console explicites : `[liveMatch] scan…`, `[liveMatch] équipes avec match en cours: N`, `[liveMatch] ✓ match en cours pulled du cloud`
+
+#### 12. Texte de la home pendant match
+- Tile "Prochain match" / "Convocations" / bouton CTA hero adaptés (déjà décrit point 8)
+
+### Versions cache buster
+- `firebase-sync.js` : **v162**
+- `data-bridge.js` : **v134**
+- `screen-match-live-v2.jsx` : **v127**
+- `screen-home.jsx` : **v147**
+- `screen-match-prep.jsx` : **v124**
+- `screen-club.jsx` : **v145**
+- `screen-onb-set.jsx` : **v99**
+- `screen-results-conv.jsx` : **v144**
+- `screen-effectif-lineup.jsx` : **v118**
+- `screen-landing.jsx` : **v153**
+- `jersey-numbers-modal.jsx` : **v115**
+- `admin-clubs-panel.jsx` : **v155**
+- `invite-manager.jsx` : **v154**
+- `roles.js` : **v96**
+- `fff-fetcher.js` : **v8** (nouvelles fonctions search/getClubCompetitions)
+- `calendar-export.js` : **v1** (nouveau fichier)
+- `app.jsx` : **v146**
+
+### Restant à valider (next session)
+
+1. **Test cross-device live match en condition réelle**
+   - Téléphone : ouvre écran "MATCH LIVE", reste 15s
+   - PC : F12 console + Ctrl+Maj+R → doit voir `[liveMatch] ✓`
+   - Si pas → debug avec les logs ajoutés
+
+2. **Fonctionnalité demandée par user : notification au démarrage du match**
+   - User : "envoyer notification aux joueurs/parents/adjoints au coup d'envoi"
+   - Plan Spark Firebase = pas de Cloud Functions
+   - Solution possible : Web Push API (limitée mais gratuite) OU live snapshot
+     côté autres devices (onSnapshot sur team.liveMatch)
+   - À discuter en début de prochaine session
+
+3. **Documenter pourquoi le bouton "PRÉPARER LE MATCH" reste en gros sur l'accueil
+   pendant un match en cours** — décision UX prise : redirige vers écran match.
+   Mais on peut le retirer si user le veut.
+
+### Bugs résolus mais à re-tester rapidement
+- Convocations USDF Parents → Joueurs ✓ doit être OK
+- Amical USDF vs Bussy comme prochain match ✓ doit être OK (commit cefc9f1)
+- "Dim 12 Oct 02h00" mystère côté USDF : c'est un match FFF saison prochaine
+  remonté par DOFA, l'amical doit primer après le fix
 
 ---
 
