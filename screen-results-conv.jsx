@@ -892,7 +892,7 @@ function ScreenConvocations({ go, tweaks }) {
                   style={{ ...baseStyle,
                     background:'linear-gradient(135deg, rgba(200,241,105,0.20) 0%, rgba(200,241,105,0.08) 100%)',
                     border:'1px solid rgba(200,241,105,0.50)', color:'#c8f169' }}>
-                  ↗ ENVOYER LA CONVOCATION AUX PARENTS
+                  ↗ ENVOYER LA CONVOCATION AUX {window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'JOUEURS' : 'PARENTS'}
                 </button>
               );
             }
@@ -1100,7 +1100,7 @@ function ScreenConvocations({ go, tweaks }) {
                 </div>
                 <div style={{fontSize:11, color:'rgba(255,255,255,0.65)', lineHeight:1.4}}>
                   Renseigne le stade, l'adresse, le RDV vestiaire et le coup d'envoi
-                  pour que la convocation envoyée aux parents soit exploitable.
+                  pour que la convocation envoyée aux {window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'joueurs' : 'parents'} soit exploitable.
                 </div>
               </div>
               <span style={{color:'#ffc788', fontSize:11, fontWeight:700, whiteSpace:'nowrap'}}>Renseigner →</span>

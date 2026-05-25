@@ -5,6 +5,43 @@
    Wraps real CDD adapter into the UI's expected globals.
    ============================================================ */
 
+// ─── Helper : équipe adulte ou mineurs ? ─────────────────────
+// Détermine si une équipe est composée d'adultes (Sénior, Vétérans 35+,
+// Loisirs) ou de mineurs (U6→U17, Football d'Animation, etc.). Sert à
+// adapter le copy : "parents" pour les mineurs, "joueurs" pour les adultes.
+//
+// Heuristique sur team.category puis team.name :
+//   • U<n> avec n ≤ 18 → mineurs
+//   • Mots-clés "sénior", "vétéran", "loisir", "+35/+40/...", "35 ans" → adultes
+//   • Défaut : mineurs (texte "parents" reste valable comme aujourd'hui)
+function isAdultTeam(team) {
+  const txt = ((team && (team.category || '')) + ' ' + (team && team.name || '')).toLowerCase();
+  if (!txt.trim()) return false;
+  // U13, U15, U17, U18 etc. → mineurs (sauf U19+ qui sont déjà adultes côté FFF)
+  const youthMatch = txt.match(/\bu\s*(\d{1,2})\b/);
+  if (youthMatch) {
+    const n = parseInt(youthMatch[1], 10);
+    if (n <= 18) return false;
+  }
+  // Mots-clés adultes
+  if (/\b(s[eé]nior|v[eé]t[eé]ran|loisir|amateur)/i.test(txt)) return true;
+  if (/\+\s*(3[05]|4[05]|5[05]|60)/i.test(txt)) return true;
+  if (/\b(3[05]|4[05]|5[05]|60)\s*ans\b/i.test(txt)) return true;
+  // Football d'animation = U6→U11
+  if (/\bf\.?\s*a\.?\b|animation/i.test(txt)) return false;
+  return false; // défaut prudent : enfants (texte "parents" inchangé)
+}
+
+// Helper raccourci : récupère l'équipe active et teste.
+function activeTeamIsAdult() {
+  try {
+    const t = (window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam()) || null;
+    return isAdultTeam(t);
+  } catch (e) { return false; }
+}
+
+window.CDD_TEAM_HELPERS = { isAdultTeam, activeTeamIsAdult };
+
 // Convert FFF position labels → standard short codes
 // Also infers from preferredNumber when position is empty (FFF data often omits it)
 function normalizePosition(p, preferredNumber) {

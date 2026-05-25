@@ -339,11 +339,14 @@ function ScreenMatchPrep({ go, tweaks }) {
             done={hasJerseys}
             onClick={canEdit ? () => setJerseyOpen(true) : null}/>
           <ChecklistItem
-            ic="📣" label={`Convocations parents · ${responded}/${convoIds.length || 0}`}
+            ic="📣" label={(() => {
+              const audience = window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'joueurs' : 'parents';
+              return `Convocations ${audience} · ${responded}/${convoIds.length || 0}`;
+            })()}
             sub={convoIds.length === 0
               ? 'Pose d\'abord la compo'
               : hasEnoughResponses
-                ? `${respPct}% des parents ont répondu`
+                ? `${respPct}% des ${window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'joueurs' : 'parents'} ont répondu`
                 : `${respPct}% de réponses — pense à relancer`}
             done={hasEnoughResponses}
             onClick={() => go('convocations')}/>

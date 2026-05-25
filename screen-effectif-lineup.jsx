@@ -210,9 +210,12 @@ function ScreenEffectif({ go, tweaks }) {
             <span style={{fontSize:18}}>🎴</span>
             <div style={{flex:1, minWidth:0}}>
               <div style={{fontWeight:800, fontSize:11.5, letterSpacing:'.04em'}}>
-                {allDone
-                  ? <>✓ Carnets diffusés à <b style={{color:'#c8f169'}}>tous les parents</b></>
-                  : <><b style={{color:'#c8f169'}}>{sharedCount}/{list.length}</b> carnets envoyés aux parents{pending > 0 ? <span style={{opacity:0.7}}> · {pending} restant{pending>1?'s':''}</span> : null}</>}
+                {(() => {
+                  const audience = window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'joueurs' : 'parents';
+                  return allDone
+                    ? <>✓ Carnets diffusés à <b style={{color:'#c8f169'}}>tous les {audience}</b></>
+                    : <><b style={{color:'#c8f169'}}>{sharedCount}/{list.length}</b> carnets envoyés aux {audience}{pending > 0 ? <span style={{opacity:0.7}}> · {pending} restant{pending>1?'s':''}</span> : null}</>;
+                })()}
               </div>
               {/* Mini barre progression */}
               <div style={{

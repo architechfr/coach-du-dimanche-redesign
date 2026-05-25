@@ -122,15 +122,29 @@
 
   // ─── URL parser (for in-app user paste) ─────────────
   // Gère 2 formats FFF :
-  //   • Ancien : www.fff.fr/competitions/?competition=…&group=…&scl=…
-  //   • Nouveau : epreuves.fff.fr/competition/club/{cl_no}-slug/equipe/{annee}_{compet}_{cat}_{poule}/...
-  // Retourne { clubId, competId, phase, group, label } ou null si rien
-  // de reconnaissable.
+  //
+  //   ① Ancien (www.fff.fr) : ?competition=…&group=…&scl=…
+  //      → contient le competId DOFA → on remplit tout (clubId/competId/group/phase).
+  //
+  //   ② Nouveau (epreuves.fff.fr) :
+  //      /club/{cl_no}-slug/equipe/{annee}_{clubSeasonId}_{cat}_{teamSeq}/...
+  //      → identifie une ÉQUIPE du club, PAS une compétition. Le nombre après
+  //        l'année (541 pour FERRIERES) est l'identifiant club-saison commun
+  //        à TOUTES les équipes du club, donc PAS un competId.
+  //      → on extrait seulement le clubId + des hints (_category, _teamSeq).
+  //      → l'appelant doit ensuite appeler getClubCompetitions(clubId) pour
+  //        lister les compétitions où l'équipe est engagée.
+  //
+  // Retourne { clubId, competId, phase, group, label, _category?, _teamSeq?,
+  //           _format } ou null si rien de reconnaissable.
   function parseFFFUrl(url) {
     if (!url) return null;
-    const out = { clubId: null, competId: null, phase: "1", group: "1", label: "" };
+    const out = {
+      clubId: null, competId: null, phase: "1", group: null, label: "",
+      _category: null, _teamSeq: null, _format: null,
+    };
 
-    // 1. Query string (ancien format ou paramètres en plus)
+    // ① Query string (ancien format www.fff.fr)
     if (url.includes("?")) {
       const qs = url.split("?")[1].split("#")[0];
       const params = {};
@@ -138,27 +152,34 @@
         const [k, v=""] = pair.split("=");
         if (k) params[decodeURIComponent(k).toLowerCase()] = decodeURIComponent(v.replace(/\+/g, " "));
       });
-      if (params.scl || params.club)       out.clubId   = params.scl || params.club;
+      if (params.scl || params.club)         out.clubId   = params.scl || params.club;
       if (params.competition || params.comp) out.competId = params.competition || params.comp;
-      if (params.stage)                    out.phase    = params.stage;
-      if (params.group || params.poule)    out.group    = params.group || params.poule;
-      if (params.label)                    out.label    = params.label;
+      if (params.stage)                      out.phase    = params.stage;
+      if (params.group || params.poule)      out.group    = params.group || params.poule;
+      if (params.label)                      out.label    = params.label;
+      if (out.competId) out._format = 'query';
     }
 
-    // 2. Path-based (nouveau format epreuves.fff.fr)
-    //    /club/{cl_no}-slug/equipe/{annee}_{cp_no}_{cat}_{poule}/...
+    // ② Path-based (nouveau format epreuves.fff.fr)
     const mClub = url.match(/\/club\/(\d+)(?:-[^\/]*)?\//);
     if (mClub && !out.clubId) out.clubId = mClub[1];
     const mEq = url.match(/\/equipe\/(\d{4})_(\d+)_([A-Za-z]+)_(\d+)/);
     if (mEq) {
-      if (!out.competId) out.competId = mEq[2];
-      if (out.group === "1") out.group = mEq[4];
-      // mEq[3] = catégorie (SEM, SEF, VET, U13, etc.) — pas utilisé dans la
-      // config FFF actuelle mais on pourrait le mettre en label par défaut.
-      if (!out.label) out.label = mEq[3] + ' · poule ' + mEq[4];
+      // mEq[2] = clubSeasonId (PAS un competId — partagé par toutes les
+      // équipes du club). On ne le met PAS dans competId.
+      out._category = mEq[3];   // SEM, U15, FA, etc.
+      out._teamSeq  = mEq[4];   // numéro d'ordre de l'équipe dans le club
+      if (!out.label) {
+        const catLabels = {
+          SEM: 'Sénior masculin', SEF: 'Sénior féminin',
+          U17: 'U17', U16: 'U16', U15: 'U15', U14: 'U14', U13: 'U13',
+          FA:  'Football d\'animation',
+        };
+        out.label = (catLabels[mEq[3]] || mEq[3]) + ' · équipe ' + mEq[4];
+      }
+      if (!out._format) out._format = 'path';
     }
 
-    // Renvoie null si rien n'a été extrait (ni competId, ni clubId)
     if (!out.competId && !out.clubId) return null;
     return out;
   }
@@ -268,46 +289,121 @@
     parseFFFUrl,
 
     /**
-     * Recherche de clubs par nom (fuzzy). Utilise le filtre Hydra
-     * text_filter du DOFA. Renvoie max 20 résultats.
-     * Cache 1h pour éviter de spammer l'API pendant la frappe.
+     * Recherche de clubs.
+     *   • Si la requête est un n° (ex "500466" ou "#500466") → fetch direct
+     *     via /clubs/{cl_no}.json. Le plus fiable.
+     *   • Sinon → cascade d'endpoints DOFA pour text search. DOFA ignore
+     *     beaucoup de filtres, on essaie plusieurs syntaxes et on filtre
+     *     côté client si nécessaire pour éliminer les résultats hors-sujet.
+     * Cache 1h. Logs console pour diagnostic.
      */
     async searchClubs(query) {
-      const q = (query || '').trim();
-      if (q.length < 2) {
+      const raw = (query || '').trim().replace(/^#/, '');
+      if (raw.length < 2) {
         return { ok: false, data: [], error: 'Tape au moins 2 caractères.' };
       }
-      const cacheKey = `clubs:${q.toLowerCase()}`;
+
+      // ── 1. Requête purement numérique → lookup direct par cl_no.
+      if (/^\d+$/.test(raw)) {
+        const cacheKey = `clubById:${raw}`;
+        const cached = getCache(cacheKey);
+        const ONE_HOUR = 60 * 60 * 1000;
+        if (cached && (Date.now() - cached.t) < ONE_HOUR) {
+          return { ok: true, data: cached.v, source: 'cache' };
+        }
+        const idAttempts = [
+          `/clubs/${encodeURIComponent(raw)}.json`,
+          `/clubs.json?cl_no=${encodeURIComponent(raw)}`,
+          `/clubs.json?filter[]=&cl_no=${encodeURIComponent(raw)}`,
+        ];
+        for (const path of idAttempts) {
+          try {
+            const data = await fffFetch(path);
+            // Réponse soit un objet club unique, soit une liste Hydra.
+            const arr = Array.isArray(data) ? data
+                      : data['hydra:member'] ? data['hydra:member']
+                      : (data.cl_no ? [data] : []);
+            if (arr.length > 0) {
+              const top = arr.map(c => ({
+                cl_no:    c.cl_no || c.id || null,
+                shortName: c.short_name || '',
+                name:     c.name || c.short_name || '',
+                locality: c.locality || c.city || '',
+                logo:     c.logo || null,
+              })).filter(c => c.cl_no);
+              if (top.length > 0) {
+                console.log('[FFF.searchClubs] ✓ lookup direct cl_no:', raw, '→', top);
+                setCache(cacheKey, top);
+                return { ok: true, data: top, source: 'live' };
+              }
+            }
+          } catch (e) { /* try next */ }
+        }
+        return { ok: false, data: [], error: 'Aucun club trouvé pour le n° ' + raw + ' (DOFA ne le retrouve pas — vérifie le numéro).' };
+      }
+
+      // ── 2. Recherche textuelle. DOFA s'avère capricieux : on essaie
+      //      plusieurs variantes ET on filtre côté client pour ne garder
+      //      QUE les clubs dont le nom matche réellement la requête.
+      const qLow = raw.toLowerCase();
+      const stripAccents = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      const qNorm = stripAccents(raw);
+
+      const cacheKey = `clubs:${qLow}`;
       const cached = getCache(cacheKey);
       const ONE_HOUR = 60 * 60 * 1000;
       if (cached && (Date.now() - cached.t) < ONE_HOUR) {
         return { ok: true, data: cached.v, source: 'cache' };
       }
-      // Plusieurs variantes de paramètre selon les versions de DOFA.
-      const attempts = [
-        `/clubs.json?filter[]=&text_filter=${encodeURIComponent(q)}`,
-        `/clubs.json?text_filter=${encodeURIComponent(q)}`,
-        `/clubs.json?short_name=${encodeURIComponent(q)}`,
-        `/clubs.json?name=${encodeURIComponent(q)}`,
+
+      const textAttempts = [
+        `/clubs.json?filter[]=&text_filter=${encodeURIComponent(raw)}`,
+        `/clubs.json?text_filter=${encodeURIComponent(raw)}`,
+        `/clubs.json?name=${encodeURIComponent(raw)}`,
+        `/clubs.json?short_name=${encodeURIComponent(raw)}`,
+        `/clubs.json?filter[]=&name=${encodeURIComponent(raw)}`,
+        `/clubs.json?filter[]=&short_name=${encodeURIComponent(raw)}`,
       ];
-      for (const path of attempts) {
+      let bestRaw = [];
+      for (const path of textAttempts) {
         try {
           const data = await fffFetch(path);
           const arr = Array.isArray(data) ? data : (data['hydra:member'] || data.data || []);
           if (arr.length > 0) {
-            const top = arr.slice(0, 20).map(c => ({
-              cl_no:    c.cl_no || c.id || null,
-              shortName: c.short_name || '',
-              name:     c.name || c.short_name || '',
-              locality: c.locality || c.city || '',
-              logo:     c.logo || null,
-            })).filter(c => c.cl_no);
-            setCache(cacheKey, top);
-            return { ok: true, data: top, source: 'live' };
+            // Filtrage CLIENT : on ne garde que les clubs dont le nom
+            // contient la requête (insensible aux accents / casse).
+            const filtered = arr.filter(c => {
+              const n  = stripAccents(c.name || '');
+              const sn = stripAccents(c.short_name || '');
+              return n.includes(qNorm) || sn.includes(qNorm);
+            });
+            console.log('[FFF.searchClubs] tried', path, '→', arr.length, 'résultats bruts,', filtered.length, 'après filtre client');
+            if (filtered.length > 0) {
+              const top = filtered.slice(0, 20).map(c => ({
+                cl_no:     c.cl_no || c.id || null,
+                shortName: c.short_name || '',
+                name:      c.name || c.short_name || '',
+                locality:  c.locality || c.city || '',
+                logo:      c.logo || null,
+              })).filter(c => c.cl_no);
+              if (top.length > 0) {
+                setCache(cacheKey, top);
+                return { ok: true, data: top, source: 'live' };
+              }
+            }
+            // Sinon on note quand même la réponse brute pour debug
+            if (arr.length > bestRaw.length) bestRaw = arr.slice(0, 5);
           }
-        } catch (e) { /* try next variant */ }
+        } catch (e) { /* try next */ }
       }
-      return { ok: false, data: [], error: 'Aucun club trouvé (vérifie l\'orthographe ou utilise la méthode URL).' };
+      if (bestRaw.length > 0) {
+        console.warn('[FFF.searchClubs] DOFA répond mais ignore le filtre. Exemple de réponses brutes :',
+          bestRaw.map(c => ({ cl_no: c.cl_no, name: c.name, short: c.short_name })));
+      }
+      return { ok: false, data: [], error:
+        'Aucun club ne matche « ' + raw + ' ». L\'API FFF semble ignorer ce filtre. '
+        + 'Essaie de saisir directement le n° de club (ex : 500466), ou colle l\'URL '
+        + 'de la page club FFF (section ①).' };
     },
 
     /**

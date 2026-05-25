@@ -134,25 +134,79 @@ function AdminClubsPanel({ onClose }) {
     setFffEditFor({ club, team });
   };
 
-  const parseFffUrl = () => {
+  const parseFffUrl = async () => {
     const parser = window.CDD_FFF && window.CDD_FFF.parseFFFUrl;
     if (!parser) { alert('Module FFF non chargé.'); return; }
     const parsed = parser(fffUrl.trim());
-    if (!parsed || !parsed.competId) {
+    if (!parsed) {
       alert("URL non reconnue.\n\nFormats acceptés :\n"
         + "  • www.fff.fr/competitions/?competition=…&group=…&scl=…\n"
-        + "  • epreuves.fff.fr/competition/club/{id}-slug/equipe/{annee}_{compet}_{cat}_{poule}/…\n\n"
-        + "Va sur la page Classement ou Calendrier de TON équipe sur fff.fr et copie l'URL complète.");
+        + "  • epreuves.fff.fr/competition/club/{id}-slug/equipe/{annee}_..._{cat}_{num}/…\n\n"
+        + "Va sur la page Classement, Calendrier ou Équipe de TON club sur fff.fr et copie l'URL complète.");
       return;
     }
-    setFffForm({
-      clubId:   parsed.clubId   || fffForm.clubId,
-      competId: parsed.competId || fffForm.competId,
-      phase:    parsed.phase    || '1',
-      group:    parsed.group    || '1',
-      label:    parsed.label    || fffForm.label,
-    });
-    setFffTestResult(null);
+
+    // Cas ① : URL avec competId DOFA (ancien format query string)
+    //         → on remplit tout, l'utilisateur peut tester / sauver direct.
+    if (parsed.competId) {
+      setFffForm({
+        clubId:   parsed.clubId   || fffForm.clubId,
+        competId: parsed.competId || fffForm.competId,
+        phase:    parsed.phase    || '1',
+        group:    parsed.group    || '1',
+        label:    parsed.label    || fffForm.label,
+      });
+      setFffTestResult(null);
+      return;
+    }
+
+    // Cas ② : URL « path » epreuves.fff.fr → on a juste le clubId.
+    //         Le nombre 541 dans /equipe/2025_541_SEM_2/ est PARTAGÉ par
+    //         toutes les équipes du club — c'est PAS un competId. Il faut
+    //         lister les compétitions où le club est engagé pour trouver
+    //         la bonne. On bascule automatiquement sur la section ⓪.
+    if (parsed.clubId) {
+      // Pré-rempli déjà le clubId dans le formulaire ② pour transparence.
+      setFffForm(prev => ({
+        ...prev,
+        clubId: String(parsed.clubId),
+        label: parsed.label || prev.label,
+      }));
+      // Lance directement la résolution des compétitions du club.
+      // On crée un "club synthétique" depuis l'URL pour alimenter la sélection.
+      setFffSearchResults(null);
+      setFffSearchError('');
+      setFffPickedClub({
+        cl_no: parsed.clubId,
+        shortName: '(club identifié via URL)',
+        name: '(résolution en cours…)',
+      });
+      setFffCompets(null);
+      setFffCompetsError('');
+      setFffCompetsBusy(true);
+      try {
+        const res = await window.CDD_FFF.getClubCompetitions(parsed.clubId);
+        if (res && res.ok) {
+          setFffCompets(res.data);
+          // Auto-pré-sélectionne la compétition qui matche la catégorie
+          // + le numéro d'équipe de l'URL si on en trouve une seule.
+          if (parsed._category && parsed._teamSeq) {
+            const matches = res.data.filter(c =>
+              (c.teamLabel || '').toLowerCase().includes(parsed._category.toLowerCase())
+            );
+            if (matches.length === 1) pickFffCompetition(matches[0]);
+          }
+        } else {
+          setFffCompetsError(res?.error || 'Impossible de lister les compétitions de ce club.');
+          setFffCompets([]);
+        }
+      } catch (e) {
+        setFffCompetsError((e && e.message) || String(e));
+        setFffCompets([]);
+      } finally {
+        setFffCompetsBusy(false);
+      }
+    }
   };
 
   const testFffConnection = async () => {
@@ -675,15 +729,16 @@ function AdminClubsPanel({ onClose }) {
                 ⓪ Méthode auto — chercher le club FFF
               </div>
               <div style={{fontSize:11, color:'rgba(255,255,255,.6)', lineHeight:1.5, marginBottom:8}}>
-                Tape le nom (ou un fragment) du club et choisis la
-                compétition. Les 4 IDs se remplissent tout seuls.
+                Tape le <b>nom</b> du club OU son <b>n° FFF</b> (ex : 500466).
+                Le n° marche toujours, le nom dépend du filtre DOFA.
+                Les 4 IDs se remplissent tout seuls.
               </div>
               <div style={{display:'flex', gap:6, marginBottom:8}}>
                 <input type="text"
                   value={fffSearch}
                   onChange={e => setFffSearch(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') runFffClubSearch(); }}
-                  placeholder="ex. FC MAGNY ou simplement MAGNY"
+                  placeholder="nom (ex. MAGNY) ou n° (ex. 500466)"
                   style={{
                     flex:1, padding:'8px 10px', borderRadius:7, fontSize:12,
                     background:'rgba(0,0,0,.35)', color:'#fff',

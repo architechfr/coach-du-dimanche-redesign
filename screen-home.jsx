@@ -98,7 +98,7 @@ function ScreenHome({ go, tweaks }) {
           <span style={{fontSize:20}}>📣</span>
           <span style={{flex:1, minWidth:0}}>
             <div style={{fontSize:13, fontWeight:800, color:'#f97316', lineHeight:1.3}}>
-              {pendingCount} parent{pendingCount>1?'s':''} pas encore répondu
+              {pendingCount} {(window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'joueur' : 'parent')}{pendingCount>1?'s':''} pas encore répondu
             </div>
             <div style={{fontSize:11, opacity:0.7, marginTop:1}}>
               Match {next.daysLeft > 0 ? `dans ${next.daysLeft}j` : 'imminent'} · tap pour relancer en 1 click
