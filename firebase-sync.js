@@ -1123,6 +1123,7 @@ async function saveMembership(m) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
+  if (m.displayName) payload.displayName = m.displayName;
   if (m.inviteToken) payload.inviteToken = m.inviteToken;
   await setDoc(doc(db, 'memberships', id), payload, { merge: true });
   return { ok: true, id };
@@ -2184,6 +2185,7 @@ async function consumeInvite(token) {
     await saveMembership({
       uid,
       email: _email(),
+      displayName: localStorage.getItem('cdd_coach_name') || '',
       clubId: inv.clubId,
       teams: { [inv.teamId]: { role: inv.role || 'lecteur', playerId: inv.playerId || null } },
       // clubRole explicite : préservé si déjà élevé, '' sinon — les règles

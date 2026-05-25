@@ -39,6 +39,94 @@ function AdminClubsPanel({ onClose }) {
   const [migBusy, setMigBusy] = React.useState(false);
   const [migResult, setMigResult] = React.useState(null);
 
+  // Configuration FFF — modal d'édition par équipe (clubId/competId/phase/group)
+  const [fffEditFor, setFffEditFor] = React.useState(null); // { club, team }
+  const [fffForm, setFffForm] = React.useState({ clubId:'', competId:'', phase:'1', group:'1', label:'' });
+  const [fffUrl, setFffUrl] = React.useState('');
+  const [fffTesting, setFffTesting] = React.useState(false);
+  const [fffTestResult, setFffTestResult] = React.useState(null);
+  const [fffSaving, setFffSaving] = React.useState(false);
+
+  const openFffEditor = (club, team) => {
+    const cur = team.fffConfig || team.fff || {};
+    setFffForm({
+      clubId:   cur.clubId   || '',
+      competId: cur.competId || '',
+      phase:    cur.phase    || '1',
+      group:    cur.group    || '1',
+      label:    cur.label    || '',
+    });
+    setFffUrl('');
+    setFffTestResult(null);
+    setFffEditFor({ club, team });
+  };
+
+  const parseFffUrl = () => {
+    const parser = window.CDD_FFF && window.CDD_FFF.parseFFFUrl;
+    if (!parser) { alert('Module FFF non chargé.'); return; }
+    const parsed = parser(fffUrl.trim());
+    if (!parsed || !parsed.competId) {
+      alert("URL non reconnue. Colle l'URL complète d'une page championnat FFF (avec ?competition=… &group=… &scl=…)");
+      return;
+    }
+    setFffForm({
+      clubId:   parsed.clubId   || fffForm.clubId,
+      competId: parsed.competId || fffForm.competId,
+      phase:    parsed.phase    || '1',
+      group:    parsed.group    || '1',
+      label:    parsed.label    || fffForm.label,
+    });
+    setFffTestResult(null);
+  };
+
+  const testFffConnection = async () => {
+    if (!window.CDD_FFF || !window.CDD_FFF.getRanking) { alert('Module FFF non chargé.'); return; }
+    if (!fffForm.competId || !fffForm.group) { alert('competId et group requis.'); return; }
+    setFffTesting(true);
+    setFffTestResult(null);
+    try {
+      const res = await window.CDD_FFF.getRanking({
+        competId: fffForm.competId,
+        phase:    fffForm.phase || '1',
+        group:    fffForm.group,
+      }, { force: true });
+      if (res && res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        const teams = res.data.map(r => (r.equipe?.short_name || r.equipe?.name || '?'));
+        setFffTestResult({ ok: true, count: res.data.length, teams: teams.slice(0, 8) });
+      } else {
+        setFffTestResult({ ok: false, error: res?.error || 'Pas de données — vérifie les IDs' });
+      }
+    } catch (e) {
+      setFffTestResult({ ok: false, error: (e && e.message) || String(e) });
+    } finally {
+      setFffTesting(false);
+    }
+  };
+
+  const saveFffConfig = async () => {
+    if (!fffEditFor) return;
+    if (!fffForm.competId || !fffForm.group) {
+      alert('competId et group sont obligatoires.');
+      return;
+    }
+    setFffSaving(true);
+    try {
+      await D.saveTeam({
+        id:       fffEditFor.team.id,
+        clubId:   fffEditFor.team.clubId || fffEditFor.club.id,
+        name:     fffEditFor.team.name,
+        category: fffEditFor.team.category || '',
+        fffConfig: { ...fffForm },
+      });
+      setFffEditFor(null);
+      reload();
+    } catch (e) {
+      alert('Sauvegarde échouée : ' + ((e && e.message) || e));
+    } finally {
+      setFffSaving(false);
+    }
+  };
+
   const reload = () => setTick(t => t + 1);
 
   const runMigration = async () => {
@@ -173,15 +261,17 @@ function AdminClubsPanel({ onClose }) {
     }
     return null;
   };
-  const teamRoleCounts = (memberships, teamId) => {
-    const counts = {};
+  const nonCoachMembersOfTeam = (memberships, teamId) => {
+    const out = [];
     for (const m of memberships) {
       const t = (m.teams || {})[teamId];
-      if (!t || !t.role) continue;
-      counts[t.role] = (counts[t.role] || 0) + 1;
+      if (t && t.role && t.role !== 'coach') out.push({ ...m, _role: t.role });
     }
-    return counts;
+    return out;
   };
+
+  const ROLE_LABEL = { adjoint:'Adjoint', parent:'Parent', joueur:'Joueur', lecteur:'Lecteur' };
+  const ROLE_COLOR = { adjoint:'#60a5fa', parent:'#c084fc', joueur:'#4ade80', lecteur:'rgba(255,255,255,0.45)' };
 
   // ── Render ─────────────────────────────────────────────────
   return (
@@ -336,7 +426,7 @@ function AdminClubsPanel({ onClose }) {
                           )}
                           {d.teams.map(t => {
                             const coach = coachOfTeam(d.memberships, t.id);
-                            const counts = teamRoleCounts(d.memberships, t.id);
+                            const others = nonCoachMembersOfTeam(d.memberships, t.id);
                             return (
                               <div key={t.id} style={{
                                 padding:'9px 0',
@@ -354,17 +444,71 @@ function AdminClubsPanel({ onClose }) {
                                         </span>
                                       )}
                                     </div>
-                                    <div style={{fontSize:11.5, color:'rgba(255,255,255,0.6)',
-                                                 marginTop:3}}>
-                                      {coach
-                                        ? <>📋 Coach : <b style={{color:'#c8f169'}}>{coach.email || coach.uid}</b></>
-                                        : <span style={{color:'#fbbf24'}}>⚠ Pas de coach principal</span>}
-                                      {counts.adjoint ? ' · ' + counts.adjoint + ' adjoint' + (counts.adjoint > 1 ? 's' : '') : ''}
-                                      {counts.parent  ? ' · ' + counts.parent  + ' parent'  + (counts.parent  > 1 ? 's' : '') : ''}
-                                      {counts.joueur  ? ' · ' + counts.joueur  + ' joueur'  + (counts.joueur  > 1 ? 's' : '') : ''}
-                                      {counts.lecteur ? ' · ' + counts.lecteur + ' lecteur' + (counts.lecteur > 1 ? 's' : '') : ''}
+                                    {/* Coach principal */}
+                                    <div style={{fontSize:11.5, color:'rgba(255,255,255,0.6)', marginTop:3}}>
+                                      {coach ? (
+                                        <>
+                                          <span style={{marginRight:4}}>📋</span>
+                                          <span style={{color:'rgba(255,255,255,0.5)'}}>Coach :</span>
+                                          {' '}
+                                          <b style={{color:'#c8f169'}}>
+                                            {coach.displayName ? coach.displayName + ' — ' : ''}
+                                            {coach.email || coach.uid}
+                                          </b>
+                                        </>
+                                      ) : (
+                                        <span style={{color:'#fbbf24'}}>⚠ Pas de coach principal</span>
+                                      )}
                                     </div>
+                                    {/* Autres membres : un par ligne avec badge rôle + nom/email */}
+                                    {others.length > 0 && (
+                                      <div style={{marginTop:5, display:'flex', flexDirection:'column', gap:3}}>
+                                        {others.map(m => {
+                                          const col = ROLE_COLOR[m._role] || 'rgba(255,255,255,0.4)';
+                                          return (
+                                            <div key={m.uid} style={{
+                                              display:'flex', alignItems:'center', gap:5,
+                                              fontSize:11,
+                                            }}>
+                                              <span style={{
+                                                padding:'1px 6px', borderRadius:4,
+                                                background: col + '22',
+                                                color: col,
+                                                fontWeight:700, fontSize:10, flexShrink:0,
+                                              }}>
+                                                {ROLE_LABEL[m._role] || m._role}
+                                              </span>
+                                              <span style={{color:'rgba(255,255,255,0.75)'}}>
+                                                {m.displayName || ''}
+                                                {m.displayName && m.email ? ' — ' : ''}
+                                                {m.email || m.uid}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                    {others.length === 0 && !coach && (
+                                      <div style={{fontSize:11, color:'rgba(255,255,255,0.35)', marginTop:2}}>
+                                        Aucun membre rattaché
+                                      </div>
+                                    )}
                                   </div>
+                                  <button onClick={() => openFffEditor(c, t)} style={{
+                                    background: (t.fffConfig?.competId || t.fff?.competId)
+                                      ? 'rgba(245,196,81,0.14)' : 'rgba(255,255,255,0.05)',
+                                    color: (t.fffConfig?.competId || t.fff?.competId) ? '#f5c451' : 'rgba(255,255,255,.65)',
+                                    border:'1px solid ' + ((t.fffConfig?.competId || t.fff?.competId)
+                                      ? 'rgba(245,196,81,0.32)' : 'rgba(255,255,255,.12)'),
+                                    borderRadius:7,
+                                    padding:'5px 9px', fontSize:11.5, fontWeight:700, cursor:'pointer',
+                                    flexShrink:0,
+                                  }}
+                                  title={(t.fffConfig?.competId || t.fff?.competId)
+                                    ? `FFF configuré · compet ${(t.fffConfig||t.fff).competId} · poule ${(t.fffConfig||t.fff).group}`
+                                    : 'Configurer le championnat FFF'}>
+                                    🏆 FFF
+                                  </button>
                                   <button onClick={() => assignCoach(c, t, coach && coach.uid)} style={{
                                     background:'rgba(200,241,105,0.14)', color:'#c8f169',
                                     border:'1px solid rgba(200,241,105,0.32)', borderRadius:7,
@@ -395,6 +539,158 @@ function AdminClubsPanel({ onClose }) {
           compte Firebase Auth).
         </div>
       </div>
+
+      {/* MODAL CONFIG FFF — édition des IDs de championnat par équipe */}
+      {fffEditFor && (
+        <div style={{
+          position:'fixed', inset:0, zIndex:200,
+          background:'rgba(0,0,0,0.75)', display:'flex',
+          alignItems:'center', justifyContent:'center', padding:14,
+        }} onClick={() => !fffSaving && setFffEditFor(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            width:'100%', maxWidth:480, maxHeight:'90vh', overflow:'auto',
+            background:'#0f1419',
+            border:'1px solid rgba(245,196,81,0.30)',
+            borderRadius:14, padding:'18px 16px',
+          }}>
+            <div style={{
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              marginBottom:4,
+            }}>
+              <div style={{
+                fontSize:11, fontWeight:900, letterSpacing:'.10em',
+                color:'#f5c451', textTransform:'uppercase',
+              }}>🏆 Configuration FFF</div>
+              <button onClick={() => !fffSaving && setFffEditFor(null)}
+                style={{
+                  background:'transparent', border:'none', color:'rgba(255,255,255,.6)',
+                  fontSize:18, cursor:'pointer', padding:0, lineHeight:1,
+                }}>✕</button>
+            </div>
+            <div style={{fontSize:14, fontWeight:800, color:'#fff', marginBottom:14}}>
+              {fffEditFor.team.name}
+              {fffEditFor.team.category && (
+                <span style={{fontSize:12, color:'rgba(255,255,255,.55)', marginLeft:6}}>
+                  · {fffEditFor.team.category}
+                </span>
+              )}
+            </div>
+
+            {/* Section : Coller URL FFF */}
+            <div style={{
+              padding:'12px 12px', borderRadius:10, marginBottom:12,
+              background:'rgba(245,196,81,0.05)',
+              border:'1px dashed rgba(245,196,81,0.25)',
+            }}>
+              <div style={{fontSize:11, fontWeight:800, color:'#f5c451', marginBottom:6, letterSpacing:'.04em'}}>
+                ① Méthode rapide — coller l'URL FFF
+              </div>
+              <div style={{fontSize:11, color:'rgba(255,255,255,.6)', lineHeight:1.5, marginBottom:8}}>
+                Sur <b>fff.fr</b>, ouvre ton championnat (ex : page Classement),
+                copie l'URL complète (avec <code>?competition=…&group=…</code>)
+                et colle-la ici :
+              </div>
+              <div style={{display:'flex', gap:6}}>
+                <input type="text" value={fffUrl} onChange={e => setFffUrl(e.target.value)}
+                  placeholder="https://www.fff.fr/competitions/?competition=…"
+                  style={{
+                    flex:1, padding:'8px 10px', borderRadius:7, fontSize:12,
+                    background:'rgba(0,0,0,.35)', color:'#fff',
+                    border:'1px solid rgba(255,255,255,.15)', outline:'none',
+                  }}/>
+                <button onClick={parseFffUrl} disabled={!fffUrl.trim()} style={{
+                  padding:'8px 12px', borderRadius:7, fontSize:12, fontWeight:800,
+                  background: fffUrl.trim() ? '#f5c451' : 'rgba(255,255,255,.08)',
+                  color: fffUrl.trim() ? '#1f1404' : 'rgba(255,255,255,.4)',
+                  border:'none', cursor: fffUrl.trim() ? 'pointer' : 'default',
+                }}>Parser</button>
+              </div>
+            </div>
+
+            {/* Section : 4 IDs éditables */}
+            <div style={{
+              padding:'12px 12px', borderRadius:10, marginBottom:12,
+              background:'rgba(255,255,255,0.03)',
+              border:'1px solid rgba(255,255,255,0.08)',
+            }}>
+              <div style={{fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginBottom:8, letterSpacing:'.04em'}}>
+                ② Identifiants (modifiables)
+              </div>
+              {[
+                { k:'competId', label:'competId (compétition)', placeholder:'ex : 442001' },
+                { k:'group',    label:'group (poule)',          placeholder:'ex : 4' },
+                { k:'phase',    label:'phase',                  placeholder:'défaut : 1' },
+                { k:'clubId',   label:'clubId (scl — ton club)', placeholder:'ex : 547122' },
+                { k:'label',    label:'label (libellé affiché)', placeholder:'ex : VÉTÉRANS D2 POULE B' },
+              ].map(f => (
+                <label key={f.k} style={{display:'block', marginBottom:8}}>
+                  <span style={{fontSize:10, fontWeight:700, color:'rgba(255,255,255,.55)', letterSpacing:'.04em'}}>
+                    {f.label}
+                  </span>
+                  <input type="text" value={fffForm[f.k] || ''}
+                    onChange={e => setFffForm(prev => ({...prev, [f.k]: e.target.value}))}
+                    placeholder={f.placeholder}
+                    style={{
+                      width:'100%', padding:'7px 9px', borderRadius:6, fontSize:12,
+                      background:'rgba(0,0,0,.35)', color:'#fff',
+                      border:'1px solid rgba(255,255,255,.12)', outline:'none',
+                      marginTop:3, boxSizing:'border-box',
+                    }}/>
+                </label>
+              ))}
+            </div>
+
+            {/* Section : Tester */}
+            <div style={{marginBottom:12}}>
+              <button onClick={testFffConnection} disabled={fffTesting || !fffForm.competId || !fffForm.group}
+                style={{
+                  width:'100%', padding:'9px 12px', borderRadius:8,
+                  background: 'rgba(125,211,252,0.08)',
+                  border:'1px solid rgba(125,211,252,0.30)',
+                  color:'#7dd3fc', fontSize:12, fontWeight:700, cursor:'pointer',
+                  opacity: (fffTesting || !fffForm.competId || !fffForm.group) ? 0.5 : 1,
+                }}>
+                {fffTesting ? '⟳ Test en cours…' : '③ Tester la connexion FFF'}
+              </button>
+              {fffTestResult && (
+                <div style={{
+                  marginTop:8, padding:'9px 11px', borderRadius:8, fontSize:11.5,
+                  background: fffTestResult.ok ? 'rgba(200,241,105,0.08)' : 'rgba(239,68,68,0.08)',
+                  border:'1px solid ' + (fffTestResult.ok ? 'rgba(200,241,105,0.30)' : 'rgba(239,68,68,0.35)'),
+                  color: fffTestResult.ok ? '#c8f169' : '#ff8a8a',
+                  lineHeight:1.5,
+                }}>
+                  {fffTestResult.ok
+                    ? <>✓ <b>{fffTestResult.count} équipes</b> trouvées : {fffTestResult.teams.join(', ')}{fffTestResult.count > 8 ? '…' : ''}</>
+                    : <>⚠ {fffTestResult.error}</>}
+                </div>
+              )}
+            </div>
+
+            {/* Footer : Save / Cancel */}
+            <div style={{display:'flex', gap:8}}>
+              <button onClick={() => !fffSaving && setFffEditFor(null)}
+                disabled={fffSaving}
+                style={{
+                  flex:1, padding:'10px', borderRadius:8,
+                  background:'rgba(255,255,255,0.06)',
+                  border:'1px solid rgba(255,255,255,0.15)',
+                  color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer',
+                }}>Annuler</button>
+              <button onClick={saveFffConfig}
+                disabled={fffSaving || !fffForm.competId || !fffForm.group}
+                style={{
+                  flex:2, padding:'10px', borderRadius:8,
+                  background: '#f5c451', color:'#1f1404',
+                  border:'none', fontSize:13, fontWeight:800, cursor:'pointer',
+                  opacity: (fffSaving || !fffForm.competId || !fffForm.group) ? 0.5 : 1,
+                }}>
+                {fffSaving ? 'Enregistrement…' : '💾 Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
