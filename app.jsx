@@ -340,13 +340,20 @@ function App() {
     try { return !!(localStorage.getItem('cdd_user_email') || '').trim(); }
     catch (e) { return false; }
   })();
+  // Posé par pullCloudData quand l'utilisateur avait un club mais n'a plus
+  // aucune membership cloud → sa membership a été révoquée côté admin.
+  // Dans ce cas, même connecté, il doit voir la landing (nouvel utilisateur).
+  const _accessRevoked = (() => {
+    try { return localStorage.getItem('cdd_access_revoked') === 'true'; }
+    catch (e) { return false; }
+  })();
   const _hasMagicToken = (() => {
     try {
       const p = new URLSearchParams(window.location.search || '');
       return !!(p.get('t') || p.get('carnet') || p.get('joueur') || p.get('p') || p.get('invite') || p.get('coach'));
     } catch (e) { return false; }
   })();
-  const _forceLanding = !_authedNow && !_hasMagicToken && screen !== 'onb' && screen !== 'emo-onb';
+  const _forceLanding = (!_authedNow || _accessRevoked) && !_hasMagicToken && screen !== 'onb' && screen !== 'emo-onb';
 
   // Onboarding émotionnel (premier contact) — prioritaire sur la landing.
   // Plein écran, parcours en 5 étapes, pas de header app, pas de phone-frame

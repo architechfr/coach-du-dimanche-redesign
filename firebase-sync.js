@@ -516,6 +516,7 @@ async function signOutUser() {
   try {
     localStorage.removeItem('cdd_user_email');
     localStorage.removeItem(AUTH_PENDING_EMAIL);
+    localStorage.removeItem('cdd_access_revoked');
   } catch (e) {}
   // onAuthStateChanged se déclenchera et dispatchera cdd-auth-changed.
 }
@@ -1452,10 +1453,9 @@ async function pullCloudData() {
 
   const clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
   if (clubIds.length === 0) {
-    // SÉCURITÉ (2026-05-22) : ce compte n'a AUCUN rattachement cloud. On
-    // purge ses éventuelles entrées locales dans cdd_memberships — un
-    // cache empoisonné par un ancien « self-healing » se corrige ici.
-    // Les entrées des AUTRES comptes (sur appareil partagé) sont intactes.
+    // SÉCURITÉ : ce compte n'a AUCUN rattachement cloud.
+    // 1. Purge cdd_memberships (entrées de CET email seulement, les autres
+    //    comptes sur l'appareil partagé sont intacts).
     try {
       const email = _email();
       if (email) {
@@ -1465,11 +1465,25 @@ async function pullCloudData() {
           if (cleaned.length !== local.length) {
             localStorage.setItem('cdd_memberships', JSON.stringify(cleaned));
             window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
-            if (window.CDD_REBUILD) window.CDD_REBUILD();
           }
         }
       }
     } catch (e) {}
+
+    // 2. Purge toutes les données club/équipe du localStorage.
+    //    Si l'utilisateur avait un club → sa membership a été RÉVOQUÉE →
+    //    on pose le flag cdd_access_revoked pour que l'app le renvoie
+    //    vers la landing (il ne doit plus voir l'équipe).
+    try {
+      const hadClub = !!(localStorage.getItem('arb_current_club') || '').trim();
+      localStorage.removeItem('arb_current_club');
+      localStorage.removeItem('cdd_active_context');
+      localStorage.setItem('arb_clubs', '[]');
+      localStorage.setItem('arb_teams', '[]');
+      if (hadClub) localStorage.setItem('cdd_access_revoked', 'true');
+    } catch (e) {}
+
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
     return { ok: true, empty: true, counts: { clubs: 0, teams: 0, players: 0 } };
   }
 
@@ -1988,6 +2002,9 @@ async function pullCloudData() {
   } catch (e) {
     return { ok: false, reason: 'localstorage', error: e.message };
   }
+
+  // Membership retrouvée → on efface le flag de révocation (s'il existait).
+  try { localStorage.removeItem('cdd_access_revoked'); } catch (e) {}
 
   try {
     window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
