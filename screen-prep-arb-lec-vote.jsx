@@ -1152,6 +1152,10 @@ function ScreenVote({ go, tweaks }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
   const [restoredFromPrevious, setRestoredFromPrevious] = useState(false);
+  // Mode "édition" : quand le vote a déjà été soumis, on cache la liste des
+  // sliders par défaut et on affiche juste le classement + bouton "Modifier".
+  // Évite la re-saisie complète si l'utilisateur veut juste voir le résultat.
+  const [editMode, setEditMode] = useState(true);
   // Classement collectif live (agrégation des votes de TOUS les votants)
   const [collective, setCollective] = useState([]); // [{ pid, avg, count, motmCount }]
   const [voterCount, setVoterCount] = useState(0);
@@ -1197,6 +1201,7 @@ function ScreenVote({ go, tweaks }) {
     setSubmitted(false);
     setSendError(null);
     setRestoredFromPrevious(false);
+    setEditMode(true); // Par défaut : édition (cas premier vote)
     if (!selectedMatchId) return;
     const voterId = window.cddSync?.voterId;
     if (!voterId) return;
@@ -1207,6 +1212,7 @@ function ScreenVote({ go, tweaks }) {
         if (stored.motm) setMotm(stored.motm);
         if (Array.isArray(stored.ns)) setNsSet(new Set(stored.ns));
         setRestoredFromPrevious(true);
+        setEditMode(false); // Vote déjà soumis → lecture seule par défaut
         console.log(`[vote] vote précédent restauré pour matchId=${selectedMatchId} (${Object.keys(stored.ratings).length} notes)`);
       }
     } catch (e) {}
@@ -1388,7 +1394,8 @@ function ScreenVote({ go, tweaks }) {
               </div>
             );
           })()}
-          <button className="btn-cta ghost" style={{marginTop:14}} onClick={() => setSubmitted(false)}>← Modifier mes notes</button>
+          <button className="btn-cta ghost" style={{marginTop:14}}
+            onClick={() => { setSubmitted(false); setEditMode(true); }}>← Modifier mes notes</button>
           {playedMatches.length > 1 && (
             <button className="btn-cta ghost"
               style={{marginTop:8}}
@@ -1550,7 +1557,9 @@ function ScreenVote({ go, tweaks }) {
           color:'var(--acc, #c8f169)', fontWeight:700,
           textAlign:'center',
         }}>
-          ✓ Vote précédent restauré — modifie et resoumets pour mettre à jour
+          {editMode
+            ? '✓ Vote précédent restauré — modifie et resoumets pour mettre à jour'
+            : '✓ Tu as déjà voté ce match'}
         </div>
       )}
 
@@ -1628,6 +1637,26 @@ function ScreenVote({ go, tweaks }) {
         );
       })()}
 
+      {/* Mode lecture : tu as déjà voté → on n'affiche QUE le bouton "Modifier".
+          La page reste compacte (hero + sélecteur + classement collectif au-dessus). */}
+      {!editMode && (
+        <div style={{padding:'0 14px 16px'}}>
+          <button onClick={() => setEditMode(true)}
+            style={{
+              width:'100%', padding:'12px 16px',
+              background:'rgba(200,241,105,.08)',
+              border:'1px solid rgba(200,241,105,.30)',
+              borderRadius:11, color:'#c8f169',
+              fontSize:13, fontWeight:800, letterSpacing:'.04em',
+              cursor:'pointer',
+            }}>
+            ✎ Modifier mes notes
+          </button>
+        </div>
+      )}
+
+      {/* Mode édition : formulaire complet (progress, rappel, MOTM, liste, submit) */}
+      {editMode && (<>
       <div className="vote-progress">
         <div className="vote-progress-bar">
           <div className="vote-progress-fill" style={{width: starters.length ? `${(treated / starters.length) * 100}%` : '0%'}}/>
@@ -1732,6 +1761,7 @@ function ScreenVote({ go, tweaks }) {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }
