@@ -2214,7 +2214,10 @@ async function pullCloudData() {
   // Permet à un adjoint / parent / joueur / 2e device coach de voir le
   // match qui tourne sur le téléphone du coach principal.
   try {
+    console.info('[liveMatch] scan ' + mergedTeams.length + ' équipes pour pointeur cloud…');
     const teamsWithLive = mergedTeams.filter(t => t && t.liveMatch && t.liveMatch.matchId);
+    console.info('[liveMatch] équipes avec match en cours :', teamsWithLive.length,
+      teamsWithLive.map(t => ({ id: t.id, matchId: t.liveMatch && t.liveMatch.matchId })));
     for (const t of teamsWithLive) {
       const lm = t.liveMatch;
       const lmId = String(lm.matchId);

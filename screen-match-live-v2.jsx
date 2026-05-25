@@ -793,20 +793,47 @@ function ScreenMatchV2({ go, tweaks }) {
   // qu'un match tournait (bug Florian 26/05/2026).
   useEffectMV(() => {
     if (!M || M.notStarted || M.st === 'finished') return;
-    if (!window.cddData?.setTeamLiveMatch) return;
-    if (!M.teamId || !M.id) return;
-    window.cddData.setTeamLiveMatch(M.teamId, M.id)
-      .catch(e => console.warn('[liveMatch] push at mount:', e.message));
+    if (!window.cddData?.setTeamLiveMatch) {
+      console.warn('[liveMatch] mount: cddData.setTeamLiveMatch indisponible');
+      return;
+    }
+    // Fallback teamId : si M.teamId manque (cas historique), on prend
+    // l'équipe active courante. Au moins UN des deux doit être présent.
+    const teamId = M.teamId || (window.CDD?.getActiveTeam?.()?.id) || null;
+    if (!teamId || !M.id) {
+      console.warn('[liveMatch] mount: teamId/matchId manquant', { teamId, matchId: M.id });
+      return;
+    }
+    console.info('[liveMatch] push team.liveMatch au mount →', teamId, M.id);
+    window.cddData.setTeamLiveMatch(teamId, M.id)
+      .then(r => console.info('[liveMatch] ✓ mount push OK', r))
+      .catch(e => console.warn('[liveMatch] mount push FAIL:', e.message));
   }, [M && M.id, M && M.st, M && M.notStarted]);
 
   // Push cloud fire-and-forget : permet aux parents/adjoints/joueurs absents
   // de suivre le LIVE en temps réel via watchMatchFromCloud. Ne bloque pas
   // l'UX coach si Firestore est lent ou indisponible.
+  // ⚠ Pousse AUSSI le pointeur team.liveMatch à chaque tick (auto-rattrapage
+  // pour les cas où le useEffect au mount n'aurait pas fonctionné — caches,
+  // matchs commencés avant la mise à jour du code, etc.).
   const _pushLive = (M) => {
     if (!M || M.notStarted || M.st === 'finished') return;
     if (!window.cddSync?.saveMatchToCloud) return;
     window.cddSync.saveMatchToCloud(M)
       .catch(e => console.warn('[match-live] cloud push:', e.message));
+    // Auto-rattrapage du pointeur live : fallback teamId via getActiveTeam
+    // si M.teamId est manquant (matchs anciens créés sans teamId).
+    try {
+      const teamId = M.teamId || (window.CDD?.getActiveTeam?.()?.id) || null;
+      if (teamId && M.id && window.cddData?.setTeamLiveMatch) {
+        console.info('[liveMatch] push team.liveMatch tick →', teamId, M.id);
+        window.cddData.setTeamLiveMatch(teamId, M.id)
+          .catch(e => console.warn('[liveMatch] tick push fail', e.message));
+      } else {
+        console.warn('[liveMatch] tick push skipped — teamId=', teamId,
+          'matchId=', M.id, 'cddData ready?', !!window.cddData?.setTeamLiveMatch);
+      }
+    } catch (e) { console.warn('[liveMatch] tick push exception', e.message); }
   };
 
   const rerender = () => {
