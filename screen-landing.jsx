@@ -128,6 +128,9 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
   const [email, setEmail] = useLS('');
   const [name, setName] = useLS('');
   const [linkInput, setLinkInput] = useLS('');
+  // Rôle choisi par l'utilisateur sur le role-pick (pour afficher un hint
+  // contextuel dans la page paste-link : "Tu as besoin d'un lien parent…").
+  const [roleHint, setRoleHint] = useLS('');
   // #54 — Phase B : connexion par lien magique email.
   const [sentTo, setSentTo] = useLS('');     // email auquel le lien a été envoyé
   const [sending, setSending] = useLS(false); // envoi en cours
@@ -228,26 +231,38 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
 
   // #55 — Bouton "Continuer avec Google" (méthode principale, zéro spam)
   const googleButton = (role) => (
-    <button onClick={() => googleSignIn(role)} disabled={sending} style={{
-      display:'flex', alignItems:'center', justifyContent:'center', gap:10,
-      width:'100%', padding:'13px 16px', borderRadius:12,
-      background:'#fff', color:'#1f1f1f', border:'none',
-      fontFamily:'inherit', fontSize:14, fontWeight:700,
-      cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1,
-    }}>
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62z"/>
-        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
-        <path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.05l3.01-2.33z"/>
-        <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
-      </svg>
-      {sending ? 'Connexion…' : 'Continuer avec Google'}
-    </button>
+    <div style={{position:'relative'}}>
+      <span style={{
+        position:'absolute', top:-7, right:10, zIndex:1,
+        fontSize:9, fontWeight:900, letterSpacing:'.06em',
+        padding:'2px 7px', borderRadius:5, whiteSpace:'nowrap',
+        background:'#c8f169', color:'#0a0e14',
+        boxShadow:'0 2px 6px rgba(0,0,0,.35)',
+      }}>RECOMMANDÉ · PLUS RAPIDE</span>
+      <button onClick={() => googleSignIn(role)} disabled={sending} style={{
+        display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+        width:'100%', padding:'14px 16px', borderRadius:12,
+        background:'#fff', color:'#1f1f1f', border:'none',
+        fontFamily:'inherit', fontSize:14.5, fontWeight:800,
+        cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1,
+        boxShadow:'0 4px 14px rgba(255,255,255,0.10)',
+      }}>
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.05l3.01-2.33z"/>
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+        </svg>
+        {sending ? 'Connexion…' : 'Continuer avec Google'}
+      </button>
+    </div>
   );
   const orSep = (
-    <div style={{display:'flex', alignItems:'center', gap:10, margin:'2px 0'}}>
+    <div style={{display:'flex', alignItems:'center', gap:10, margin:'8px 0 2px'}}>
       <div style={{flex:1, height:1, background:'rgba(255,255,255,0.12)'}}/>
-      <span style={{fontSize:10.5, opacity:0.5, fontWeight:700, letterSpacing:'.04em'}}>OU PAR EMAIL</span>
+      <span style={{fontSize:10, opacity:0.55, fontWeight:700, letterSpacing:'.06em'}}>
+        OU PAR EMAIL (PAS DE COMPTE GOOGLE ?)
+      </span>
       <div style={{flex:1, height:1, background:'rgba(255,255,255,0.12)'}}/>
     </div>
   );
@@ -569,23 +584,23 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             letterSpacing:'.08em', marginBottom:10, paddingLeft:4,
           }}>QUI ES-TU ?</div>
 
-          <button onClick={() => setMode('coach-signup')} style={{
+          <button onClick={() => { setRoleHint(''); setMode('role-pick'); }} style={{
             ...cardBase, marginBottom:10,
             background:'rgba(200,241,105,0.08)', border:'1px solid rgba(200,241,105,0.35)',
           }}>
             <div style={{display:'flex', alignItems:'center', gap:14}}>
-              <span style={{fontSize:32}}>🏆</span>
+              <span style={{fontSize:32}}>🚀</span>
               <div style={{flex:1, minWidth:0}}>
-                <div style={{fontWeight:900, fontSize:15, color:'#c8f169'}}>Je suis coach</div>
+                <div style={{fontWeight:900, fontSize:15, color:'#c8f169'}}>Je suis nouveau</div>
                 <div style={{fontSize:12, opacity:0.65, marginTop:4, lineHeight:1.4}}>
-                  Je crée mon club et je gère mes équipes
+                  Coach, parent, joueur, adjoint, lecteur — choisis ton rôle
                 </div>
               </div>
               <span style={{opacity:0.5, fontSize:18}}>›</span>
             </div>
           </button>
 
-          <button onClick={() => setMode('paste-link')} style={{
+          <button onClick={() => { setRoleHint(''); setMode('paste-link'); }} style={{
             ...cardBase, marginBottom:10,
           }}>
             <div style={{display:'flex', alignItems:'center', gap:14}}>
@@ -644,6 +659,94 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             Coach du Dimanche · v2<br/>
             Aucune donnée n'est visible tant que tu n'as pas créé un compte<br/>
             ou utilisé un lien d'invitation.
+          </div>
+        </>
+      )}
+
+      {/* MODE ROLE-PICK — sélection du rôle pour un nouvel utilisateur.
+          - Coach principal : self-signup (création de club autonome)
+          - Adjoint/Parent/Joueur/Lecteur : nécessitent un lien d'invitation
+            envoyé par le coach principal. On les oriente vers paste-link
+            avec un hint contextualisé. */}
+      {mode === 'role-pick' && (
+        <>
+          <button onClick={() => setMode('home')} style={{
+            background:'transparent', border:'none', color:'rgba(255,255,255,0.6)',
+            cursor:'pointer', textAlign:'left', padding:'4px 0 8px',
+            fontFamily:'inherit', fontSize:13,
+          }}>‹ Retour</button>
+
+          <div style={{
+            fontSize:11, fontWeight:800, opacity:0.55,
+            letterSpacing:'.08em', marginBottom:10, paddingLeft:4,
+          }}>QUEL EST TON RÔLE ?</div>
+
+          {/* Coach principal — seul rôle en self-service */}
+          <button onClick={() => setMode('coach-signup')} style={{
+            ...cardBase, marginBottom:10,
+            background:'rgba(200,241,105,0.08)', border:'1px solid rgba(200,241,105,0.35)',
+          }}>
+            <div style={{display:'flex', alignItems:'center', gap:14}}>
+              <span style={{fontSize:30}}>🏆</span>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontWeight:900, fontSize:14.5, color:'#c8f169'}}>Coach principal</div>
+                <div style={{fontSize:11.5, opacity:0.65, marginTop:3, lineHeight:1.4}}>
+                  Je crée mon club et je gère mes équipes
+                </div>
+              </div>
+              <span style={{
+                fontSize:9, fontWeight:900, letterSpacing:'.06em',
+                padding:'3px 7px', borderRadius:5, whiteSpace:'nowrap',
+                background:'rgba(200,241,105,.18)', color:'#c8f169',
+              }}>SELF-SERVICE</span>
+            </div>
+          </button>
+
+          {/* Rôles invités — tous redirigent vers paste-link */}
+          {[
+            { id:'adjoint', ic:'🎽', label:'Coach adjoint',
+              desc:"J'aide un coach principal à gérer son équipe",
+              hint:"Demande à ton coach principal de t'envoyer un lien d'invitation « adjoint » sur WhatsApp ou SMS." },
+            { id:'parent', ic:'👪', label:'Parent',
+              desc:"Je suis le parent d'un joueur de l'équipe",
+              hint:"Ton coach (ou le coach de ton enfant) doit t'envoyer un lien d'invitation « parent » via WhatsApp ou SMS." },
+            { id:'joueur', ic:'⚽', label:'Joueur',
+              desc:'Je joue dans une équipe',
+              hint:"Demande à ton coach un lien d'invitation « joueur » pour rejoindre l'équipe." },
+            { id:'lecteur', ic:'👁️', label:'Lecteur / supporter',
+              desc:'Je suis fan / je suis les résultats',
+              hint:"Demande au club un lien d'invitation « lecteur » (accès lecture seule)." },
+          ].map(role => (
+            <button key={role.id}
+              onClick={() => { setRoleHint(role.id); setMode('paste-link'); }}
+              style={{...cardBase, marginBottom:10}}>
+              <div style={{display:'flex', alignItems:'center', gap:14}}>
+                <span style={{fontSize:30}}>{role.ic}</span>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontWeight:900, fontSize:14.5}}>{role.label}</div>
+                  <div style={{fontSize:11.5, opacity:0.65, marginTop:3, lineHeight:1.4}}>
+                    {role.desc}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize:9, fontWeight:900, letterSpacing:'.06em',
+                  padding:'3px 7px', borderRadius:5, whiteSpace:'nowrap',
+                  background:'rgba(125,211,252,.12)', color:'#7dd3fc',
+                }}>SUR INVITE</span>
+              </div>
+            </button>
+          ))}
+
+          <div style={{
+            marginTop:14, padding:'12px 14px', borderRadius:10,
+            background:'rgba(125,211,252,0.05)',
+            border:'1px solid rgba(125,211,252,0.20)',
+            fontSize:11.5, color:'rgba(255,255,255,.75)', lineHeight:1.6,
+          }}>
+            💡 <b>Pourquoi seul le coach est en self-service ?</b><br/>
+            L'app sert à un coach pour gérer son équipe : il invite ensuite
+            ses parents, joueurs, adjoints et lecteurs en envoyant un lien
+            personnalisé. Si tu n'as pas ce lien, demande-le à ton coach.
           </div>
         </>
       )}
@@ -962,7 +1065,7 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
       {/* MODE PASTE LINK */}
       {mode === 'paste-link' && (
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
-          <button onClick={() => setMode('home')} style={{
+          <button onClick={() => { setRoleHint(''); setMode(roleHint ? 'role-pick' : 'home'); }} style={{
             background:'transparent', border:'none', color:'rgba(255,255,255,0.6)',
             cursor:'pointer', textAlign:'left', padding:'4px 0',
             fontFamily:'inherit', fontSize:13,
@@ -973,6 +1076,35 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             Ton coach (ou ton parent) t'a envoyé un lien sur WhatsApp / SMS / Email.
             Colle-le ici pour accéder à l'équipe.
           </div>
+
+          {/* Hint contextuel selon le rôle sélectionné sur role-pick */}
+          {roleHint && (() => {
+            const ROLE_HINT = {
+              adjoint: { ic:'🎽', label:'Coach adjoint', msg:"Demande à ton coach principal de t'envoyer un lien d'invitation « adjoint » sur WhatsApp ou SMS." },
+              parent:  { ic:'👪', label:'Parent',        msg:"Ton coach (ou le coach de ton enfant) doit t'envoyer un lien d'invitation « parent » via WhatsApp ou SMS." },
+              joueur:  { ic:'⚽', label:'Joueur',        msg:"Demande à ton coach un lien d'invitation « joueur » pour rejoindre l'équipe." },
+              lecteur: { ic:'👁️', label:'Lecteur / supporter', msg:"Demande au club un lien d'invitation « lecteur » (accès lecture seule)." },
+            };
+            const h = ROLE_HINT[roleHint];
+            if (!h) return null;
+            return (
+              <div style={{
+                padding:'12px 14px', borderRadius:10,
+                background:'rgba(125,211,252,0.06)',
+                border:'1px solid rgba(125,211,252,0.30)',
+                fontSize:12, lineHeight:1.5, color:'rgba(255,255,255,.85)',
+                display:'flex', gap:10, alignItems:'flex-start',
+              }}>
+                <span style={{fontSize:22}}>{h.ic}</span>
+                <div>
+                  <div style={{fontWeight:800, color:'#7dd3fc', fontSize:12.5, marginBottom:3}}>
+                    Tu te connectes en tant que {h.label.toLowerCase()}
+                  </div>
+                  {h.msg}
+                </div>
+              </div>
+            );
+          })()}
 
           <label style={{display:'flex', flexDirection:'column', gap:6}}>
             <span style={{fontSize:11, fontWeight:700, opacity:0.7, letterSpacing:'.04em'}}>
