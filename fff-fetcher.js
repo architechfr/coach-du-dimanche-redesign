@@ -243,6 +243,124 @@
     parseFFFUrl,
 
     /**
+     * Recherche de clubs par nom (fuzzy). Utilise le filtre Hydra
+     * text_filter du DOFA. Renvoie max 20 résultats.
+     * Cache 1h pour éviter de spammer l'API pendant la frappe.
+     */
+    async searchClubs(query) {
+      const q = (query || '').trim();
+      if (q.length < 2) {
+        return { ok: false, data: [], error: 'Tape au moins 2 caractères.' };
+      }
+      const cacheKey = `clubs:${q.toLowerCase()}`;
+      const cached = getCache(cacheKey);
+      const ONE_HOUR = 60 * 60 * 1000;
+      if (cached && (Date.now() - cached.t) < ONE_HOUR) {
+        return { ok: true, data: cached.v, source: 'cache' };
+      }
+      // Plusieurs variantes de paramètre selon les versions de DOFA.
+      const attempts = [
+        `/clubs.json?filter[]=&text_filter=${encodeURIComponent(q)}`,
+        `/clubs.json?text_filter=${encodeURIComponent(q)}`,
+        `/clubs.json?short_name=${encodeURIComponent(q)}`,
+        `/clubs.json?name=${encodeURIComponent(q)}`,
+      ];
+      for (const path of attempts) {
+        try {
+          const data = await fffFetch(path);
+          const arr = Array.isArray(data) ? data : (data['hydra:member'] || data.data || []);
+          if (arr.length > 0) {
+            const top = arr.slice(0, 20).map(c => ({
+              cl_no:    c.cl_no || c.id || null,
+              shortName: c.short_name || '',
+              name:     c.name || c.short_name || '',
+              locality: c.locality || c.city || '',
+              logo:     c.logo || null,
+            })).filter(c => c.cl_no);
+            setCache(cacheKey, top);
+            return { ok: true, data: top, source: 'live' };
+          }
+        } catch (e) { /* try next variant */ }
+      }
+      return { ok: false, data: [], error: 'Aucun club trouvé (vérifie l\'orthographe ou utilise la méthode URL).' };
+    },
+
+    /**
+     * Liste les compétitions où un club est engagé cette saison.
+     * Pour chaque équipe du club, on lit ses engagements et on aplatit
+     * tout en une seule liste prête à afficher.
+     * Cache 1h.
+     */
+    async getClubCompetitions(clubId) {
+      if (!clubId) return { ok: false, data: [], error: 'clubId requis' };
+      const cacheKey = `clubCompets:${clubId}`;
+      const cached = getCache(cacheKey);
+      const ONE_HOUR = 60 * 60 * 1000;
+      if (cached && (Date.now() - cached.t) < ONE_HOUR) {
+        return { ok: true, data: cached.v, source: 'cache' };
+      }
+
+      // Étape 1 : équipes du club
+      let teams = [];
+      const teamsAttempts = [
+        `/clubs/${encodeURIComponent(clubId)}/equipes.json`,
+        `/equipes.json?filter[]=&club.cl_no=${encodeURIComponent(clubId)}`,
+      ];
+      for (const path of teamsAttempts) {
+        try {
+          const data = await fffFetch(path);
+          const arr = Array.isArray(data) ? data : (data['hydra:member'] || data.data || []);
+          if (arr.length > 0) { teams = arr; break; }
+        } catch (e) { /* try next */ }
+      }
+      if (teams.length === 0) {
+        return { ok: false, data: [], error: 'Aucune équipe trouvée pour ce club.' };
+      }
+
+      // Étape 2 : engagements de chaque équipe (en parallèle, max 15)
+      const out = [];
+      const lim = Math.min(teams.length, 15);
+      await Promise.all(teams.slice(0, lim).map(async (t) => {
+        const eqNo = t.eq_no || t.id;
+        if (!eqNo) return;
+        const teamLabel = t.short_name || t.name || `Équipe ${eqNo}`;
+        const engAttempts = [
+          `/equipes/${encodeURIComponent(eqNo)}/engagements.json`,
+          `/engagements.json?filter[]=&equipe.eq_no=${encodeURIComponent(eqNo)}`,
+        ];
+        for (const path of engAttempts) {
+          try {
+            const data = await fffFetch(path);
+            const arr = Array.isArray(data) ? data : (data['hydra:member'] || data.data || []);
+            arr.forEach(e => {
+              const compet = e.competition || e.compet || {};
+              const poule  = e.poule || {};
+              const phase  = e.phase || {};
+              const competId = compet.cp_no || compet.id || null;
+              if (!competId) return;
+              out.push({
+                teamLabel,
+                teamId: eqNo,
+                competId: String(competId),
+                competName: compet.name || compet.short_name || '(compétition sans nom)',
+                phase:  String(phase.stage_number || phase.number || '1'),
+                group:  String(poule.stage_number || poule.number || '1'),
+                season: compet.season?.year || compet.season_year || '',
+              });
+            });
+            if (arr.length > 0) break;
+          } catch (e) { /* try next */ }
+        }
+      }));
+
+      if (out.length === 0) {
+        return { ok: false, data: [], error: 'Aucune compétition trouvée pour ce club cette saison.' };
+      }
+      setCache(cacheKey, out);
+      return { ok: true, data: out, source: 'live' };
+    },
+
+    /**
      * Normalize one ranking row — uses CONFIRMED DOFA fields (v39.2 spec):
      *   rank, point_count, total_games_count, won_games_count, draw_games_count,
      *   lost_games_count, goals_for_count, goals_against_count, goals_diff,

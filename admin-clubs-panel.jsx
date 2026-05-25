@@ -46,6 +46,72 @@ function AdminClubsPanel({ onClose }) {
   const [fffTesting, setFffTesting] = React.useState(false);
   const [fffTestResult, setFffTestResult] = React.useState(null);
   const [fffSaving, setFffSaving] = React.useState(false);
+  // Recherche FFF par nom de club (méthode 0 — la plus simple pour un coach)
+  const [fffSearch, setFffSearch] = React.useState('');
+  const [fffSearchBusy, setFffSearchBusy] = React.useState(false);
+  const [fffSearchResults, setFffSearchResults] = React.useState(null); // array | null
+  const [fffSearchError, setFffSearchError] = React.useState('');
+  const [fffPickedClub, setFffPickedClub] = React.useState(null);       // {cl_no, name, shortName}
+  const [fffCompets, setFffCompets] = React.useState(null);             // array | null
+  const [fffCompetsBusy, setFffCompetsBusy] = React.useState(false);
+  const [fffCompetsError, setFffCompetsError] = React.useState('');
+
+  const runFffClubSearch = async () => {
+    if (!window.CDD_FFF || !window.CDD_FFF.searchClubs) {
+      setFffSearchError('Module FFF non chargé.');
+      return;
+    }
+    setFffSearchBusy(true);
+    setFffSearchError('');
+    setFffSearchResults(null);
+    setFffPickedClub(null);
+    setFffCompets(null);
+    try {
+      const res = await window.CDD_FFF.searchClubs(fffSearch);
+      if (res && res.ok) setFffSearchResults(res.data);
+      else { setFffSearchError(res?.error || 'Recherche échouée.'); setFffSearchResults([]); }
+    } catch (e) {
+      setFffSearchError((e && e.message) || String(e));
+      setFffSearchResults([]);
+    } finally {
+      setFffSearchBusy(false);
+    }
+  };
+
+  const pickFffClub = async (club) => {
+    setFffPickedClub(club);
+    setFffCompets(null);
+    setFffCompetsError('');
+    setFffCompetsBusy(true);
+    // Pré-remplit déjà le clubId / label dans le formulaire — l'utilisateur
+    // peut sauvegarder dès maintenant s'il connaît le competId/group à la main.
+    setFffForm(prev => ({
+      ...prev,
+      clubId: String(club.cl_no || ''),
+      label: prev.label || (club.shortName || club.name || ''),
+    }));
+    try {
+      const res = await window.CDD_FFF.getClubCompetitions(club.cl_no);
+      if (res && res.ok) setFffCompets(res.data);
+      else { setFffCompetsError(res?.error || 'Lecture des compétitions échouée.'); setFffCompets([]); }
+    } catch (e) {
+      setFffCompetsError((e && e.message) || String(e));
+      setFffCompets([]);
+    } finally {
+      setFffCompetsBusy(false);
+    }
+  };
+
+  const pickFffCompetition = (cmp) => {
+    setFffForm({
+      clubId:   String(fffPickedClub?.cl_no || cmp.clubId || ''),
+      competId: String(cmp.competId || ''),
+      phase:    String(cmp.phase || '1'),
+      group:    String(cmp.group || '1'),
+      label:    (cmp.teamLabel ? cmp.teamLabel + ' — ' : '') + (cmp.competName || ''),
+    });
+    setFffTestResult(null);
+  };
 
   const openFffEditor = (club, team) => {
     const cur = team.fffConfig || team.fff || {};
@@ -58,6 +124,13 @@ function AdminClubsPanel({ onClose }) {
     });
     setFffUrl('');
     setFffTestResult(null);
+    // Reset recherche pour repartir sur un état propre
+    setFffSearch('');
+    setFffSearchResults(null);
+    setFffSearchError('');
+    setFffPickedClub(null);
+    setFffCompets(null);
+    setFffCompetsError('');
     setFffEditFor({ club, team });
   };
 
@@ -586,6 +659,156 @@ function AdminClubsPanel({ onClose }) {
                 <span style={{fontSize:12, color:'rgba(255,255,255,.55)', marginLeft:6}}>
                   · {fffEditFor.team.category}
                 </span>
+              )}
+            </div>
+
+            {/* Section : Recherche par nom de club (méthode la plus simple) */}
+            <div style={{
+              padding:'12px 12px', borderRadius:10, marginBottom:12,
+              background:'rgba(200,241,105,0.05)',
+              border:'1px dashed rgba(200,241,105,0.30)',
+            }}>
+              <div style={{fontSize:11, fontWeight:800, color:'#c8f169', marginBottom:6, letterSpacing:'.04em'}}>
+                ⓪ Méthode auto — chercher le club FFF
+              </div>
+              <div style={{fontSize:11, color:'rgba(255,255,255,.6)', lineHeight:1.5, marginBottom:8}}>
+                Tape le nom (ou un fragment) du club et choisis la
+                compétition. Les 4 IDs se remplissent tout seuls.
+              </div>
+              <div style={{display:'flex', gap:6, marginBottom:8}}>
+                <input type="text"
+                  value={fffSearch}
+                  onChange={e => setFffSearch(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') runFffClubSearch(); }}
+                  placeholder="ex. FC MAGNY ou simplement MAGNY"
+                  style={{
+                    flex:1, padding:'8px 10px', borderRadius:7, fontSize:12,
+                    background:'rgba(0,0,0,.35)', color:'#fff',
+                    border:'1px solid rgba(255,255,255,.15)', outline:'none',
+                  }}/>
+                <button onClick={runFffClubSearch}
+                  disabled={fffSearchBusy || fffSearch.trim().length < 2}
+                  style={{
+                    padding:'8px 12px', borderRadius:7, fontSize:12, fontWeight:800,
+                    background: (fffSearchBusy || fffSearch.trim().length < 2) ? 'rgba(255,255,255,.08)' : '#c8f169',
+                    color: (fffSearchBusy || fffSearch.trim().length < 2) ? 'rgba(255,255,255,.4)' : '#062012',
+                    border:'none',
+                    cursor: (fffSearchBusy || fffSearch.trim().length < 2) ? 'default' : 'pointer',
+                  }}>
+                  {fffSearchBusy ? '⟳' : '🔍 Chercher'}
+                </button>
+              </div>
+
+              {/* Résultats clubs */}
+              {fffSearchError && (
+                <div style={{
+                  fontSize:11.5, color:'#ff8a8a', padding:'6px 10px', borderRadius:7,
+                  background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.30)',
+                  marginBottom:8,
+                }}>
+                  ⚠ {fffSearchError}
+                </div>
+              )}
+              {fffSearchResults && fffSearchResults.length > 0 && !fffPickedClub && (
+                <div style={{
+                  display:'flex', flexDirection:'column', gap:4,
+                  maxHeight:200, overflow:'auto',
+                  paddingRight:4,
+                }}>
+                  {fffSearchResults.map(c => (
+                    <button key={c.cl_no}
+                      onClick={() => pickFffClub(c)}
+                      style={{
+                        textAlign:'left', padding:'8px 10px', borderRadius:7,
+                        background:'rgba(255,255,255,0.04)',
+                        border:'1px solid rgba(255,255,255,0.10)',
+                        color:'#fff', cursor:'pointer', fontSize:12,
+                      }}>
+                      <div style={{fontWeight:800}}>
+                        {c.shortName || c.name}
+                      </div>
+                      {(c.locality || c.name !== c.shortName) && (
+                        <div style={{fontSize:10.5, opacity:0.55, marginTop:2}}>
+                          {c.name && c.name !== c.shortName ? c.name : ''}
+                          {c.locality ? ' · ' + c.locality : ''}
+                          {' · #' + c.cl_no}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Club choisi → liste des compétitions */}
+              {fffPickedClub && (
+                <div style={{
+                  padding:'8px 10px', borderRadius:7, marginTop:8,
+                  background:'rgba(200,241,105,0.06)',
+                  border:'1px solid rgba(200,241,105,0.25)',
+                }}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                    <div style={{fontSize:12, fontWeight:800, color:'#c8f169'}}>
+                      ✓ {fffPickedClub.shortName || fffPickedClub.name}
+                      <span style={{fontWeight:500, opacity:0.6, marginLeft:6}}>
+                        #{fffPickedClub.cl_no}
+                      </span>
+                    </div>
+                    <button onClick={() => { setFffPickedClub(null); setFffCompets(null); }}
+                      style={{
+                        background:'transparent', border:'none', color:'rgba(255,255,255,0.5)',
+                        fontSize:11, cursor:'pointer',
+                      }}>changer</button>
+                  </div>
+                  {fffCompetsBusy && (
+                    <div style={{fontSize:11, opacity:0.6, padding:'6px 0'}}>
+                      ⟳ Lecture des compétitions…
+                    </div>
+                  )}
+                  {fffCompetsError && (
+                    <div style={{
+                      fontSize:11.5, color:'#ff8a8a', padding:'4px 0',
+                    }}>⚠ {fffCompetsError}</div>
+                  )}
+                  {fffCompets && fffCompets.length > 0 && (
+                    <div style={{
+                      display:'flex', flexDirection:'column', gap:3,
+                      maxHeight:220, overflow:'auto', paddingRight:4,
+                    }}>
+                      {fffCompets.map((cmp, idx) => (
+                        <button key={idx}
+                          onClick={() => pickFffCompetition(cmp)}
+                          style={{
+                            textAlign:'left', padding:'7px 9px', borderRadius:6,
+                            background: (fffForm.competId === cmp.competId && fffForm.group === cmp.group)
+                              ? 'rgba(200,241,105,0.18)' : 'rgba(255,255,255,0.03)',
+                            border:'1px solid ' + (
+                              (fffForm.competId === cmp.competId && fffForm.group === cmp.group)
+                                ? 'rgba(200,241,105,0.45)' : 'rgba(255,255,255,0.08)'
+                            ),
+                            color:'#fff', cursor:'pointer', fontSize:11.5,
+                          }}>
+                          <div style={{fontWeight:700}}>
+                            {cmp.teamLabel}
+                          </div>
+                          <div style={{fontSize:10.5, opacity:0.65, marginTop:2}}>
+                            {cmp.competName} · poule {cmp.group}
+                            {cmp.season ? ' · ' + cmp.season : ''}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {fffCompets && fffCompets.length === 0 && !fffCompetsBusy && !fffCompetsError && (
+                    <div style={{fontSize:11, opacity:0.55}}>
+                      Aucune compétition trouvée pour ce club.
+                    </div>
+                  )}
+                </div>
+              )}
+              {fffSearchResults && fffSearchResults.length === 0 && !fffSearchError && (
+                <div style={{fontSize:11, opacity:0.55, padding:'4px 0'}}>
+                  Aucun club correspondant — essaie un autre fragment.
+                </div>
               )}
             </div>
 
