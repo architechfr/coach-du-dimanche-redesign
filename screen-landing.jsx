@@ -579,6 +579,63 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
       {/* MODE HOME : 3 chemins d'entrée */}
       {mode === 'home' && (
         <>
+          {/* Bandeau explicatif quand l'accès vient d'être révoqué.
+              L'utilisateur est connecté (Firebase Auth) mais n'a plus aucune
+              membership → on lui explique pourquoi il atterrit ici et comment
+              récupérer l'accès (un coach doit lui envoyer un nouveau lien). */}
+          {(() => {
+            let revoked = false;
+            let email = '';
+            try {
+              revoked = localStorage.getItem('cdd_access_revoked') === 'true';
+              email = (localStorage.getItem('cdd_user_email') || '').trim();
+            } catch (e) {}
+            if (!revoked) return null;
+            return (
+              <div style={{
+                marginBottom:14, padding:'14px 14px', borderRadius:12,
+                background:'rgba(251,191,36,0.10)',
+                border:'1px solid rgba(251,191,36,0.40)',
+              }}>
+                <div style={{
+                  fontSize:11, fontWeight:900, letterSpacing:'.10em',
+                  color:'#fbbf24', textTransform:'uppercase', marginBottom:6,
+                }}>⚠ Accès retiré</div>
+                <div style={{fontSize:13.5, fontWeight:700, color:'#fff', lineHeight:1.4, marginBottom:8}}>
+                  Ce compte{email ? <> (<b>{email}</b>)</> : ''} n'est rattaché à
+                  aucune équipe.
+                </div>
+                <div style={{fontSize:12.5, color:'rgba(255,255,255,0.75)', lineHeight:1.55, marginBottom:10}}>
+                  Soit ton accès a été révoqué par le coach principal, soit ton
+                  invitation n'a pas encore été créée.
+                  <br/><br/>
+                  <b style={{color:'#c8f169'}}>Pour récupérer l'accès :</b>
+                  {' '}demande à ton coach (ou à un adjoint) de te générer un
+                  nouveau lien d'invitation et de te l'envoyer par WhatsApp,
+                  SMS ou email. Tu pourras ensuite le coller ci-dessous.
+                </div>
+                <button onClick={() => {
+                  try {
+                    if (window.cddAuth && window.cddAuth.signOut) {
+                      window.cddAuth.signOut();
+                    } else {
+                      localStorage.removeItem('cdd_user_email');
+                      localStorage.removeItem('cdd_access_revoked');
+                    }
+                  } catch (e) {}
+                  setTimeout(() => window.location.reload(), 200);
+                }} style={{
+                  width:'100%', padding:'9px 12px', borderRadius:8,
+                  background:'rgba(255,255,255,0.06)',
+                  border:'1px solid rgba(255,255,255,0.20)',
+                  color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer',
+                }}>
+                  Me déconnecter et essayer un autre compte
+                </button>
+              </div>
+            );
+          })()}
+
           <div style={{
             fontSize:11, fontWeight:800, opacity:0.55,
             letterSpacing:'.08em', marginBottom:10, paddingLeft:4,
