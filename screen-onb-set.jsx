@@ -1298,6 +1298,14 @@ const ADMIN_EMAIL_APP = 'archi.tech.fr@gmail.com';
 
 function ClubMembersPanel({ clubName, onClose }) {
   const [state, setState] = React.useState({ phase: 'loading', members: [], teams: [], error: '' });
+  const [reloadTick, setReloadTick] = React.useState(0);
+  const [busyKey, setBusyKey] = React.useState(null); // uid+teamId en cours de révocation
+
+  // Email de l'utilisateur courant — pour interdire l'auto-révocation.
+  const myEmail = (() => {
+    try { return (localStorage.getItem('cdd_user_email') || '').trim().toLowerCase(); }
+    catch (e) { return ''; }
+  })();
 
   React.useEffect(() => {
     let alive = true;
@@ -1312,6 +1320,7 @@ function ClubMembersPanel({ clubName, onClose }) {
         if (alive) setState(s => ({ ...s, phase: 'error', error: 'Aucun club actif détecté.' }));
         return;
       }
+      if (alive) setState(s => ({ ...s, phase: 'loading' }));
       try {
         // En parallèle : memberships du club + équipes du club (pour mapper teamId → nom).
         const [list, teams] = await Promise.all([
@@ -1350,7 +1359,53 @@ function ClubMembersPanel({ clubName, onClose }) {
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [reloadTick]);
+
+  // Révoque le rôle d'un membre sur UNE équipe (par attribution).
+  // Protections empilées : on ne propose même pas le bouton pour admin app /
+  // owner / coach / soi-même — ce check est une seconde barrière en cas de
+  // contournement du masquage UI.
+  const revokeAttribution = async (m, teamId, role, teamLbl) => {
+    if (!m || !teamId) return;
+    const isAppAdmin = (m.email || '').toLowerCase() === ADMIN_EMAIL_APP;
+    const isSelf     = (m.email || '').toLowerCase() === myEmail;
+    if (isAppAdmin) { alert('L\'admin de l\'application ne peut pas être révoqué ici.'); return; }
+    if (isSelf)     { alert('Tu ne peux pas révoquer ton propre accès. Utilise « Quitter ce club » dans Mes rattachements.'); return; }
+    if (role === 'coach') {
+      alert('Le coach principal ne peut pas être révoqué directement.\n\nPour le remplacer, demande à l\'admin de TRANSFÉRER le rôle à une autre personne (panneau Admin → Clubs & équipes).');
+      return;
+    }
+    if (role === 'owner') {
+      alert('Le propriétaire du club ne peut pas être révoqué ici.');
+      return;
+    }
+
+    const who = m.displayName ? (m.displayName + ' (' + (m.email || m.uid) + ')')
+                              : (m.email || m.uid);
+    const ROLE_LBL = { adjoint:'Coach adjoint', parent:'Parent', joueur:'Joueur', lecteur:'Lecteur' };
+    const rl = ROLE_LBL[role] || role;
+    if (!confirm(
+      'Révoquer l\'accès de ' + who + ' ?\n\n'
+      + '• Rôle : ' + rl + '\n'
+      + '• Équipe : ' + (teamLbl || teamId) + '\n\n'
+      + 'Cette personne perdra immédiatement l\'accès à cette équipe. '
+      + 'Pour lui redonner accès plus tard, il faudra lui générer un nouveau lien d\'invitation.'
+    )) return;
+
+    const key = m.uid + '_' + teamId;
+    setBusyKey(key);
+    try {
+      const activeClub = window.CDD?.getActiveClub?.() || null;
+      const clubId = activeClub?.id;
+      if (!clubId) throw new Error('Club actif introuvable.');
+      await window.cddData.removeTeamMembership(m.uid, clubId, teamId);
+      setReloadTick(t => t + 1);
+    } catch (e) {
+      alert('Révocation impossible : ' + ((e && e.message) || e));
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   const players = window.CDD_PLAYERS || [];
   const playerName = (pid) => {
@@ -1413,7 +1468,7 @@ function ClubMembersPanel({ clubName, onClose }) {
         let sub = null;
         if (t.role === 'parent') sub = pn ? 'Suit ' + pn : 'Joueur lié manquant';
         if (t.role === 'joueur') sub = pn ? 'Fiche : ' + pn : null;
-        lines.push({ role: t.role, scope: tLabel, sub });
+        lines.push({ role: t.role, scope: tLabel, sub, teamId: tid });
       });
     }
 
@@ -1479,6 +1534,7 @@ function ClubMembersPanel({ clubName, onClose }) {
             {state.members.map(m => {
               const lines = decomposeMembership(m);
               const isAppAdmin = (m.email || '').toLowerCase() === ADMIN_EMAIL_APP;
+              const isSelf     = (m.email || '').toLowerCase() === myEmail;
               return (
                 <div key={m.id || m.uid} style={{
                   padding:'12px 14px', borderRadius:10,
@@ -1489,18 +1545,59 @@ function ClubMembersPanel({ clubName, onClose }) {
                     ? '1px solid rgba(245,196,81,0.30)'
                     : '1px solid rgba(255,255,255,0.08)',
                 }}>
-                  {/* Identité (email) en haut */}
-                  <div style={{
-                    fontSize:13.5, fontWeight:800, marginBottom:8,
-                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                  }}>
-                    {m.email || m.uid || '—'}
+                  {/* Identité : displayName (si dispo) + email en sous-titre */}
+                  <div style={{marginBottom:8}}>
+                    {m.displayName && (
+                      <div style={{
+                        fontSize:14, fontWeight:800,
+                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                      }}>
+                        {m.displayName}
+                        {isSelf && (
+                          <span style={{
+                            fontSize:9.5, fontWeight:800, letterSpacing:'.05em',
+                            marginLeft:8, padding:'2px 6px', borderRadius:4,
+                            background:'rgba(200,241,105,0.18)', color:'#c8f169',
+                            textTransform:'uppercase',
+                          }}>Toi</span>
+                        )}
+                      </div>
+                    )}
+                    <div style={{
+                      fontSize: m.displayName ? 11.5 : 13.5,
+                      fontWeight: m.displayName ? 500 : 800,
+                      opacity: m.displayName ? 0.6 : 1,
+                      marginTop: m.displayName ? 2 : 0,
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                    }}>
+                      {m.email || m.uid || '—'}
+                      {!m.displayName && isSelf && (
+                        <span style={{
+                          fontSize:9.5, fontWeight:800, letterSpacing:'.05em',
+                          marginLeft:8, padding:'2px 6px', borderRadius:4,
+                          background:'rgba(200,241,105,0.18)', color:'#c8f169',
+                          textTransform:'uppercase',
+                        }}>Toi</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Liste des attributions (rôle + équipe) */}
-                  <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
                     {lines.map((ln, idx) => {
                       const meta = ROLE_META[ln.role] || { ic:'•', label: ln.role, color:'#94a3b8' };
+                      // Le bouton « Révoquer » n'apparaît QUE pour les rôles
+                      // d'équipe non-coach, et pas pour soi-même / admin app.
+                      // Une ligne « club-wide » (sans teamId) n'est pas révocable
+                      // ici — ces rôles élevés relèvent du panneau admin.
+                      const teamId = ln.teamId;
+                      const canRevoke = !!teamId
+                                     && !isAppAdmin
+                                     && !isSelf
+                                     && ln.role !== 'coach'
+                                     && ln.role !== 'owner';
+                      const key = m.uid + '_' + (teamId || '');
+                      const isBusy = busyKey === key;
                       return (
                         <div key={idx} style={{display:'flex', alignItems:'flex-start', gap:8}}>
                           <span style={{
@@ -1528,6 +1625,24 @@ function ClubMembersPanel({ clubName, onClose }) {
                               }}>{ln.sub}</div>
                             )}
                           </div>
+                          {canRevoke && (
+                            <button
+                              onClick={() => revokeAttribution(m, teamId, ln.role, ln.scope)}
+                              disabled={isBusy}
+                              style={{
+                                fontSize:10.5, fontWeight:800,
+                                padding:'4px 9px', borderRadius:6,
+                                background: isBusy ? 'rgba(239,68,68,0.04)' : 'rgba(239,68,68,0.10)',
+                                color:'#fca5a5',
+                                border:'1px solid rgba(239,68,68,0.32)',
+                                cursor: isBusy ? 'wait' : 'pointer',
+                                opacity: isBusy ? 0.5 : 1,
+                                flexShrink:0, whiteSpace:'nowrap',
+                              }}
+                              title="Révoque le rôle de cette personne sur cette équipe">
+                              {isBusy ? '…' : '✕ Révoquer'}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -1550,8 +1665,8 @@ function ClubMembersPanel({ clubName, onClose }) {
 
         <div style={{fontSize:10.5, opacity:0.45, marginTop:14, lineHeight:1.5}}>
           Liste des rattachements réels (Firestore). Un même utilisateur peut
-          avoir plusieurs rôles (un par équipe). La révocation d'un membre
-          depuis cet écran arrivera dans une prochaine version.
+          avoir plusieurs rôles (un par équipe). Révoquer un accès coupe
+          immédiatement l'accès de la personne à l'équipe concernée.
         </div>
       </div>
     </div>
