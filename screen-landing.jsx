@@ -584,31 +584,38 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             letterSpacing:'.08em', marginBottom:10, paddingLeft:4,
           }}>QUI ES-TU ?</div>
 
-          <button onClick={() => { setRoleHint(''); setMode('role-pick'); }} style={{
+          {/* SEUL chemin self-service : coach principal qui démarre un club.
+              Tous les autres rôles (parent, joueur, adjoint, lecteur) sont
+              FORCÉMENT invités par un membre existant — pas de fausse promesse. */}
+          <button onClick={() => { setRoleHint(''); setMode('coach-signup'); }} style={{
             ...cardBase, marginBottom:10,
             background:'rgba(200,241,105,0.08)', border:'1px solid rgba(200,241,105,0.35)',
           }}>
             <div style={{display:'flex', alignItems:'center', gap:14}}>
-              <span style={{fontSize:32}}>🚀</span>
+              <span style={{fontSize:32}}>🏆</span>
               <div style={{flex:1, minWidth:0}}>
-                <div style={{fontWeight:900, fontSize:15, color:'#c8f169'}}>Je suis nouveau</div>
+                <div style={{fontWeight:900, fontSize:15, color:'#c8f169'}}>Créer mon club</div>
                 <div style={{fontSize:12, opacity:0.65, marginTop:4, lineHeight:1.4}}>
-                  Coach, parent, joueur, adjoint, lecteur — choisis ton rôle
+                  Je suis coach principal · je démarre un nouveau club
                 </div>
               </div>
               <span style={{opacity:0.5, fontSize:18}}>›</span>
             </div>
           </button>
 
+          {/* Le chemin "invité" couvre TOUS les autres rôles : parent, joueur,
+              adjoint, lecteur, ET coach principal invité par un admin. Le
+              token ?invite= dans le lien (ou QR scanné) porte le rôle. */}
           <button onClick={() => { setRoleHint(''); setMode('paste-link'); }} style={{
             ...cardBase, marginBottom:10,
+            background:'rgba(125,211,252,0.06)', border:'1px solid rgba(125,211,252,0.30)',
           }}>
             <div style={{display:'flex', alignItems:'center', gap:14}}>
               <span style={{fontSize:32}}>🔗</span>
               <div style={{flex:1, minWidth:0}}>
-                <div style={{fontWeight:900, fontSize:15}}>J'ai reçu un lien</div>
+                <div style={{fontWeight:900, fontSize:15, color:'#7dd3fc'}}>J'ai reçu un lien (ou QR)</div>
                 <div style={{fontSize:12, opacity:0.65, marginTop:4, lineHeight:1.4}}>
-                  Mon coach m'a envoyé un lien sur WhatsApp/SMS
+                  Parent · joueur · adjoint · lecteur — un coach m'a invité
                 </div>
               </div>
               <span style={{opacity:0.5, fontSize:18}}>›</span>
@@ -634,26 +641,30 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
             </div>
           </button>
 
-          <button onClick={() => alert(
-            'Pas encore disponible.\n\nCette app sert à des coachs pour gérer leurs équipes. ' +
-            'Si tu cherches à découvrir l\'app, demande un lien à un coach ou crée ton propre club.'
-          )} style={{
-            ...cardBase, marginBottom:10, opacity:0.6,
+          {/* Encart pédagogique : explique COMMENT être rattaché à un club
+              quand on n'est ni coach principal ni déjà inscrit. Évite que
+              l'utilisateur reste bloqué en se demandant comment s'inscrire. */}
+          <div style={{
+            marginTop:14, padding:'14px 14px', borderRadius:11,
+            background:'rgba(255,255,255,0.03)',
+            border:'1px dashed rgba(255,255,255,0.12)',
+            fontSize:12, color:'rgba(255,255,255,0.78)', lineHeight:1.55,
           }}>
-            <div style={{display:'flex', alignItems:'center', gap:14}}>
-              <span style={{fontSize:32}}>👀</span>
-              <div style={{flex:1, minWidth:0}}>
-                <div style={{fontWeight:900, fontSize:15}}>Je découvre</div>
-                <div style={{fontSize:12, opacity:0.65, marginTop:4, lineHeight:1.4}}>
-                  Visite guidée (bientôt)
-                </div>
-              </div>
-              <span style={{opacity:0.5, fontSize:18}}>›</span>
+            <div style={{fontWeight:800, marginBottom:6, color:'#fff'}}>
+              💡 Tu n'as pas de lien et tu n'es pas coach ?
             </div>
-          </button>
+            Cette app fonctionne par invitation : un coach (ou un parent
+            déjà inscrit) doit te <b>partager un lien</b> ou te faire
+            <b> scanner un QR code</b> sur son écran. Ça prend 30 secondes.<br/><br/>
+            <span style={{opacity:0.7}}>
+              Donne-lui simplement ton email ou ton numéro WhatsApp — il
+              t'enverra le lien d'invitation correspondant à ton rôle
+              (parent, joueur, adjoint, lecteur).
+            </span>
+          </div>
 
           <div style={{
-            marginTop:'auto', paddingTop:24, fontSize:10.5,
+            marginTop:'auto', paddingTop:20, fontSize:10.5,
             color:'rgba(255,255,255,0.4)', textAlign:'center', lineHeight:1.5,
           }}>
             Coach du Dimanche · v2<br/>
