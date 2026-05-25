@@ -287,19 +287,89 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
           <div style={{
             padding:'12px 14px', borderRadius:10,
             background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
-            fontSize:12, opacity:0.75, lineHeight:1.6,
+            fontSize:12, opacity:0.85, lineHeight:1.6,
           }}>
-            Ouvre ce mail <b>sur cet appareil</b> et clique le lien : tu seras connecté
-            automatiquement. Pense à vérifier tes spams. Le lien est valable un temps limité.
+            <div style={{marginBottom:6}}>
+              <b style={{color:'#c8f169'}}>✓ Ouvre ce mail sur CET appareil</b> et clique le lien :
+              tu seras connecté automatiquement. Le lien est valable 1h.
+            </div>
+            <div style={{
+              marginTop:8, paddingTop:8,
+              borderTop:'1px solid rgba(255,255,255,.08)',
+              fontSize:11.5, opacity:0.85, lineHeight:1.6,
+            }}>
+              <b style={{color:'#fbbf24'}}>⚠ Tu ne vois rien arriver ?</b>
+              <ul style={{margin:'4px 0 0 0', paddingLeft:18}}>
+                <li>Vérifie tes <b>spams / courrier indésirable</b></li>
+                <li>Vérifie ta <b>quarantaine</b> (mail pro Outlook / Microsoft 365)</li>
+                <li>L'expéditeur est <code style={{fontSize:10, background:'rgba(0,0,0,.4)', padding:'1px 4px', borderRadius:3}}>noreply@arbitre-sport.firebaseapp.com</code></li>
+                <li>Ajoute-le aux contacts pour les prochains envois</li>
+              </ul>
+            </div>
           </div>
-          <button onClick={() => setSentTo('')} style={{
-            marginTop:4, padding:'12px', borderRadius:10,
-            background:'transparent', border:'1px solid rgba(255,255,255,0.15)',
-            color:'rgba(255,255,255,0.75)', fontFamily:'inherit', fontSize:13,
-            cursor:'pointer',
-          }}>
-            ‹ Modifier mon email
-          </button>
+
+          {/* Alternative Google si l'email coince (cas typique mail pro filtré) */}
+          {window.cddAuth && window.cddAuth.signInWithGoogle && (
+            <div style={{
+              padding:'12px 14px', borderRadius:10,
+              background:'rgba(125,211,252,0.06)',
+              border:'1px solid rgba(125,211,252,0.30)',
+            }}>
+              <div style={{fontSize:12, fontWeight:800, color:'#7dd3fc', marginBottom:6}}>
+                💡 Le mail n'arrive pas ? Connecte-toi avec Google
+              </div>
+              <div style={{fontSize:11.5, opacity:0.75, lineHeight:1.5, marginBottom:10}}>
+                Aucun email à attendre — un seul tap, et tu es connecté.
+                Idéal si ton mail pro filtre/quarantaine les expéditeurs externes.
+              </div>
+              <button onClick={async () => {
+                try {
+                  setSending(true);
+                  await window.cddAuth.signInWithGoogle({});
+                } catch (err) {
+                  alert('Connexion Google échouée : ' + (err && err.message ? err.message : err));
+                } finally {
+                  setSending(false);
+                }
+              }} disabled={sending}
+              style={{
+                width:'100%', padding:'10px 14px', borderRadius:8,
+                background:'#fff', color:'#1f2937',
+                border:'none', fontSize:13, fontWeight:800, cursor:'pointer',
+                opacity: sending ? 0.6 : 1,
+              }}>
+                {sending ? '⟳ …' : '🔑 Continuer avec Google'}
+              </button>
+            </div>
+          )}
+
+          {/* Actions explicites — plus de "Modifier mon email" ambigu */}
+          <div style={{display:'flex', gap:8}}>
+            <button onClick={() => {
+              // Renvoie un NOUVEAU lien au même email (pratique si rien arrivé)
+              const role = localStorage.getItem('cdd_auth_role_pending') || 'parent';
+              const nm = localStorage.getItem('cdd_auth_name_pending') || '';
+              sendMagicLink(sentTo, nm, role);
+            }} disabled={sending}
+            style={{
+              flex:1, padding:'10px', borderRadius:10,
+              background:'rgba(200,241,105,0.10)',
+              border:'1px solid rgba(200,241,105,0.32)',
+              color:'#c8f169', fontFamily:'inherit', fontSize:12.5, fontWeight:700,
+              cursor:'pointer',
+              opacity: sending ? 0.5 : 1,
+            }}>
+              {sending ? '⟳ Renvoi…' : '📩 Renvoyer le lien'}
+            </button>
+            <button onClick={() => setSentTo('')} style={{
+              flex:1, padding:'10px', borderRadius:10,
+              background:'transparent', border:'1px solid rgba(255,255,255,0.15)',
+              color:'rgba(255,255,255,0.75)', fontFamily:'inherit', fontSize:12.5, fontWeight:700,
+              cursor:'pointer',
+            }}>
+              ✎ Changer d'email
+            </button>
+          </div>
         </div>
       )}
 
