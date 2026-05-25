@@ -68,11 +68,11 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
   React.useEffect(() => {
     if (!hasInvite || !arrivalContext.token) return;
     let alive = true;
-    (async () => {
-      if (!window.cddData || !window.cddData.fetchInvite) {
-        if (alive) { setInviteLoading(false); setInviteError('Service cloud indisponible.'); }
-        return;
-      }
+    let timeoutId = null;
+    let readyListener = null;
+
+    const doFetch = async () => {
+      if (!alive) return;
       try {
         const inv = await window.cddData.fetchInvite(arrivalContext.token);
         if (!alive) return;
@@ -89,8 +89,41 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
         setInviteError('Lecture impossible : ' + ((e && e.message) || e));
         setInviteLoading(false);
       }
-    })();
-    return () => { alive = false; };
+    };
+
+    // RACE FIX : sur iPhone/connexion lente, le composant monte AVANT que
+    // firebase-sync.js finisse d'initialiser window.cddData. On attendait
+    // pas, on déclarait "Service indisponible" tout de suite → utilisateur
+    // bloqué. Désormais : si pas prêt, on attend l'event cdd-sync-ready
+    // (avec un timeout de 10s pour ne pas attendre indéfiniment).
+    if (window.cddData && window.cddData.fetchInvite) {
+      doFetch();
+    } else {
+      readyListener = () => {
+        if (!alive) return;
+        if (window.cddData && window.cddData.fetchInvite) {
+          if (timeoutId) clearTimeout(timeoutId);
+          doFetch();
+        }
+      };
+      window.addEventListener('cdd-sync-ready', readyListener);
+      // Filet de sécurité : si rien n'arrive en 10s, on bascule sur l'erreur
+      timeoutId = setTimeout(() => {
+        if (!alive) return;
+        if (window.cddData && window.cddData.fetchInvite) {
+          doFetch();
+        } else {
+          setInviteLoading(false);
+          setInviteError('Connexion lente — recharge la page (tire vers le bas) ou vérifie ta connexion internet.');
+        }
+      }, 10000);
+    }
+
+    return () => {
+      alive = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (readyListener) window.removeEventListener('cdd-sync-ready', readyListener);
+    };
   }, [hasInvite, arrivalContext.token]);
   const [email, setEmail] = useLS('');
   const [name, setName] = useLS('');
@@ -280,11 +313,25 @@ function ScreenLanding({ onLoggedIn, onOpenLink }) {
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
           {inviteLoading && (
             <div style={{
-              padding:'40px 16px', textAlign:'center',
-              fontSize:13, color:'rgba(255,255,255,0.6)',
+              padding:'36px 18px 28px', textAlign:'center',
+              background:'rgba(200,241,105,0.06)',
+              border:'1px solid rgba(200,241,105,0.22)',
+              borderRadius:14,
             }}>
-              <div style={{fontSize:42, marginBottom:14}}>⏳</div>
-              Chargement de l'invitation…
+              <div style={{
+                fontSize:11, fontWeight:900, letterSpacing:'.14em',
+                color:'#c8f169', textTransform:'uppercase', marginBottom:10,
+              }}>
+                Bienvenue sur Coach du Dimanche
+              </div>
+              <div style={{fontSize:42, marginBottom:14}}>⚽</div>
+              <div style={{fontSize:14, fontWeight:800, color:'#fff', marginBottom:8}}>
+                Préparation de ton invitation…
+              </div>
+              <div style={{fontSize:11.5, color:'rgba(255,255,255,0.6)', lineHeight:1.5, maxWidth:280, margin:'0 auto'}}>
+                On charge les infos du club qui t'invite.<br/>
+                Quelques secondes sur la première connexion.
+              </div>
             </div>
           )}
 
