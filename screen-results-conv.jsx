@@ -903,7 +903,7 @@ function ScreenConvocations({ go, tweaks }) {
                   style={{ ...baseStyle,
                     background:'linear-gradient(135deg, rgba(255,170,40,0.18) 0%, rgba(255,170,40,0.08) 100%)',
                     border:'1px solid rgba(255,170,40,0.50)', color:'#ffc788' }}>
-                  📣 RELANCER LES {nbPending} PARENT{nbPending > 1 ? 'S' : ''} RESTANT{nbPending > 1 ? 'S' : ''}
+                  📣 RELANCER LES {nbPending} {window.CDD_TEAM_HELPERS?.activeTeamIsAdult?.() ? 'JOUEUR' : 'PARENT'}{nbPending > 1 ? 'S' : ''} RESTANT{nbPending > 1 ? 'S' : ''}
                 </button>
                 {/* Bouton secondaire 'Lancer quand même' si le coach veut forcer */}
                 <button onClick={() => {

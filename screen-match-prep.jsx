@@ -214,6 +214,34 @@ function ScreenMatchPrep({ go, tweaks }) {
               </div>
             );
           })()}
+          {/* Bouton "Ajouter à mon agenda" — visible pour TOUS (coach, adjoint,
+              parent, joueur, lecteur). Génère un .ics téléchargé, ouvert
+              automatiquement par l'app calendrier du téléphone (Apple/Google/
+              Samsung/Outlook). Alarm 2h avant le match incluse. */}
+          {!next.noUpcoming && window.CDD_CAL?.downloadMatchICS && (
+            <div style={{marginTop:10}}>
+              <button onClick={() => {
+                const info = (teamId && matchId && window.CDD_MATCH_INFO?.get)
+                  ? window.CDD_MATCH_INFO.get(teamId, matchId) : null;
+                window.CDD_CAL.downloadMatchICS(next, info);
+              }} style={{
+                padding:'10px 16px', borderRadius:10, cursor:'pointer',
+                background:'rgba(125,211,252,0.10)', color:'#7dd3fc',
+                border:'1px solid rgba(125,211,252,0.40)',
+                fontSize:12.5, fontWeight:800, letterSpacing:'.04em',
+                fontFamily:'inherit',
+                display:'inline-flex', alignItems:'center', gap:8,
+              }}>
+                📅 Ajouter à mon agenda
+              </button>
+              <div style={{
+                fontSize:10.5, opacity:0.6, marginTop:5, lineHeight:1.4,
+              }}>
+                Téléchargement d'un fichier .ics · ouvre ton appli calendrier ·
+                rappel 2h avant le match
+              </div>
+            </div>
+          )}
           {canEdit && next.isAmical && (
             <div style={{display:'flex', gap:8, marginTop:8, flexWrap:'wrap'}}>
               <button onClick={() => setFriendlyOpen('edit')}
