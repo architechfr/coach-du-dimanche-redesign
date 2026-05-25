@@ -901,6 +901,21 @@ function ScreenMatchV2({ go, tweaks }) {
       Object.keys(upd).forEach(k => {
         if (curr[k] !== upd[k]) { curr[k] = upd[k]; changed = true; }
       });
+      // Cleanup post-match : si le cloud annonce 'finished', on bascule l'état
+      // local pour que getLiveMatch() retourne null et que les autres écrans
+      // (Accueil / Convocations / Match-prep) basculent sur le prochain match.
+      if (curr.st === 'finished' && !curr.endedAt) {
+        curr.endedAt = Date.now();
+        try {
+          localStorage.setItem('cdd_match_last_finished', String(curr.id));
+          localStorage.removeItem('cdd_match_current');
+        } catch (e) {}
+        console.info('[liveMatch] match terminé côté origine → cleanup local');
+        // Trigger rebuild pour les écrans qui écoutent
+        try { if (window.CDD_REBUILD) window.CDD_REBUILD(); } catch (e) {}
+        try { window.dispatchEvent(new CustomEvent('cdd-data-rebuilt')); } catch (e) {}
+        changed = true;
+      }
       if (changed) {
         console.info('[liveMatch] ✓ cloud sync →', { tSt: curr.tSt, st: curr.st, sA: curr.sA, sB: curr.sB });
         forceRender({});

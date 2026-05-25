@@ -167,7 +167,15 @@ function buildDefaultTeams() {
 // Chrono helpers
 function gMatch(M) {
   if (!M) return 0;
-  return M.st === 'live' ? M.tOff + (Date.now() - M.tSt) : M.tOff;
+  // Garde-fou : si tSt est null/undefined (cas cross-device où le doc cloud
+  // n'a pas encore les nouveaux champs chrono), retourner tOff au lieu de
+  // Date.now() - 0 = Date.now() (qui produit des chronos absurdes type
+  // 29662334 minutes — l'epoch unix en minutes).
+  if (M.st === 'live') {
+    if (!M.tSt) return M.tOff || 0;
+    return (M.tOff || 0) + (Date.now() - M.tSt);
+  }
+  return M.tOff || 0;
 }
 function gMin(M) {
   if (!M) return 0;
