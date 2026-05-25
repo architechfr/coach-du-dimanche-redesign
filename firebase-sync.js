@@ -2585,6 +2585,77 @@ async function consumeInvite(token) {
 }
 
 /* ============================================================
+   FORCE END MATCH — terminer un match depuis n'importe quel device
+   ============================================================ */
+// Écrit direct dans Firestore status='finished'+endedAt, clear team.liveMatch,
+// cleanup localStorage. Permet de clôturer un match cassé/fantôme sans devoir
+// passer par l'écran match-live (qui peut être inaccessible si le M local est
+// corrompu, chrono cassé, etc.). Source de vérité = Firestore.
+async function forceEndMatch(matchId, teamId) {
+  if (!db) throw new Error('Firestore non initialisé');
+  if (!matchId) throw new Error('matchId requis');
+  console.info('[force-end] début terminaison forcée :', matchId, 'team', teamId);
+  try {
+    // 1. Écrit status='finished' dans le doc cloud (merge:true pour préserver
+    //    le reste : score, events, teams, etc.)
+    await setDoc(doc(db, COLL_MATCHES, String(matchId)), {
+      status: 'finished',
+      endedAt: Date.now(),
+      forceEndedBy: getVoterId(),
+      forceEndedAt: serverTimestamp(),
+      savedAt: serverTimestamp(),
+    }, { merge: true });
+    console.info('[force-end] ✓ doc cloud → status=finished');
+  } catch (e) {
+    console.warn('[force-end] write cloud failed', e.message);
+    return { ok: false, error: 'cloud-write: ' + e.message };
+  }
+  // 2. Clear le pointeur team.liveMatch (si on a le teamId)
+  if (teamId) {
+    try {
+      await clearTeamLiveMatch(teamId);
+      console.info('[force-end] ✓ team.liveMatch cleared pour team', teamId);
+    } catch (e) {
+      console.warn('[force-end] clear team.liveMatch failed', e.message);
+      // Non bloquant
+    }
+  }
+  // 3. Cleanup local : retire cdd_match_current si pointe sur ce match,
+  //    pose cdd_match_last_finished, marque le cache local st=finished
+  try {
+    const currentId = localStorage.getItem('cdd_match_current');
+    if (currentId && String(currentId) === String(matchId)) {
+      localStorage.removeItem('cdd_match_current');
+    }
+    localStorage.setItem('cdd_match_last_finished', String(matchId));
+    const localKey = 'cdd_match_' + matchId;
+    const raw = localStorage.getItem(localKey);
+    if (raw) {
+      try {
+        const local = JSON.parse(raw);
+        if (local && local.st !== 'finished') {
+          local.st = 'finished';
+          local.endedAt = local.endedAt || Date.now();
+          localStorage.setItem(localKey, JSON.stringify(local));
+        }
+      } catch (e) {}
+    }
+    // Aussi : si c'est un amical, le marquer terminé dans cdd_friendly_matches
+    // pour qu'il n'apparaisse plus en "à venir"
+    if (teamId && window.CDD_FRIENDLY && window.CDD_FRIENDLY.markEnded) {
+      try { window.CDD_FRIENDLY.markEnded(teamId, String(matchId)); } catch (e) {}
+    }
+  } catch (e) { console.warn('[force-end] cleanup local failed', e.message); }
+  // 4. Trigger REBUILD pour que les écrans React se rafraîchissent
+  try {
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+  } catch (e) {}
+  console.info('[force-end] ✓ terminaison forcée terminée pour', matchId);
+  return { ok: true };
+}
+
+/* ============================================================
    SOS — Force resync : purge cache local match + re-pull cloud
    ============================================================ */
 // Soupape de sécurité utilisateur quand le cache local est désynchronisé
@@ -2643,7 +2714,7 @@ window.cddData = {
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)
   saveMembership, removeTeamMembership,
   fetchMemberships, fetchClubMemberships, fetchClub, fetchTeams, fetchPlayers,
-  migrateLocalToCloud, pullCloudData, forceResyncMatch,
+  migrateLocalToCloud, pullCloudData, forceResyncMatch, forceEndMatch,
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
   consumeInvite, clubRoleCount, teamRoleCount, inviteUrl,
   // Phase D — admin clubs/équipes

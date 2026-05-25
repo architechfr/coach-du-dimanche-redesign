@@ -157,6 +157,7 @@ function ScreenHome({ go, tweaks }) {
         const liveLogo = resolveLiveLogo();
         const liveClubId = resolveLiveClubId();
         return (
+        <React.Fragment>
         <button onClick={() => go('match')}
                 style={{
                   width:'calc(100% - 28px)', margin:'14px',
@@ -197,6 +198,56 @@ function ScreenHome({ go, tweaks }) {
             </div>
           </span>
         </button>
+        {/* Lien discret en dessous : permet de clôturer un match cassé/fantôme
+            sans avoir à passer par l'écran match-live (qui peut être inaccessible
+            si le chrono est cassé ou si on est sur un autre device que celui
+            ayant lancé le match). Écrit direct status='finished' dans Firestore. */}
+        {isCoachLike && (
+          <div style={{
+            margin:'4px 16px 0', padding:'0 4px',
+            display:'flex', alignItems:'center', justifyContent:'space-between',
+            fontSize:11, opacity:.65,
+          }}>
+            <span>Ce match traîne / a été oublié ?</span>
+            <button onClick={async () => {
+              const ok = confirm(
+                'Forcer la fin de ce match ?\n\n' +
+                ((liveMatch.tA && liveMatch.tA.n) || 'Mon équipe') +
+                ' ' + (liveMatch.sA||0) + ' - ' + (liveMatch.sB||0) + ' ' +
+                ((liveMatch.tB && liveMatch.tB.n) || 'Adversaire') + '\n\n' +
+                '  • Le score actuel sera figé\n' +
+                '  • Le match passera dans "Derniers matchs"\n' +
+                '  • Tous les devices recevront la mise à jour via le cloud\n\n' +
+                'À utiliser si le match est resté coincé en pause ou en cours ' +
+                'parce qu\'on a oublié de cliquer "Fin de match".'
+              );
+              if (!ok) return;
+              if (!window.cddData?.forceEndMatch) {
+                alert('Fonction indisponible (Firestore non initialisé).');
+                return;
+              }
+              try {
+                const teamId = liveMatch.teamId || (window.CDD?.getActiveTeam?.()?.id) || null;
+                const r = await window.cddData.forceEndMatch(liveMatch.id, teamId);
+                if (r.ok) {
+                  alert('✓ Match terminé\n\nLes autres devices se mettront à jour automatiquement dans quelques secondes via le cloud.');
+                } else {
+                  alert('❌ Échec : ' + (r.error || 'inconnu') +
+                        '\n\nVérifie ta connexion et réessaie.');
+                }
+              } catch (e) {
+                alert('❌ Erreur : ' + e.message);
+              }
+            }} style={{
+              background:'none', border:'none', color:'#fca5a5',
+              fontSize:11, fontWeight:700, textDecoration:'underline',
+              cursor:'pointer', fontFamily:'inherit', padding:'2px 4px',
+            }}>
+              🏁 Forcer la fin →
+            </button>
+          </div>
+        )}
+        </React.Fragment>
         );
       })()}
 
