@@ -16,11 +16,16 @@ function CountdownPill({ days }) {
   );
 }
 
-// Accepte W/D/L (anglais, vient de FFF) ou V/N/D (français, traduit).
-// Affiche toujours en français V/N/D — convention coach FR.
+// IMPORTANT : ne PAS pré-traduire avant d'appeler FormDot.
+// Format d'entrée OBLIGATOIRE : W/L/D (FFF/anglais, source de vérité).
+//   W = Win   → affiché 'V' (Victoire)
+//   L = Loss  → affiché 'D' (Défaite)
+//   D = Draw  → affiché 'N' (Nul)
+// Passer du français déjà traduit ('D' = Défaite) provoque une DOUBLE
+// traduction (D → N) qui transforme une défaite en nul. Bug observé fin mai.
 function FormDot({ r, big }) {
-  const display = r === 'W' ? 'V' : r === 'L' ? 'D' : r === 'D' ? 'N' : r;
-  const cls = display === 'V' ? 'fd-w' : display === 'D' ? 'fd-l' : 'fd-d';
+  const display = r === 'W' ? 'V' : r === 'L' ? 'D' : r === 'D' ? 'N' : '?';
+  const cls = r === 'W' ? 'fd-w' : r === 'L' ? 'fd-l' : r === 'D' ? 'fd-d' : 'fd-d';
   return <span className={`fd ${cls} ${big?"fd-big":""}`}>{display}</span>;
 }
 
@@ -505,12 +510,14 @@ function ScreenHome({ go, tweaks }) {
             tournoi:     { l: 'Tournoi',c: '#a78bfa' },
           };
           const typ = typeLabels[m.matchType] || typeLabels.amical;
-          // Normalise le résultat W/D/L (FFF) vers V/N/D (français)
-          const resultFR = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : m.result === 'D' ? 'N' : m.result;
+          // PIÈGE résolu : FormDot fait DÉJÀ la traduction W/L/D → V/D/N en interne.
+          // Si on traduit ici avant de passer à FormDot, on obtient une DOUBLE
+          // traduction (L → D → N) qui transforme les défaites en "Nul". Donc on
+          // passe m.result brut (au format FFF W/L/D) et FormDot le francise.
           return (
             <button className={`lm-card lm-${(m.result || '').toLowerCase()}`} key={m.id || i}
                     onClick={() => go("fiche-match", m)}>
-              <div className="lm-result"><FormDot r={resultFR} big/></div>
+              <div className="lm-result"><FormDot r={m.result} big/></div>
               <div className="lm-main">
                 <div className="lm-opp">
                   {(m.venue === 'H' || m.venue === 'E') && (
