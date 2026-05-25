@@ -159,7 +159,16 @@ function InviteManager() {
   };
 
   const revoke = async (token) => {
-    if (!window.confirm('Révoquer cette invitation ?\nLe lien ne fonctionnera plus.')) return;
+    const inv = (invites || []).find(i => i.token === token);
+    const wasUsed = inv && inv.consumed;
+    const who = (inv && (inv.consumedByEmail || inv.consumedBy)) || '';
+    const msg = wasUsed
+      ? '⚠ Cette invitation a déjà été utilisée'
+        + (who ? ' par ' + who : '') + '.\n\n'
+        + 'Révoquer supprimera aussi le rattachement de cette personne '
+        + '— elle n\'aura plus accès à l\'équipe.\n\nContinuer ?'
+      : 'Révoquer cette invitation ?\n\nLe lien ne fonctionnera plus.';
+    if (!window.confirm(msg)) return;
     try { await window.cddData.revokeInvite(token); loadInvites(); }
     catch (e) { window.alert('Révocation impossible : ' + ((e && e.message) || e)); }
   };

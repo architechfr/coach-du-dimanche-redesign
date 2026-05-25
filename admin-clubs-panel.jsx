@@ -509,12 +509,25 @@ function AdminClubsPanel({ onClose }) {
                                     : 'Configurer le championnat FFF'}>
                                     🏆 FFF
                                   </button>
-                                  <button onClick={() => assignCoach(c, t, coach && coach.uid)} style={{
-                                    background:'rgba(200,241,105,0.14)', color:'#c8f169',
-                                    border:'1px solid rgba(200,241,105,0.32)', borderRadius:7,
-                                    padding:'5px 10px', fontSize:11.5, fontWeight:700, cursor:'pointer',
-                                    flexShrink:0,
-                                  }}>{coach ? 'Changer' : 'Assigner'}</button>
+                                  {coach ? (
+                                    <button onClick={() => assignCoach(c, t, coach.uid)} style={{
+                                      background:'rgba(251,191,36,0.12)', color:'#fbbf24',
+                                      border:'1px solid rgba(251,191,36,0.35)', borderRadius:7,
+                                      padding:'5px 10px', fontSize:11.5, fontWeight:700, cursor:'pointer',
+                                      flexShrink:0,
+                                    }} title="Remplace le coach principal actuel par une autre personne">
+                                      ↔ Transférer
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => assignCoach(c, t, null)} style={{
+                                      background:'rgba(200,241,105,0.14)', color:'#c8f169',
+                                      border:'1px solid rgba(200,241,105,0.32)', borderRadius:7,
+                                      padding:'5px 10px', fontSize:11.5, fontWeight:700, cursor:'pointer',
+                                      flexShrink:0,
+                                    }}>
+                                      Assigner
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             );

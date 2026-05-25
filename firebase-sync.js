@@ -2137,8 +2137,32 @@ async function createInvite(opts) {
 
 async function revokeInvite(token) {
   if (!db || !token) return { ok: false };
+
+  // Lit l'invite avant suppression — pour savoir si elle était consommée
+  // et qui doit perdre son accès à l'équipe.
+  let inv = null;
+  try {
+    const snap = await getDoc(doc(db, 'invites', token));
+    if (snap.exists()) inv = snap.data();
+  } catch (_) { /* best-effort — la suppression se fera quand même */ }
+
   await deleteDoc(doc(db, 'invites', token));
-  return { ok: true };
+
+  // Si l'invite a déjà été consommée par quelqu'un qui n'est PAS coach
+  // principal → on retire sa membership d'équipe pour couper son accès.
+  // Le coach principal n'est JAMAIS retiré par ce chemin (le remplacer
+  // passe par assignTeamCoach depuis le panneau admin).
+  let membershipRemoved = false;
+  if (inv && inv.consumed && inv.consumedBy && inv.teamId && inv.clubId && inv.role !== 'coach') {
+    try {
+      await removeTeamMembership(inv.consumedBy, inv.clubId, inv.teamId);
+      membershipRemoved = true;
+    } catch (e) {
+      console.warn('[revokeInvite] retrait membership échoué :', e.message);
+    }
+  }
+
+  return { ok: true, membershipRemoved, wasConsumed: !!(inv && inv.consumed) };
 }
 
 // Invité : consomme un lien → crée SA membership (ou ajoute l'équipe à sa
