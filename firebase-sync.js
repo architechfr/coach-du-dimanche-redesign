@@ -216,15 +216,20 @@ async function saveMatchToCloud(match) {
     reds:    { A: match.rA || 0, B: match.rB || 0 },
     subs:    { A: match.uA || 0, B: match.uB || 0 },
     addTime: match.at || 0,
-    tSt: match.tSt || null,
-    tOff: typeof match.tOff === 'number' ? match.tOff : 0,
-    startedAt: match.startedAt || null,
-    pauseStartedAt: match.pauseStartedAt || null,
-    inHalftime: match.inHalftime || false,
-    htStart: match.htStart || null,
     savedAt: serverTimestamp(),
     coachId: getVoterId(),
   };
+  // Champs chrono : ne PAS pousser un null s'il écraserait une valeur cloud
+  // valide. Cas typique : un device distant qui a tiré un match sans tSt
+  // (legacy v162) auto-save toutes les 10s — sans cette garde il écraserait
+  // le bon tSt poussé par le device origine. Avec merge:true, omettre le
+  // champ préserve la valeur existante côté Firestore.
+  if (match.tSt != null)            payload.tSt = match.tSt;
+  if (typeof match.tOff === 'number' && match.tOff > 0) payload.tOff = match.tOff;
+  if (match.startedAt != null)      payload.startedAt = match.startedAt;
+  if (match.pauseStartedAt != null) payload.pauseStartedAt = match.pauseStartedAt;
+  if (typeof match.inHalftime === 'boolean') payload.inHalftime = match.inHalftime;
+  if (match.htStart != null)        payload.htStart = match.htStart;
   await setDoc(doc(db, COLL_MATCHES, matchId), payload, { merge: true });
   return { ok: true, matchId };
 }
@@ -2274,7 +2279,6 @@ async function pullCloudData() {
             inHalftime: matchDoc.inHalftime || false,
             htStart: matchDoc.htStart || null,
             savedAt: Date.now(),
-            _pulledFromCloud: true,
           };
           localStorage.setItem('cdd_match_' + lmId, JSON.stringify(localShape));
           localStorage.setItem('cdd_match_current', lmId);

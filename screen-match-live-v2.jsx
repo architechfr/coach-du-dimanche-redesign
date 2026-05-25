@@ -250,7 +250,13 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
           tA = mon équipe (semantique), tB = adversaire. Si on joue à
           l'extérieur, mon équipe passe à droite (et le score aussi). */}
       {(() => {
-        const _isAtHome = (window.CDD_NEXT_MATCH?.venue === 'Domicile');
+        // Priorité au flag stocké sur le match (M.isAtHome, posé au coup d'envoi)
+        // sinon fallback CDD_NEXT_MATCH.venue. Sur un device distant qui a tiré
+        // le match via pullCloudData, CDD_NEXT_MATCH peut pointer sur le
+        // prochain match FFF (Extérieur) et donc inverser le scoreboard.
+        const _isAtHome = (M.isAtHome !== undefined)
+          ? !!M.isAtHome
+          : (window.CDD_NEXT_MATCH?.venue === 'Domicile');
         const teamA = (
           <div className="mv-team mv-team-A">
             <TeamBadgeBig team={M.tA}/>
@@ -856,27 +862,35 @@ function ScreenMatchV2({ go, tweaks }) {
     return () => clearInterval(tick);
   }, [M, M && M.st, M && M.notStarted]);
 
-  // ── Watch cloud pour device distant (_pulledFromCloud) ─────────────────
-  // Quand ce device a obtenu le match via pullCloudData (pas en l'ayant lancé),
-  // les champs chrono (tSt, tOff) peuvent être null/stale dans le cache local.
-  // On s'abonne à Firestore pour recevoir les mises à jour de l'origine en temps réel
-  // → score, chrono, événements restent en sync sans force-refresh.
+  // ── Watch cloud pour toute device avec match live ──────────────────────
+  // S'abonne à Firestore et synchronise les champs critiques (tSt, tOff,
+  // startedAt, st, score, events) dès qu'ils changent côté origine.
+  // - Sur le device origine : la plupart des snapshots seront identiques au
+  //   local (boucle de retour de notre propre push), donc no-op via la
+  //   comparaison curr[k] !== upd[k]. Aucune surcharge UX.
+  // - Sur le device distant : le tSt cloud (valide) remplace le tSt local
+  //   (null/stale), le chrono passe instantanément à la bonne valeur.
+  // NB : on évite de dépendre d'un flag _pulledFromCloud qui peut manquer
+  // sur un localStorage écrit avant le déploiement du fix v164.
   useEffectMV(() => {
-    if (!M || !M._pulledFromCloud || M.st === 'finished') return;
+    if (!M || M.notStarted || M.st === 'finished') return;
     if (!window.cddSync || !window.cddSync.watchMatchFromCloud) return;
-    console.info('[liveMatch] device distant : abonnement watch cloud', M.id);
+    console.info('[liveMatch] abonnement watch cloud →', M.id);
     const unsub = window.cddSync.watchMatchFromCloud(M.id, (doc) => {
       if (!doc || !Mref.current) return;
       const curr = Mref.current;
       let changed = false;
-      // Mise à jour des champs critiques depuis le cloud (chrono + score + events)
+      // Mise à jour des champs critiques depuis le cloud (chrono + score + events).
+      // Règle : on n'écrase JAMAIS une valeur locale valide avec un null cloud.
+      // Sinon un device origine (qui a tSt correct) verrait son tSt remis à null
+      // si le cloud n'a pas encore les nouveaux champs (cas du doc legacy v162).
       const upd = {
-        tSt:           doc.tSt           || null,
-        tOff:          typeof doc.tOff === 'number' ? doc.tOff : (curr.tOff || 0),
-        startedAt:     doc.startedAt     || curr.startedAt     || null,
+        tSt:           doc.tSt           != null ? doc.tSt           : curr.tSt,
+        tOff:          typeof doc.tOff === 'number' ? doc.tOff       : (curr.tOff || 0),
+        startedAt:     doc.startedAt     != null ? doc.startedAt     : curr.startedAt,
         pauseStartedAt:doc.pauseStartedAt != null ? doc.pauseStartedAt : curr.pauseStartedAt,
         inHalftime:    doc.inHalftime    != null ? doc.inHalftime    : curr.inHalftime,
-        htStart:       doc.htStart       || curr.htStart       || null,
+        htStart:       doc.htStart       != null ? doc.htStart       : curr.htStart,
         st:            doc.status        || curr.st,
         ch:            doc.period        || curr.ch,
         sA:            doc.teamA != null ? (typeof doc.teamA.score === 'number' ? doc.teamA.score : curr.sA) : curr.sA,
@@ -893,7 +907,7 @@ function ScreenMatchV2({ go, tweaks }) {
       }
     });
     return () => { try { unsub(); } catch (e) {} };
-  }, [M && M.id, M && M._pulledFromCloud]);
+  }, [M && M.id, M && M.st, M && M.notStarted]);
 
   // ─── Match controls ─────────────────────────────────
   const startMatch = () => {
@@ -1425,7 +1439,7 @@ function ScreenMatchV2({ go, tweaks }) {
 
           {canEdit && (
             <ActionsMatrix M={M} disabled={disabled}
-              isAtHome={(window.CDD_NEXT_MATCH?.venue === 'Domicile')}
+              isAtHome={(M.isAtHome !== undefined) ? !!M.isAtHome : (window.CDD_NEXT_MATCH?.venue === 'Domicile')}
               onGoal={(side) => setActiveFlow({ kind:'goal', side })}
               onCard={handleCard}
               onSub={(side) => setActiveFlow({ kind:'sub-out', side })}
