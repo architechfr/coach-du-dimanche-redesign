@@ -1177,7 +1177,21 @@ async function applyFFFData(fffCfg, clubName, players) {
     // Expose la liste des matchs FFF à venir pour le sélecteur multi-matchs
     // (combine ensuite avec les matchs amicaux dans match-switcher.js).
     window.CDD_FFF_UPCOMING = upcomingFiltered.slice();
-    if (upcomingFiltered.length > 0) {
+
+    // ⚠ ANTI-RÉGRESSION (bug 26/05/2026) : avant d'écraser CDD_NEXT_MATCH
+    // avec le premier match FFF, on vérifie via le switcher quel est le
+    // VRAI prochain match (FFF + amicaux fusionnés, triés par date). Sans
+    // ce check, un match FFF d'octobre écrasait un amical du soir même.
+    const _activeTeamForNext = (window.CDD?.getActiveTeam?.()?.id) || null;
+    const _mergedNext = (_activeTeamForNext && window.CDD_MATCH_SWITCHER?.getActive)
+      ? window.CDD_MATCH_SWITCHER.getActive(_activeTeamForNext)
+      : null;
+    if (_mergedNext && _mergedNext.kind === 'amical') {
+      // Un amical est plus proche / explicitement choisi → ne PAS écraser.
+      // CDD_NEXT_MATCH a déjà été posé sur l'amical par rebuildCDDGlobals
+      // (branche amical fallback ou explicit choice).
+      console.log('[FFF] amical plus proche que le prochain FFF → on garde l\'amical comme prochain match');
+    } else if (upcomingFiltered.length > 0) {
       const next = upcomingFiltered[0];
       const d = new Date(next.dateRaw);
       const isValid = !isNaN(d);
@@ -1191,8 +1205,6 @@ async function applyFFFData(fffCfg, clubName, players) {
       const daysLeft = isValid ? Math.max(0, Math.ceil((d - Date.now()) / 86400000)) : 0;
 
       const _isHomeFff = next.venue === 'H';
-      // _activeTeamForNext est dispo via closure depuis applyFFFData (param activeTeam non passé ici)
-      const _activeTeamForNext = (window.CDD?.getActiveTeam?.()?.id) || null;
       window.CDD_NEXT_MATCH = {
         id: `${next.away || 'inconnu'}__${next.dateRaw || next.date || 'sans-date'}`,
         teamId: _activeTeamForNext, // ← traçabilité équipe (anti cross-team)
