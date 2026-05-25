@@ -1299,13 +1299,28 @@ const ADMIN_EMAIL_APP = 'archi.tech.fr@gmail.com';
 function ClubMembersPanel({ clubName, onClose }) {
   const [state, setState] = React.useState({ phase: 'loading', members: [], teams: [], error: '' });
   const [reloadTick, setReloadTick] = React.useState(0);
-  const [busyKey, setBusyKey] = React.useState(null); // uid+teamId en cours de révocation
+  const [busyKey, setBusyKey] = React.useState(null); // uid+teamId en cours d'action
 
   // Email de l'utilisateur courant — pour interdire l'auto-révocation.
   const myEmail = (() => {
     try { return (localStorage.getItem('cdd_user_email') || '').trim().toLowerCase(); }
     catch (e) { return ''; }
   })();
+
+  // Set des teamIds où JE suis coach principal — dérivé de la liste des
+  // memberships une fois chargée. Permet d'afficher le bouton « Promouvoir »
+  // uniquement sur les adjoints des équipes que je coache.
+  const myTeamsAsCoach = React.useMemo(() => {
+    const set = new Set();
+    if (!myEmail) return set;
+    const me = (state.members || []).find(m => (m.email || '').toLowerCase() === myEmail);
+    if (!me) return set;
+    const teams = me.teams || {};
+    Object.keys(teams).forEach(tid => {
+      if (teams[tid] && teams[tid].role === 'coach') set.add(tid);
+    });
+    return set;
+  }, [state.members, myEmail]);
 
   React.useEffect(() => {
     let alive = true;
@@ -1403,6 +1418,63 @@ function ClubMembersPanel({ clubName, onClose }) {
     } catch (e) {
       alert('Révocation impossible : ' + ((e && e.message) || e));
     } finally {
+      setBusyKey(null);
+    }
+  };
+
+  // Transfère le rôle de coach principal au membre cliqué.
+  // Appelable UNIQUEMENT par le coach principal actuel de l'équipe,
+  // et UNIQUEMENT sur une cible qui est déjà adjoint sur la même équipe.
+  // Après transfert : la cible devient coach, l'utilisateur courant
+  // devient adjoint sur cette équipe.
+  const transferCoach = async (m, teamId, teamLbl) => {
+    if (!m || !teamId) return;
+    if (!myTeamsAsCoach.has(teamId)) {
+      alert('Tu n\'es pas coach principal de cette équipe — transfert impossible.');
+      return;
+    }
+
+    const who = m.displayName ? (m.displayName + ' (' + (m.email || m.uid) + ')')
+                              : (m.email || m.uid);
+    if (!confirm(
+      '⚠ Transfert du rôle Coach principal\n\n'
+      + '• Équipe : ' + (teamLbl || teamId) + '\n'
+      + '• Nouveau coach principal : ' + who + '\n'
+      + '• Toi : tu redeviens Coach adjoint sur cette équipe\n\n'
+      + 'Tu perdras :\n'
+      + '  – la possibilité d\'inviter un autre coach\n'
+      + '  – les droits de gestion exclusifs du coach principal\n\n'
+      + 'Cette action est immédiate. Continuer ?'
+    )) return;
+
+    // Récupère MON uid via la membership courante (myEmail → membership.uid).
+    const myMember = (state.members || []).find(mm => (mm.email || '').toLowerCase() === myEmail);
+    if (!myMember || !myMember.uid) {
+      alert('Impossible de retrouver ton compte — recharge la page et réessaie.');
+      return;
+    }
+
+    const key = m.uid + '_' + teamId;
+    setBusyKey(key);
+    try {
+      const activeClub = window.CDD?.getActiveClub?.() || null;
+      const clubId = activeClub?.id;
+      if (!clubId) throw new Error('Club actif introuvable.');
+      await window.cddData.transferTeamCoach({
+        fromUid: myMember.uid,
+        toUid:   m.uid,
+        clubId,
+        teamId,
+        demoteToRole: 'adjoint',
+      });
+      // Force un re-pull cloud pour rafraîchir le rôle courant de l'app
+      // (sinon le bandeau coach reste actif côté UI tant qu'on n'a pas
+      // rechargé).
+      try { if (window.cddData.pullCloudData) await window.cddData.pullCloudData(); } catch (e) {}
+      alert('Transfert effectué.\n\nTu es maintenant coach adjoint de cette équipe.\nLa page va se recharger pour appliquer ton nouveau rôle.');
+      setTimeout(() => window.location.reload(), 300);
+    } catch (e) {
+      alert('Transfert impossible : ' + ((e && e.message) || e));
       setBusyKey(null);
     }
   };
@@ -1596,6 +1668,15 @@ function ClubMembersPanel({ clubName, onClose }) {
                                      && !isSelf
                                      && ln.role !== 'coach'
                                      && ln.role !== 'owner';
+                      // Bouton « Promouvoir coach » : visible uniquement si
+                      //   • la ligne est un adjoint
+                      //   • JE suis coach principal de cette équipe
+                      //   • ce n'est pas moi-même / pas l'admin app
+                      const canPromote = !!teamId
+                                      && !isAppAdmin
+                                      && !isSelf
+                                      && ln.role === 'adjoint'
+                                      && myTeamsAsCoach.has(teamId);
                       const key = m.uid + '_' + (teamId || '');
                       const isBusy = busyKey === key;
                       return (
@@ -1625,6 +1706,24 @@ function ClubMembersPanel({ clubName, onClose }) {
                               }}>{ln.sub}</div>
                             )}
                           </div>
+                          {canPromote && (
+                            <button
+                              onClick={() => transferCoach(m, teamId, ln.scope)}
+                              disabled={isBusy}
+                              style={{
+                                fontSize:10.5, fontWeight:800,
+                                padding:'4px 9px', borderRadius:6,
+                                background: isBusy ? 'rgba(251,191,36,0.04)' : 'rgba(251,191,36,0.12)',
+                                color:'#fbbf24',
+                                border:'1px solid rgba(251,191,36,0.40)',
+                                cursor: isBusy ? 'wait' : 'pointer',
+                                opacity: isBusy ? 0.5 : 1,
+                                flexShrink:0, whiteSpace:'nowrap',
+                              }}
+                              title="Transférer le rôle Coach principal à cette personne (tu redeviens adjoint)">
+                              {isBusy ? '…' : '↔ Promouvoir coach'}
+                            </button>
+                          )}
                           {canRevoke && (
                             <button
                               onClick={() => revokeAttribution(m, teamId, ln.role, ln.scope)}

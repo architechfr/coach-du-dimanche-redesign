@@ -20,7 +20,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
   getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, deleteDoc, deleteField,
-  onSnapshot, serverTimestamp, collection, query, where
+  onSnapshot, serverTimestamp, collection, query, where, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
   getAuth, sendSignInLinkToEmail, isSignInWithEmailLink,
@@ -1362,6 +1362,91 @@ async function assignTeamCoach(opts) {
   return { ok: true };
 }
 
+// Transfère le rôle de coach principal d'une équipe d'une personne à une
+// autre, en une transaction atomique (writeBatch). L'ancien coach est
+// rétrogradé (par défaut « adjoint ») ou retiré de l'équipe selon
+// `demoteToRole`. La cible DOIT déjà être rattachée à l'équipe.
+//
+// Sécurité : l'utilisateur appelant doit avoir canManageClub (donc être
+// coach principal ou owner/admin). Les rules Firestore autorisent les
+// updates de membership pour ces rôles.
+//
+// opts = { fromUid, toUid, clubId, teamId, demoteToRole? }
+//   demoteToRole : 'adjoint' (défaut), 'lecteur', ou 'none' (retirer l'équipe)
+async function transferTeamCoach(opts) {
+  if (!db) throw new Error('Service cloud indisponible');
+  const o = opts || {};
+  if (!o.fromUid || !o.toUid || !o.clubId || !o.teamId) {
+    throw new Error('fromUid/toUid/clubId/teamId requis');
+  }
+  if (o.fromUid === o.toUid) {
+    throw new Error('Source et cible identiques — pas de transfert possible.');
+  }
+  const demoteToRole = o.demoteToRole || 'adjoint';
+
+  const fromRef = doc(db, 'memberships', o.fromUid + '_' + o.clubId);
+  const toRef   = doc(db, 'memberships', o.toUid   + '_' + o.clubId);
+
+  const [fromSnap, toSnap] = await Promise.all([getDoc(fromRef), getDoc(toRef)]);
+  if (!fromSnap.exists()) throw new Error('Coach actuel introuvable côté cloud.');
+  if (!toSnap.exists())   throw new Error('La cible doit déjà être rattachée à l\'équipe (génère-lui d\'abord un lien d\'invitation).');
+
+  const fromData  = fromSnap.data() || {};
+  const toData    = toSnap.data()   || {};
+  const fromTeams = (fromData.teams && typeof fromData.teams === 'object') ? { ...fromData.teams } : {};
+  const toTeams   = (toData.teams   && typeof toData.teams   === 'object') ? { ...toData.teams }   : {};
+
+  if (!fromTeams[o.teamId] || fromTeams[o.teamId].role !== 'coach') {
+    throw new Error('La personne actuelle n\'est pas coach principal de cette équipe.');
+  }
+  if (!toTeams[o.teamId]) {
+    throw new Error('La cible n\'est pas rattachée à cette équipe — génère-lui un lien d\'invitation Adjoint avant le transfert.');
+  }
+
+  // Recalcule clubRole à partir d'une map teams.
+  const computeClubRole = (teams) => {
+    const roles = Object.values(teams).map(t => t && t.role).filter(Boolean);
+    if (roles.includes('owner')) return 'owner';
+    if (roles.includes('coach')) return 'coach';
+    return '';
+  };
+
+  // Nouvel état ancien coach : rétrogradé ou retiré de l'équipe.
+  const newFromTeams = { ...fromTeams };
+  if (demoteToRole === 'none') {
+    delete newFromTeams[o.teamId];
+  } else {
+    newFromTeams[o.teamId] = { ...fromTeams[o.teamId], role: demoteToRole };
+  }
+  const newFromClubRole = computeClubRole(newFromTeams);
+
+  // Nouvel état nouveau coach : promu sur l'équipe (les autres équipes
+  // intactes).
+  const newToTeams = { ...toTeams, [o.teamId]: { ...toTeams[o.teamId], role: 'coach' } };
+  const newToClubRole = computeClubRole(newToTeams);
+
+  // Batch atomique : les deux updates passent ensemble, ou rien.
+  const batch = writeBatch(db);
+  if (demoteToRole === 'none' && Object.keys(newFromTeams).length === 0) {
+    // L'ancien coach ne reste sur aucune équipe → supprime sa membership.
+    batch.delete(fromRef);
+  } else {
+    batch.update(fromRef, {
+      teams: newFromTeams,
+      clubRole: newFromClubRole,
+      updatedAt: serverTimestamp(),
+    });
+  }
+  batch.update(toRef, {
+    teams: newToTeams,
+    clubRole: newToClubRole,
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+
+  return { ok: true };
+}
+
 // ─── Migration unique : données locales → Firestore ────────
 // Réservée à l'admin. Pousse arb_clubs / arb_teams (+ joueurs imbriqués)
 // vers Firestore et crée la membership 'owner' de l'admin sur chaque club.
@@ -2281,7 +2366,7 @@ window.cddData = {
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
   consumeInvite, clubRoleCount, teamRoleCount, inviteUrl,
   // Phase D — admin clubs/équipes
-  fetchAllClubs, findUidByEmail, assignTeamCoach,
+  fetchAllClubs, findUidByEmail, assignTeamCoach, transferTeamCoach,
   migrateMembershipsToTeamsModel,
   ADJOINT_CAP, INVITE_TTL_DAYS,
 };
