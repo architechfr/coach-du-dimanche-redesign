@@ -1184,11 +1184,17 @@ async function applyFFFData(fffCfg, clubName, players) {
     // Ces matchs polluaient le hero "Prochain match" après un amical terminé :
     // au lieu de noUpcoming, l'app affichait ce fantôme avec adversaire "?".
     const FUTURE_HORIZON_MS = 60 * 24 * 60 * 60 * 1000; // 60 jours
+    const _isUnresolvedName = (n) => {
+      const v = (n || '').trim();
+      return !v || v === '?' || /^(à déterminer|tbd|n\/a|inconnu)$/i.test(v);
+    };
     const _isSuspiciousFFFMatch = (m) => {
       if (!m) return true;
-      const oppName = (m.away || '').trim();
-      // Adversaire absent ou placeholder explicite
-      if (!oppName || oppName === '?' || /^(à déterminer|tbd|n\/a)$/i.test(oppName)) {
+      // ⚠ Bug fix v136 : avant on testait UNIQUEMENT m.away, mais quand on
+      // joue à l'extérieur l'adversaire est m.home (m.away = notre équipe).
+      // Donc on teste les DEUX côtés : si l'un OU l'autre est unresolved,
+      // le match est forcément un placeholder calendrier prévisionnel.
+      if (_isUnresolvedName(m.home) || _isUnresolvedName(m.away)) {
         return true;
       }
       // Date suspecte (trop loin = saison prochaine)
