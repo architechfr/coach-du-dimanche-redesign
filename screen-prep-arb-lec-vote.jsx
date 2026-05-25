@@ -1449,33 +1449,41 @@ function ScreenVote({ go, tweaks, match: matchProp }) {
   return (
     <div className="scr scr-vote fade-in" data-screen-label="13 Vote post-match">
 
-      {lastFinishedMatch ? (() => {
+      {(() => {
+        // Méta du match sélectionné — fonctionne pour coach v2 (lastFinishedMatch)
+        // ET pour FFF/V1 (CDD_LAST_MATCHES via playedMatches). On ne cache jamais
+        // le hero : l'utilisateur doit toujours savoir pour quel match il vote.
         const M = lastFinishedMatch;
+        const matchMeta = playedMatches.find(pm => pm.id === selectedMatchId) || matchProp;
+        if (!M && !matchMeta) return null;
         const teamLabel = (window.CDD?.getActiveTeam?.()?.name)
           || (window.CDD?.getActiveTeam?.()?.category) || '';
-        const dateLabel = M.endedAt
+        const dateLabel = M?.endedAt
           ? new Date(M.endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'long' })
-          : '';
-        const myColors = [M.tA?.c || '#c8f169', M.tA?.c2 || '#0a0e14'];
-        const oppColors = [M.tB?.c || '#3b82f6', M.tB?.c2 || '#fff'];
-        // Convention foot : recevant à gauche. Le venue vient :
-        //   1. directement de M.isAtHome (toggle au lancement, v124+)
-        //   2. sinon de CDD_LAST_MATCHES (dérivé via friendly match en fallback)
-        const matchMeta = playedMatches.find(pm => pm.id === selectedMatchId);
-        const derivedVenue = M.isAtHome === true ? 'H'
-                           : M.isAtHome === false ? 'E'
+          : (matchMeta?.date || '');
+        const myColors = [M?.tA?.c || (window.CDD_CLUB?.colors?.[0]) || '#c8f169',
+                          M?.tA?.c2 || (window.CDD_CLUB?.colors?.[1]) || '#0a0e14'];
+        const oppColors = [M?.tB?.c || '#3b82f6', M?.tB?.c2 || '#fff'];
+        const ourName = M?.tA?.n
+          || (window.CDD_CLUB?.short) || (window.CDD_CLUB?.name) || 'Mon équipe';
+        const oppName = M?.tB?.n || matchMeta?.opp || 'Adversaire';
+        const sA = M?.sA ?? matchMeta?.score?.[0] ?? 0;
+        const sB = M?.sB ?? matchMeta?.score?.[1] ?? 0;
+        // Convention foot : recevant à gauche
+        const derivedVenue = M?.isAtHome === true ? 'H'
+                           : M?.isAtHome === false ? 'E'
                            : (matchMeta?.venue || '?');
         const isAway = derivedVenue === 'E';
         const venueLabel = derivedVenue === 'H' ? 'DOMICILE' : derivedVenue === 'E' ? 'EXTÉRIEUR' : '';
-        const leftName   = isAway ? (M.tB?.n || 'Adversaire') : (M.tA?.n || 'Mon équipe');
-        const rightName  = isAway ? (M.tA?.n || 'Mon équipe') : (M.tB?.n || 'Adversaire');
-        const leftScore  = isAway ? (M.sB||0) : (M.sA||0);
-        const rightScore = isAway ? (M.sA||0) : (M.sB||0);
+        const leftName   = isAway ? oppName : ourName;
+        const rightName  = isAway ? ourName : oppName;
+        const leftScore  = isAway ? sB : sA;
+        const rightScore = isAway ? sA : sB;
         const leftColors  = isAway ? oppColors : myColors;
         const rightColors = isAway ? myColors  : oppColors;
-        const leftLogo    = isAway ? (M.tB?.logoDataUrl || null) : (M.tA?.logoDataUrl || null);
-        const rightLogo   = isAway ? (M.tA?.logoDataUrl || null) : (M.tB?.logoDataUrl || null);
-        const myClubId    = M.clubId || window.CDD?.getActiveClub?.()?.id;
+        const leftLogo    = isAway ? (M?.tB?.logoDataUrl || null) : (M?.tA?.logoDataUrl || null);
+        const rightLogo   = isAway ? (M?.tA?.logoDataUrl || null) : (M?.tB?.logoDataUrl || null);
+        const myClubId    = M?.clubId || window.CDD?.getActiveClub?.()?.id;
         const leftClubId  = isAway ? null : myClubId;
         const rightClubId = isAway ? myClubId : null;
         return (
@@ -1510,7 +1518,7 @@ function ScreenVote({ go, tweaks, match: matchProp }) {
             </div>
           </div>
         );
-      })() : null}
+      })()}
 
       {playedMatches.length > 1 && (
         <div style={{padding:'0 14px 10px'}}>
@@ -1707,19 +1715,20 @@ function ScreenVote({ go, tweaks, match: matchProp }) {
       </div>
 
       {/* Rappel STICKY du match en cours de notation — reste collé en haut
-          quand on scrolle la liste. Permet de toujours savoir pour quel match
-          on est en train de voter, même au 11e joueur en bas de liste. */}
-      {(lastFinishedMatch || matchProp) && (() => {
-        // Source d'affichage : match coach chargé OU le prop si match FFF (pas en localStorage)
-        const ourName = lastFinishedMatch?.tA?.n
+          quand on scrolle la liste. Source : coach match OU CDD_LAST_MATCHES
+          (matchs FFF/V1 sans données localStorage). */}
+      {(() => {
+        const M = lastFinishedMatch;
+        const meta = playedMatches.find(pm => pm.id === selectedMatchId) || matchProp;
+        if (!M && !meta) return null;
+        const ourName = M?.tA?.n
           || window.CDD_CLUB?.short || window.CDD_CLUB?.name || 'Mon équipe';
-        const oppName = lastFinishedMatch?.tB?.n
-          || matchProp?.opp || 'Adversaire';
-        const sA = lastFinishedMatch?.sA ?? matchProp?.score?.[0] ?? '?';
-        const sB = lastFinishedMatch?.sB ?? matchProp?.score?.[1] ?? '?';
-        const dateStr = lastFinishedMatch?.endedAt
-          ? new Date(lastFinishedMatch.endedAt).toLocaleDateString('fr-FR', {day:'numeric',month:'short'})
-          : (matchProp?.date || '');
+        const oppName = M?.tB?.n || meta?.opp || 'Adversaire';
+        const sA = M?.sA ?? meta?.score?.[0] ?? '?';
+        const sB = M?.sB ?? meta?.score?.[1] ?? '?';
+        const dateStr = M?.endedAt
+          ? new Date(M.endedAt).toLocaleDateString('fr-FR', {day:'numeric',month:'short'})
+          : (meta?.date || '');
         return (
           <div style={{
             position:'sticky', top:0, zIndex:50,
