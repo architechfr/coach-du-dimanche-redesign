@@ -1787,19 +1787,32 @@ function LeaveClubModal({ clubId, clubName, teamsCount, email, onClose, onConfir
   const expected = (clubName || '').trim();
   const canQuit = typed.trim() === expected && !working;
 
-  const handleQuit = () => {
+  const handleQuit = async () => {
     if (!canQuit) return;
     setWorking(true);
     try {
+      // 1. Cloud : supprime la membership Firestore (refuse si coach
+      //    principal ou owner — l'utilisateur doit d'abord transférer).
+      //    Si le service cloud est dispo, c'est OBLIGATOIRE pour que la
+      //    sortie soit définitive (sinon le prochain pullCloudData
+      //    ré-attacherait l'utilisateur).
+      if (window.cddData && window.cddData.ready && window.cddData.leaveClub) {
+        const res = await window.cddData.leaveClub(clubId);
+        if (!res || !res.ok) {
+          throw new Error('Échec côté cloud');
+        }
+      }
+      // 2. Local : nettoie localStorage (memberships, arb_clubs, arb_teams,
+      //    logo). Bascule sur un autre club si c'était le club actif.
       const ok = window.CDD_ROLES?.deleteClubAndData?.(clubId, { email });
       if (ok) {
         if (onConfirmed) onConfirmed();
       } else {
-        alert('Erreur lors de la suppression. Voir la console pour détails.');
+        alert('Membership supprimée côté cloud mais nettoyage local échoué.\nRecharge la page pour re-synchroniser.');
         setWorking(false);
       }
     } catch (e) {
-      alert('Erreur : ' + ((e && e.message) || e));
+      alert('Impossible de quitter ce club :\n\n' + ((e && e.message) || e));
       setWorking(false);
     }
   };

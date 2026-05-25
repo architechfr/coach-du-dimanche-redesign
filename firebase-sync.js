@@ -1447,6 +1447,44 @@ async function transferTeamCoach(opts) {
   return { ok: true };
 }
 
+// Self-removal : l'utilisateur courant quitte un club côté cloud.
+// Supprime sa propre membership Firestore. Refuse si l'utilisateur
+// est coach principal d'au moins une équipe ou owner du club —
+// dans ces cas, il doit d'abord transférer son rôle (sinon l'équipe
+// se retrouverait orpheline).
+async function leaveClub(clubId) {
+  if (!db || !clubId) throw new Error('clubId requis');
+  const uid = _uid();
+  if (!uid) throw new Error('Pas connecté à Firebase Auth.');
+
+  const ref = doc(db, 'memberships', uid + '_' + clubId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    // Déjà absent côté cloud → on laisse passer (cas user qui clique 2 fois,
+    // ou membership déjà supprimée par un coach).
+    return { ok: true, noop: true };
+  }
+  const data = snap.data() || {};
+
+  // Refus 1 : owner du club.
+  if (data.clubRole === 'owner') {
+    throw new Error('Tu es propriétaire de ce club — tu ne peux pas le quitter. Transfère d\'abord la propriété ou supprime le club depuis le panneau admin.');
+  }
+
+  // Refus 2 : coach principal d'au moins une équipe.
+  const teams = data.teams || {};
+  const coachTeams = Object.keys(teams).filter(tid => teams[tid] && teams[tid].role === 'coach');
+  if (coachTeams.length > 0) {
+    const n = coachTeams.length;
+    throw new Error('Tu es coach principal de ' + n + ' équipe' + (n > 1 ? 's' : '') + '. '
+      + 'Transfère d\'abord ton rôle à un adjoint depuis « Membres du club », '
+      + 'sinon l\'équipe se retrouverait sans coach.');
+  }
+
+  await deleteDoc(ref);
+  return { ok: true };
+}
+
 // ─── Migration unique : données locales → Firestore ────────
 // Réservée à l'admin. Pousse arb_clubs / arb_teams (+ joueurs imbriqués)
 // vers Firestore et crée la membership 'owner' de l'admin sur chaque club.
@@ -2366,7 +2404,7 @@ window.cddData = {
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
   consumeInvite, clubRoleCount, teamRoleCount, inviteUrl,
   // Phase D — admin clubs/équipes
-  fetchAllClubs, findUidByEmail, assignTeamCoach, transferTeamCoach,
+  fetchAllClubs, findUidByEmail, assignTeamCoach, transferTeamCoach, leaveClub,
   migrateMembershipsToTeamsModel,
   ADJOINT_CAP, INVITE_TTL_DAYS,
 };
