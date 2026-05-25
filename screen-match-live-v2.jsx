@@ -786,6 +786,19 @@ function ScreenMatchV2({ go, tweaks }) {
     return () => clearInterval(t);
   }, [M, M && M.st, M && M.notStarted]);
 
+  // RETROACTIF : si on rouvre l'écran avec un match déjà LANCÉ (typiquement
+  // après refresh, ou avec un match commencé avant le déploiement du fix
+  // live-match cross-device), on (re-)pousse le pointeur team.liveMatch
+  // dans Firestore. Sans ça, le 2e device / adjoint / parent ne savait pas
+  // qu'un match tournait (bug Florian 26/05/2026).
+  useEffectMV(() => {
+    if (!M || M.notStarted || M.st === 'finished') return;
+    if (!window.cddData?.setTeamLiveMatch) return;
+    if (!M.teamId || !M.id) return;
+    window.cddData.setTeamLiveMatch(M.teamId, M.id)
+      .catch(e => console.warn('[liveMatch] push at mount:', e.message));
+  }, [M && M.id, M && M.st, M && M.notStarted]);
+
   // Push cloud fire-and-forget : permet aux parents/adjoints/joueurs absents
   // de suivre le LIVE en temps réel via watchMatchFromCloud. Ne bloque pas
   // l'UX coach si Firestore est lent ou indisponible.
