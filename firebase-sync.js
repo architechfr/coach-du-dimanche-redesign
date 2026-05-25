@@ -1483,7 +1483,14 @@ async function pullCloudData() {
       if (hadClub) localStorage.setItem('cdd_access_revoked', 'true');
     } catch (e) {}
 
-    if (window.CDD_REBUILD) window.CDD_REBUILD();
+    // Force React à se re-rendre (cdd-data-rebuilt déclenche root.render dans
+    // app.jsx). Sans cet event, l'app continue à afficher l'ancien état même
+    // après la purge.
+    try {
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+      window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
+      window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+    } catch (e) {}
     return { ok: true, empty: true, counts: { clubs: 0, teams: 0, players: 0 } };
   }
 
