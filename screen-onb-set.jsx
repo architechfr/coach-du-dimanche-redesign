@@ -524,6 +524,38 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           {isCoach && (
             <SetRow ic="📡" t="Synchronisation" d="Firestore · à jour" status="ok" go={() => go("sync")}/>
           )}
+          {userEmail && (
+            <SetRow ic="🆘" t="Forcer une resync match"
+                    d="Si match fantôme, chrono cassé ou état bizarre"
+                    go={async () => {
+                      const ok = confirm(
+                        'Forcer une resync complète du match en cours ?\n\n' +
+                        '  • Le cache match local sera purgé\n' +
+                        '  • Les données seront re-tirées depuis le cloud\n' +
+                        '  • Aucune donnée joueur/équipe/club n\'est touchée\n\n' +
+                        'Utile si tu vois un match fantôme, un chrono absurde, ' +
+                        'ou un état désynchronisé entre tes devices.'
+                      );
+                      if (!ok) return;
+                      if (!window.cddData?.forceResyncMatch) {
+                        alert('Fonction indisponible (Firestore non initialisé).');
+                        return;
+                      }
+                      try {
+                        const r = await window.cddData.forceResyncMatch();
+                        if (r.ok) {
+                          alert('✓ Resync réussie\n\n' + (r.removed?.length || 0) +
+                                ' clés cache purgées. État rechargé depuis le cloud.');
+                        } else {
+                          alert('❌ Resync échouée : ' + (r.error || 'inconnu') +
+                                '\n\nLe cache local a été purgé mais le cloud n\'a pas répondu. ' +
+                                'Vérifie ta connexion ou ton ad-blocker.');
+                        }
+                      } catch (e) {
+                        alert('❌ Erreur : ' + e.message);
+                      }
+                    }}/>
+          )}
           {/* #C5 — Membres du club : roster + rôle de chacun. Réservé au
               coach principal / owner / admin (canManageClub), pas l'adjoint.
               Pour l'admin : pertinent uniquement quand il a un club ACTIF

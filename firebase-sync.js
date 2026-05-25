@@ -2290,6 +2290,50 @@ async function pullCloudData() {
     }
   } catch (e) { console.warn('[liveMatch] pull cross-device', e.message); }
 
+  // ── ANTI-FANTÔME : cleanup cdd_match_current si plus aucune team ne le revendique ──
+  // Cas typique : un autre device a cliqué "Fin de match" → cloud team.liveMatch
+  // est cleared, le match doc est status='finished'. Ce device garde dans son
+  // localStorage un cdd_match_current pointant sur l'ancien match (et le
+  // cdd_match_<id> peut avoir un st='paused' stale). Sans nettoyage, l'accueil
+  // affiche un bandeau rouge "MATCH EN COURS" fantôme jusqu'à ce que l'utilisateur
+  // navigue manuellement sur l'écran match-live (qui contient le watch cleanup).
+  try {
+    const ghostCurrentId = localStorage.getItem('cdd_match_current');
+    if (ghostCurrentId) {
+      const stillClaimed = mergedTeams.some(t =>
+        t && t.liveMatch && String(t.liveMatch.matchId) === String(ghostCurrentId)
+      );
+      if (!stillClaimed) {
+        // Aucune team ne le revendique → vérifier le statut cloud du match
+        const ghostDoc = await fetchMatch(ghostCurrentId).catch(() => null);
+        const isFinished = !ghostDoc || ghostDoc.status === 'finished';
+        if (isFinished) {
+          console.info('[cleanup] match fantôme détecté :', ghostCurrentId,
+            'statut cloud:', ghostDoc ? ghostDoc.status : 'doc absent',
+            '→ nettoyage local');
+          try {
+            // Marquer comme dernier match terminé pour les filtres post-match
+            localStorage.setItem('cdd_match_last_finished', String(ghostCurrentId));
+            localStorage.removeItem('cdd_match_current');
+            // Mettre à jour le cache local pour refléter le statut finished
+            const localKey = 'cdd_match_' + ghostCurrentId;
+            const localRaw = localStorage.getItem(localKey);
+            if (localRaw) {
+              try {
+                const local = JSON.parse(localRaw);
+                if (local && local.st !== 'finished') {
+                  local.st = 'finished';
+                  local.endedAt = local.endedAt || (ghostDoc && ghostDoc.endedAt) || Date.now();
+                  localStorage.setItem(localKey, JSON.stringify(local));
+                }
+              } catch (e) {}
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) { console.warn('[cleanup] ghost match', e.message); }
+
   try {
     window.dispatchEvent(new CustomEvent('cdd-memberships-changed'));
     if (window.CDD_REBUILD) window.CDD_REBUILD();
@@ -2540,6 +2584,50 @@ async function consumeInvite(token) {
   return { ok: true, clubId: inv.clubId, teamId: inv.teamId, role: inv.role || 'lecteur', playerId: inv.playerId || null };
 }
 
+/* ============================================================
+   SOS — Force resync : purge cache local match + re-pull cloud
+   ============================================================ */
+// Soupape de sécurité utilisateur quand le cache local est désynchronisé
+// (match fantôme, chrono cassé, état incohérent). Purge tout ce qui est
+// match-related en localStorage et relance pullCloudData pour repartir
+// d'un état propre. Préserve les données structurantes (clubs, teams,
+// players, memberships) qui seront re-pullées.
+async function forceResyncMatch() {
+  console.info('[SOS-resync] début purge match local…');
+  const removed = [];
+  try {
+    // Lister toutes les clés cdd_match_* puis les purger
+    const matchKeys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('cdd_match_') || k === 'cdd_match_current' ||
+                k === 'cdd_match_last_finished')) {
+        matchKeys.push(k);
+      }
+    }
+    matchKeys.forEach(k => {
+      try { localStorage.removeItem(k); removed.push(k); } catch (e) {}
+    });
+  } catch (e) { console.warn('[SOS-resync] purge keys', e.message); }
+  console.info('[SOS-resync] purge OK :', removed.length, 'clés supprimées', removed);
+
+  // Re-pull cloud → recharge tout depuis Firestore (incl. liveMatch fresh)
+  try {
+    await pullCloudData();
+    console.info('[SOS-resync] pull cloud OK');
+  } catch (e) {
+    console.warn('[SOS-resync] pull cloud failed', e.message);
+    return { ok: false, error: e.message, removed };
+  }
+
+  // Force rebuild des globaux + event pour rerender React
+  try {
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+  } catch (e) {}
+  return { ok: true, removed };
+}
+
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
@@ -2555,7 +2643,7 @@ window.cddData = {
   uploadClubLogo, deleteClubLogo, uploadPlayerPhoto, // dormant (plan Blaze requis)
   saveMembership, removeTeamMembership,
   fetchMemberships, fetchClubMemberships, fetchClub, fetchTeams, fetchPlayers,
-  migrateLocalToCloud, pullCloudData,
+  migrateLocalToCloud, pullCloudData, forceResyncMatch,
   createInvite, fetchInvite, fetchClubInvites, revokeInvite,
   consumeInvite, clubRoleCount, teamRoleCount, inviteUrl,
   // Phase D — admin clubs/équipes
