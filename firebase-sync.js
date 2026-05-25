@@ -216,6 +216,12 @@ async function saveMatchToCloud(match) {
     reds:    { A: match.rA || 0, B: match.rB || 0 },
     subs:    { A: match.uA || 0, B: match.uB || 0 },
     addTime: match.at || 0,
+    tSt: match.tSt || null,
+    tOff: typeof match.tOff === 'number' ? match.tOff : 0,
+    startedAt: match.startedAt || null,
+    pauseStartedAt: match.pauseStartedAt || null,
+    inHalftime: match.inHalftime || false,
+    htStart: match.htStart || null,
     savedAt: serverTimestamp(),
     coachId: getVoterId(),
   };
@@ -2261,6 +2267,12 @@ async function pullCloudData() {
             uA: matchDoc.subs    ? matchDoc.subs.A    : 0,
             uB: matchDoc.subs    ? matchDoc.subs.B    : 0,
             at: matchDoc.addTime || 0,
+            tSt: matchDoc.tSt || null,
+            tOff: typeof matchDoc.tOff === 'number' ? matchDoc.tOff : 0,
+            startedAt: matchDoc.startedAt || null,
+            pauseStartedAt: matchDoc.pauseStartedAt || null,
+            inHalftime: matchDoc.inHalftime || false,
+            htStart: matchDoc.htStart || null,
             savedAt: Date.now(),
           };
           localStorage.setItem('cdd_match_' + lmId, JSON.stringify(localShape));

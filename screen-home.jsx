@@ -213,7 +213,13 @@ function ScreenHome({ go, tweaks }) {
 
         <div className="home-hero-top">
           {!next.noUpcoming && (
-          <div className="chip live">{`J-${next.daysLeft} · À VENIR`}</div>
+            liveMatch
+              ? <div className="chip live" style={{
+                  background:'rgba(239,68,68,0.18)',
+                  color:'#fca5a5',
+                  border:'1px solid rgba(239,68,68,0.45)',
+                }}>● MATCH EN COURS</div>
+              : <div className="chip live">{`J-${next.daysLeft} · À VENIR`}</div>
           )}
           {next.noUpcoming && (
             <div className="chip" style={{
@@ -317,10 +323,21 @@ function ScreenHome({ go, tweaks }) {
               </button>
             ) : null
           ) : isCoachLike ? (
-            <button className="btn-cta" onClick={() => go("match-prep")}>
-              <span>PRÉPARER LE MATCH</span>
-              <span className="arr">→</span>
-            </button>
+            // Si le match est lancé, "PRÉPARER LE MATCH" n'a plus de sens
+            // (le bandeau rouge REPRENDRE LE MATCH est déjà en évidence au
+            // dessus). On bascule sur "Voir la compo" qui amène à un écran
+            // utile pendant le match (consultation, pas édition).
+            liveMatch ? (
+              <button className="btn-cta" onClick={() => go("match")}>
+                <span>▶ REPRENDRE LE MATCH</span>
+                <span className="arr">→</span>
+              </button>
+            ) : (
+              <button className="btn-cta" onClick={() => go("match-prep")}>
+                <span>PRÉPARER LE MATCH</span>
+                <span className="arr">→</span>
+              </button>
+            )
           ) : (isParent || isJoueur) ? (
             <button className="btn-cta" onClick={() => go("lecteur")}>
               <span>VOIR MA CONVOCATION</span>
