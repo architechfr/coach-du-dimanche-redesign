@@ -1174,6 +1174,44 @@ async function applyFFFData(fffCfg, clubName, players) {
         return id !== _lastFinishedId;
       });
     }
+
+    // ── ANTI-MATCH-FANTÔME FFF (Bug Bussy → "? VS USDF · Dim. 12 Oct · 02h00") ──
+    // DOFA remonte parfois des matchs de la SAISON PROCHAINE avec :
+    //   - adversaire non résolu ("?", "À déterminer", vide)
+    //   - heure = 02h00 = artefact UTC midnight (la FFF stocke 00:00 UTC, JS
+    //     l'affiche en CEST = 02h00) → indicateur fiable de date placeholder
+    //   - date à >60 jours dans le futur (= prochaine saison vs match du jour)
+    // Ces matchs polluaient le hero "Prochain match" après un amical terminé :
+    // au lieu de noUpcoming, l'app affichait ce fantôme avec adversaire "?".
+    const FUTURE_HORIZON_MS = 60 * 24 * 60 * 60 * 1000; // 60 jours
+    const _isSuspiciousFFFMatch = (m) => {
+      if (!m) return true;
+      const oppName = (m.away || '').trim();
+      // Adversaire absent ou placeholder explicite
+      if (!oppName || oppName === '?' || /^(à déterminer|tbd|n\/a)$/i.test(oppName)) {
+        return true;
+      }
+      // Date suspecte (trop loin = saison prochaine)
+      const d = new Date(m.dateRaw);
+      if (isNaN(d)) return false; // on ne juge pas une date qu'on n'arrive pas à parser
+      const diffMs = d.getTime() - Date.now();
+      if (diffMs > FUTURE_HORIZON_MS) return true;
+      // Heure 02h00 ou 00h00 = artefact UTC midnight (date sans heure renseignée)
+      // Critère : si l'heure tombe pile sur 02h00 OU 00h00 ET qu'on est à >7 jours,
+      // c'est très probablement une date placeholder du calendrier prévisionnel.
+      const h = d.getHours();
+      const mn = d.getMinutes();
+      if ((h === 2 || h === 0) && mn === 0 && diffMs > 7 * 24 * 60 * 60 * 1000) {
+        return true;
+      }
+      return false;
+    };
+    const _beforeSuspFilter = upcomingFiltered.length;
+    upcomingFiltered = upcomingFiltered.filter(m => !_isSuspiciousFFFMatch(m));
+    if (_beforeSuspFilter !== upcomingFiltered.length) {
+      console.log(`[FFF] anti-fantôme : ${_beforeSuspFilter - upcomingFiltered.length} match(s) FFF suspect(s) filtré(s) (saison prochaine, adversaire ?, heure 02h00…)`);
+    }
+
     // Expose la liste des matchs FFF à venir pour le sélecteur multi-matchs
     // (combine ensuite avec les matchs amicaux dans match-switcher.js).
     window.CDD_FFF_UPCOMING = upcomingFiltered.slice();
