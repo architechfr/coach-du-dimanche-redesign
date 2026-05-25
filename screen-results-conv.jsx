@@ -1156,6 +1156,33 @@ function ScreenConvocations({ go, tweaks }) {
         );
       })()}
 
+      {(() => {
+        // Toute la mécanique convocation (stats, suivi présences, listes
+        // titulaires/banc/réserve, statuts) n'a de SENS que si un vrai match
+        // est programmé. Sans match, on masque pour éviter les fausses
+        // interactions (statuts "?" résiduels, relances sur 0 parents, etc.).
+        const _isPlaceholderMatch = !!(next && (next.noUpcoming || !next.away || next.away === 'À déterminer'));
+        if (_isPlaceholderMatch) {
+          return (
+            <div style={{
+              margin:'20px 14px', padding:'24px 16px', textAlign:'center',
+              background:'rgba(255,255,255,0.03)',
+              border:'1px dashed rgba(255,255,255,0.12)',
+              borderRadius:14,
+            }}>
+              <div style={{fontSize:36, marginBottom:8}}>📅</div>
+              <div style={{fontSize:14, fontWeight:800, color:'#fff', marginBottom:6}}>
+                Aucun match à préparer
+              </div>
+              <div style={{fontSize:12, lineHeight:1.5, color:'rgba(255,255,255,0.65)'}}>
+                Convocations, statuts de présence et relances WhatsApp
+                s'activeront dès qu'un match sera programmé.
+                {canEdit && <><br/>Utilise le bouton 🤝 ci-dessus pour créer un match amical.</>}
+              </div>
+            </div>
+          );
+        }
+        return (<>
       <div className="cv-stats">
         <div className="cv-stat"><b className="num">{starterPlayers.length}</b><em>Titulaires</em></div>
         <div className={`cv-stat ${benchPlayers.length >= BENCH_MAX ? 'cv-stat-full' : ''}`}>
@@ -1459,6 +1486,8 @@ function ScreenConvocations({ go, tweaks }) {
           </div>
         </div>
       )}
+        </>);
+      })()}
 
       {/* Modale "Remplacer" : le coach choisit explicitement qui descend ↔ qui monte.
           Ouverte au clic sur le bouton ↔ d'un titulaire ou d'un remplaçant. */}
