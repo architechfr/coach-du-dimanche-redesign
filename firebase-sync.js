@@ -2274,6 +2274,7 @@ async function pullCloudData() {
             inHalftime: matchDoc.inHalftime || false,
             htStart: matchDoc.htStart || null,
             savedAt: Date.now(),
+            _pulledFromCloud: true,
           };
           localStorage.setItem('cdd_match_' + lmId, JSON.stringify(localShape));
           localStorage.setItem('cdd_match_current', lmId);

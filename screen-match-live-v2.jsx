@@ -856,6 +856,45 @@ function ScreenMatchV2({ go, tweaks }) {
     return () => clearInterval(tick);
   }, [M, M && M.st, M && M.notStarted]);
 
+  // ── Watch cloud pour device distant (_pulledFromCloud) ─────────────────
+  // Quand ce device a obtenu le match via pullCloudData (pas en l'ayant lancé),
+  // les champs chrono (tSt, tOff) peuvent être null/stale dans le cache local.
+  // On s'abonne à Firestore pour recevoir les mises à jour de l'origine en temps réel
+  // → score, chrono, événements restent en sync sans force-refresh.
+  useEffectMV(() => {
+    if (!M || !M._pulledFromCloud || M.st === 'finished') return;
+    if (!window.cddSync || !window.cddSync.watchMatchFromCloud) return;
+    console.info('[liveMatch] device distant : abonnement watch cloud', M.id);
+    const unsub = window.cddSync.watchMatchFromCloud(M.id, (doc) => {
+      if (!doc || !Mref.current) return;
+      const curr = Mref.current;
+      let changed = false;
+      // Mise à jour des champs critiques depuis le cloud (chrono + score + events)
+      const upd = {
+        tSt:           doc.tSt           || null,
+        tOff:          typeof doc.tOff === 'number' ? doc.tOff : (curr.tOff || 0),
+        startedAt:     doc.startedAt     || curr.startedAt     || null,
+        pauseStartedAt:doc.pauseStartedAt != null ? doc.pauseStartedAt : curr.pauseStartedAt,
+        inHalftime:    doc.inHalftime    != null ? doc.inHalftime    : curr.inHalftime,
+        htStart:       doc.htStart       || curr.htStart       || null,
+        st:            doc.status        || curr.st,
+        ch:            doc.period        || curr.ch,
+        sA:            doc.teamA != null ? (typeof doc.teamA.score === 'number' ? doc.teamA.score : curr.sA) : curr.sA,
+        sB:            doc.teamB != null ? (typeof doc.teamB.score === 'number' ? doc.teamB.score : curr.sB) : curr.sB,
+        ev:            doc.events        || curr.ev,
+        at:            typeof doc.addTime === 'number' ? doc.addTime : (curr.at || 0),
+      };
+      Object.keys(upd).forEach(k => {
+        if (curr[k] !== upd[k]) { curr[k] = upd[k]; changed = true; }
+      });
+      if (changed) {
+        console.info('[liveMatch] ✓ cloud sync →', { tSt: curr.tSt, st: curr.st, sA: curr.sA, sB: curr.sB });
+        forceRender({});
+      }
+    });
+    return () => { try { unsub(); } catch (e) {} };
+  }, [M && M.id, M && M._pulledFromCloud]);
+
   // ─── Match controls ─────────────────────────────────
   const startMatch = () => {
     M.notStarted = false;
