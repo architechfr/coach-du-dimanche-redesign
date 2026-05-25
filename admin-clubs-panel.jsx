@@ -139,7 +139,10 @@ function AdminClubsPanel({ onClose }) {
     if (!parser) { alert('Module FFF non chargé.'); return; }
     const parsed = parser(fffUrl.trim());
     if (!parsed || !parsed.competId) {
-      alert("URL non reconnue. Colle l'URL complète d'une page championnat FFF (avec ?competition=… &group=… &scl=…)");
+      alert("URL non reconnue.\n\nFormats acceptés :\n"
+        + "  • www.fff.fr/competitions/?competition=…&group=…&scl=…\n"
+        + "  • epreuves.fff.fr/competition/club/{id}-slug/equipe/{annee}_{compet}_{cat}_{poule}/…\n\n"
+        + "Va sur la page Classement ou Calendrier de TON équipe sur fff.fr et copie l'URL complète.");
       return;
     }
     setFffForm({
@@ -828,7 +831,7 @@ function AdminClubsPanel({ onClose }) {
               </div>
               <div style={{display:'flex', gap:6}}>
                 <input type="text" value={fffUrl} onChange={e => setFffUrl(e.target.value)}
-                  placeholder="https://www.fff.fr/competitions/?competition=…"
+                  placeholder="fff.fr/competitions/?... ou epreuves.fff.fr/competition/club/.../equipe/..."
                   style={{
                     flex:1, padding:'8px 10px', borderRadius:7, fontSize:12,
                     background:'rgba(0,0,0,.35)', color:'#fff',

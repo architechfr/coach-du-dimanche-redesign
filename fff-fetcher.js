@@ -121,21 +121,46 @@
   }
 
   // ─── URL parser (for in-app user paste) ─────────────
+  // Gère 2 formats FFF :
+  //   • Ancien : www.fff.fr/competitions/?competition=…&group=…&scl=…
+  //   • Nouveau : epreuves.fff.fr/competition/club/{cl_no}-slug/equipe/{annee}_{compet}_{cat}_{poule}/...
+  // Retourne { clubId, competId, phase, group, label } ou null si rien
+  // de reconnaissable.
   function parseFFFUrl(url) {
     if (!url) return null;
-    const qs = url.includes("?") ? url.split("?")[1].split("#")[0] : url;
-    const params = {};
-    qs.split("&").forEach(pair => {
-      const [k, v=""] = pair.split("=");
-      if (k) params[decodeURIComponent(k).toLowerCase()] = decodeURIComponent(v.replace(/\+/g, " "));
-    });
-    return {
-      clubId:   params.scl || params.club,
-      competId: params.competition || params.comp,
-      phase:    params.stage || "1",
-      group:    params.group || params.poule || "1",
-      label:    params.label || "",
-    };
+    const out = { clubId: null, competId: null, phase: "1", group: "1", label: "" };
+
+    // 1. Query string (ancien format ou paramètres en plus)
+    if (url.includes("?")) {
+      const qs = url.split("?")[1].split("#")[0];
+      const params = {};
+      qs.split("&").forEach(pair => {
+        const [k, v=""] = pair.split("=");
+        if (k) params[decodeURIComponent(k).toLowerCase()] = decodeURIComponent(v.replace(/\+/g, " "));
+      });
+      if (params.scl || params.club)       out.clubId   = params.scl || params.club;
+      if (params.competition || params.comp) out.competId = params.competition || params.comp;
+      if (params.stage)                    out.phase    = params.stage;
+      if (params.group || params.poule)    out.group    = params.group || params.poule;
+      if (params.label)                    out.label    = params.label;
+    }
+
+    // 2. Path-based (nouveau format epreuves.fff.fr)
+    //    /club/{cl_no}-slug/equipe/{annee}_{cp_no}_{cat}_{poule}/...
+    const mClub = url.match(/\/club\/(\d+)(?:-[^\/]*)?\//);
+    if (mClub && !out.clubId) out.clubId = mClub[1];
+    const mEq = url.match(/\/equipe\/(\d{4})_(\d+)_([A-Za-z]+)_(\d+)/);
+    if (mEq) {
+      if (!out.competId) out.competId = mEq[2];
+      if (out.group === "1") out.group = mEq[4];
+      // mEq[3] = catégorie (SEM, SEF, VET, U13, etc.) — pas utilisé dans la
+      // config FFF actuelle mais on pourrait le mettre en label par défaut.
+      if (!out.label) out.label = mEq[3] + ' · poule ' + mEq[4];
+    }
+
+    // Renvoie null si rien n'a été extrait (ni competId, ni clubId)
+    if (!out.competId && !out.clubId) return null;
+    return out;
   }
 
   // ─── Public API ────────────────────────────────────
