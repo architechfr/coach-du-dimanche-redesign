@@ -28,6 +28,8 @@ function ScreenClub({ go, tweaks }) {
   const buildInitial = () => ({
     name:         activeClub.name || '',
     short:        activeClub.short || '',
+    description:  activeClub.description || '',
+    foundedYear:  activeClub.foundedYear || '',
     stadium:      {
       name:    activeClub.stadium?.name || '',
       address: activeClub.stadium?.address || '',
@@ -82,6 +84,8 @@ function ScreenClub({ go, tweaks }) {
         ...all[i],
         name:        data.name.trim() || all[i].name,
         short:       data.short.trim() || all[i].short,
+        description: (data.description || '').trim(),
+        foundedYear: (data.foundedYear || '').toString().trim(),
         stadium:     { ...data.stadium,
                        name: data.stadium.name.trim(),
                        address: data.stadium.address.trim(),
@@ -181,6 +185,64 @@ function ScreenClub({ go, tweaks }) {
       </div>
 
       {/* SECTIONS — view ou edit */}
+
+      {/* À PROPOS — description + année de fondation */}
+      <div style={sectionStyle}>
+        <div style={sectionHeader}><span>📝</span><span>À propos du club</span></div>
+        {edit ? (
+          <>
+            <label style={{display:'block', marginBottom:10}}>
+              <span style={labelText}>ANNÉE DE FONDATION</span>
+              <input type="text" value={data.foundedYear || ''}
+                onChange={e => setData(d => ({...d, foundedYear: e.target.value}))}
+                placeholder="ex : 1995"
+                style={{...inputStyle, maxWidth:140}}/>
+            </label>
+            <label style={{display:'block'}}>
+              <span style={labelText}>DESCRIPTION / MOT DU CLUB</span>
+              <textarea value={data.description || ''}
+                onChange={e => setData(d => ({...d, description: e.target.value}))}
+                placeholder="ex : Le FC Magny-le-Hongre est un club familial fondé en 1995, qui forme les jeunes du U7 au U18 dans le respect, l'engagement et le plaisir du jeu."
+                rows={4}
+                style={{...inputStyle, resize:'vertical', minHeight:90, lineHeight:1.4}}/>
+            </label>
+          </>
+        ) : (
+          <div style={{fontSize:13, lineHeight:1.5, color:data.description ? '#fff' : 'rgba(255,255,255,.4)', fontStyle:data.description ? 'normal' : 'italic'}}>
+            {data.description || 'Non renseigné'}
+            {data.foundedYear && (
+              <div style={{marginTop:8, fontSize:11, opacity:.6}}>
+                Fondé en <b style={{color:'#fff'}}>{data.foundedYear}</b>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ÉQUIPES DU CLUB — lecture seule, dérivé des teams existantes */}
+      {(() => {
+        const teams = (window.CDD?.getTeams?.() || []).filter(t => t && t.clubId === clubId);
+        if (teams.length === 0) return null;
+        return (
+          <div style={sectionStyle}>
+            <div style={sectionHeader}><span>⚽</span><span>Équipes du club ({teams.length})</span></div>
+            <div style={{display:'flex', flexDirection:'column', gap:6}}>
+              {teams.map(t => (
+                <div key={t.id} style={{
+                  padding:'8px 12px', borderRadius:8,
+                  background:'rgba(255,255,255,.03)',
+                  border:'1px solid rgba(255,255,255,.06)',
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  fontSize:13,
+                }}>
+                  <span style={{fontWeight:700}}>{t.name || 'Équipe'}</span>
+                  {t.category && <span style={{fontSize:11, opacity:.7}}>{t.category}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* STADE */}
       <div style={sectionStyle}>
