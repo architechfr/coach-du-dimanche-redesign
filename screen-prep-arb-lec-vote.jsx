@@ -1706,25 +1706,53 @@ function ScreenVote({ go, tweaks, match: matchProp }) {
         </div>
       </div>
 
-      {/* Rappel contextuel du match — reste visible juste au-dessus de la liste
-          des joueurs, pour qu'on sache toujours pour quel match on note. */}
-      {lastFinishedMatch && (
-        <div style={{
-          margin:'0 14px 10px', padding:'10px 12px',
-          background:'rgba(56,189,248,.06)',
-          border:'1px solid rgba(56,189,248,.25)',
-          borderRadius:10, fontSize:12,
-          color:'rgba(255,255,255,.85)',
-          textAlign:'center', lineHeight:1.4,
-        }}>
-          📋 Tu notes les joueurs de <b style={{color:'#fff'}}>{lastFinishedMatch.tA?.n || 'Mon équipe'} {lastFinishedMatch.sA||0}–{lastFinishedMatch.sB||0} {lastFinishedMatch.tB?.n || 'Adversaire'}</b>
-          {lastFinishedMatch.endedAt && (
-            <span style={{opacity:.7, marginLeft:6}}>
-              · {new Date(lastFinishedMatch.endedAt).toLocaleDateString('fr-FR', {day:'numeric',month:'short'})}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Rappel STICKY du match en cours de notation — reste collé en haut
+          quand on scrolle la liste. Permet de toujours savoir pour quel match
+          on est en train de voter, même au 11e joueur en bas de liste. */}
+      {(lastFinishedMatch || matchProp) && (() => {
+        // Source d'affichage : match coach chargé OU le prop si match FFF (pas en localStorage)
+        const ourName = lastFinishedMatch?.tA?.n
+          || window.CDD_CLUB?.short || window.CDD_CLUB?.name || 'Mon équipe';
+        const oppName = lastFinishedMatch?.tB?.n
+          || matchProp?.opp || 'Adversaire';
+        const sA = lastFinishedMatch?.sA ?? matchProp?.score?.[0] ?? '?';
+        const sB = lastFinishedMatch?.sB ?? matchProp?.score?.[1] ?? '?';
+        const dateStr = lastFinishedMatch?.endedAt
+          ? new Date(lastFinishedMatch.endedAt).toLocaleDateString('fr-FR', {day:'numeric',month:'short'})
+          : (matchProp?.date || '');
+        return (
+          <div style={{
+            position:'sticky', top:0, zIndex:50,
+            margin:'0 14px 10px', padding:'12px 14px',
+            background:'linear-gradient(135deg, rgba(245,196,81,.18), rgba(245,196,81,.06))',
+            backdropFilter:'blur(10px)',
+            WebkitBackdropFilter:'blur(10px)',
+            border:'1px solid rgba(245,196,81,.45)',
+            borderRadius:12,
+            boxShadow:'0 4px 14px rgba(0,0,0,.35)',
+          }}>
+            <div style={{
+              fontSize:10, fontWeight:900, letterSpacing:'.12em',
+              color:'#f5c451', marginBottom:4, textTransform:'uppercase',
+              textAlign:'center',
+            }}>
+              🗳 Ton vote pour ce match
+            </div>
+            <div style={{
+              fontSize:14, fontWeight:800, color:'#fff',
+              textAlign:'center', lineHeight:1.3,
+            }}>
+              {ourName} <span style={{color:'#c8f169'}}>{sA}–{sB}</span> {oppName}
+            </div>
+            {dateStr && (
+              <div style={{
+                fontSize:10, opacity:.7, textAlign:'center', marginTop:2,
+                color:'rgba(255,255,255,.7)',
+              }}>{dateStr}</div>
+            )}
+          </div>
+        );
+      })()}
 
       {motm && (() => {
         const mp = starters.find(p => p.id === motm);
