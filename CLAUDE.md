@@ -11,7 +11,7 @@ Au démarrage d'une session, lis dans l'ordre :
 2. `PHASE-C-PLAN.md` — chantier sécurité C1→C5 (livré).
 3. `PHASE-D-PLAN.md` — modèle d'autorisation par équipe (EN COURS).
 
-## État au 2026-05-24 (soir)
+## État au 2026-05-25 (nuit)
 
 Pour le détail complet des livraisons, lire **`HANDOFF.md`** (changelog
 session par session). Synthèse rapide :
@@ -58,7 +58,7 @@ session par session). Synthèse rapide :
 - **Cache buster** : les fichiers `.js` / `.jsx` / `.css` sont chargés
   avec `?v=NN` dans `app.html`. **1 push git = 1 numéro de version**,
   tous les fichiers modifiés dans le même commit prennent le même `?v=NN`,
-  le push suivant incrémente de 1 (actuellement **v82**). Pas de
+  le push suivant incrémente de 1 (actuellement **v94**). Pas de
   réutilisation d'un numéro. Seuls quelques fichiers stables historiques
   ne sont pas versionnés (player-card.jsx, screen-share.jsx, etc.).
 - **OneDrive** : ce dossier est synchronisé OneDrive. OneDrive verrouille

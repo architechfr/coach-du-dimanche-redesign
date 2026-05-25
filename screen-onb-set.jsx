@@ -292,18 +292,41 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         const userEmail = (localStorage.getItem("cdd_user_email") || "").trim();
         const initials = coachName
           ? coachName.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
-          : (club.short || club.name || 'CO').slice(0, 2).toUpperCase();
-        const displayName = coachName || `Coach ${club.name || ''}`.trim() || 'Coach';
+          : (isAdmin ? '🛡️' : (club.short || club.name || 'CO').slice(0, 2).toUpperCase());
+        // Pour l'admin : nom affiché spécifique si pas de coach name custom.
+        const displayName = coachName
+          || (isAdmin ? 'Admin Application' : (`Coach ${club.name || ''}`.trim() || 'Coach'));
         const roleLabel = window.CDD_ROLES?.roleLabel?.(role) || role.toUpperCase();
         const activeClub = window.CDD?.getActiveClub?.() || null;
         const clubColors = (window.CDD_CLUB && window.CDD_CLUB.colors) || [];
+        // Pour l'admin : styling doré distinctif et libellé du contexte
+        // « Toute l'application » au lieu d'un club/équipe spécifique.
+        const adminGold = '#f5c451';
         return (
-          <div className="set-profile">
-            <div className="set-avatar" style={{position:'relative'}}>
-              <div className="set-avatar-i">{initials}</div>
-              <div className="set-avatar-badge">{roleLabel}</div>
-              {/* Petit badge club en sur-impression — rappel visuel du club rattaché */}
-              {window.ClubBadge && activeClub?.id && (
+          <div className="set-profile" style={isAdmin ? {
+            background: 'linear-gradient(135deg, rgba(245,196,81,0.10), rgba(245,196,81,0.03))',
+            border: '1px solid rgba(245,196,81,0.40)',
+          } : undefined}>
+            <div className="set-avatar" style={{
+              position:'relative',
+              ...(isAdmin ? {
+                background: 'linear-gradient(135deg, #f5c451, #d4a017)',
+                color: '#1f1404',
+              } : {}),
+            }}>
+              <div className="set-avatar-i" style={isAdmin ? {color:'#1f1404'} : undefined}>
+                {initials}
+              </div>
+              <div className="set-avatar-badge" style={isAdmin ? {
+                background: '#1f1404',
+                border: '1px solid ' + adminGold,
+                color: adminGold,
+              } : undefined}>
+                {isAdmin ? '🛡️ ADMIN APP' : roleLabel}
+              </div>
+              {/* Petit badge club en sur-impression — caché pour l'admin
+                  (qui n'est attaché à aucun club en particulier). */}
+              {window.ClubBadge && activeClub?.id && !isAdmin && (
                 <div style={{
                   position:'absolute', bottom:-4, right:-4,
                   background:'#0a0e14', borderRadius:8, padding:2,
@@ -314,8 +337,16 @@ function ScreenSettings({ go, tweaks, setTweak }) {
               )}
             </div>
             <div className="set-profile-info">
-              <div className="set-profile-name">{displayName}</div>
-              <div className="set-profile-club">{club.name} · {club.team}</div>
+              <div className="set-profile-name" style={isAdmin ? {color: adminGold} : undefined}>
+                {displayName}
+              </div>
+              <div className="set-profile-club">
+                {isAdmin
+                  ? <span style={{color:'rgba(245,196,81,0.85)', fontWeight:700}}>
+                      🌐 Toute l'application
+                    </span>
+                  : `${club.name} · ${club.team}`}
+              </div>
               <div className="set-profile-since">
                 {userEmail || (
                   <span style={{color:'#fbbf24'}}>📧 Email non configuré — touche ✎ pour le renseigner</span>
@@ -333,7 +364,7 @@ function ScreenSettings({ go, tweaks, setTweak }) {
           admin). Jamais saisi à la main. */}
       {(() => {
         const META = {
-          admin:   { ic: '🛡️', label: 'Administrateur' },
+          admin:   { ic: '🛡️', label: 'Admin Application' },
           owner:   { ic: '👑', label: 'Propriétaire' },
           coach:   { ic: '📋', label: 'Coach principal' },
           adjoint: { ic: '🎽', label: 'Coach adjoint' },
@@ -476,8 +507,15 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       <div className="set-sec">
         <div className="set-sec-k">COMPTE</div>
         <div className="set-rows">
-          <SetRow ic="🏆" t="Mon club" d={club.name} go={() => isCoach ? go("sync") : alert('Réservé au coach')}/>
-          <SetRow ic="👥" t={isParent ? 'Équipe' : 'Mon équipe'} d={`${club.team} · 18 joueurs`} go={() => go("effectif")}/>
+          {/* Mon club / Mon équipe : masqué pour l'admin qui n'a pas de
+              club spécifique. Il a un accès global via « Clubs & équipes »
+              affiché plus bas dans la section ADMIN. */}
+          {!isAdmin && (
+            <>
+              <SetRow ic="🏆" t="Mon club" d={club.name} go={() => isCoach ? go("sync") : alert('Réservé au coach')}/>
+              <SetRow ic="👥" t={isParent ? 'Équipe' : 'Mon équipe'} d={`${club.team} · 18 joueurs`} go={() => go("effectif")}/>
+            </>
+          )}
           <SetRow ic="🔐" t="Compte" d={userEmail || 'Non connecté'}
                   status={userEmail ? 'ok' : undefined}
                   go={() => alert(userEmail
@@ -487,8 +525,10 @@ function ScreenSettings({ go, tweaks, setTweak }) {
             <SetRow ic="📡" t="Synchronisation" d="Firestore · à jour" status="ok" go={() => go("sync")}/>
           )}
           {/* #C5 — Membres du club : roster + rôle de chacun. Réservé au
-              coach principal / owner / admin (canManageClub), pas l'adjoint. */}
-          {canManageClub && userEmail && (
+              coach principal / owner / admin (canManageClub), pas l'adjoint.
+              Pour l'admin : pertinent uniquement quand il a un club ACTIF
+              sélectionné (il peut switcher de club via le panneau admin). */}
+          {canManageClub && userEmail && !isAdmin && (
             <SetRow ic="👥" t="Membres du club"
                     d="Qui a rejoint le club et en quelle qualité"
                     go={() => setShowMembersPanel(true)}/>
@@ -525,8 +565,11 @@ function ScreenSettings({ go, tweaks, setTweak }) {
       </div>
 
       {/* INVITER — génération de liens d'invitation (C4/C5). Visible dès que
-          le rôle courant a au moins un rôle invitable (matrice). Lecteur exclu. */}
-      {myInvitable.length > 0 && isCoach && (
+          le rôle courant a au moins un rôle invitable (matrice). Lecteur exclu.
+          Masqué pour l'admin app : ses outils sont dans le panneau « Clubs &
+          équipes » (assigner / transférer coach directement, sans passer
+          par un lien). */}
+      {myInvitable.length > 0 && isCoach && !isAdmin && (
         <div className="set-sec">
           <div className="set-sec-k">INVITER QUELQU'UN</div>
           <div style={{ padding: '0 14px' }}>
@@ -1499,7 +1542,7 @@ function ClubMembersPanel({ clubName, onClose }) {
 
   // Métadonnées par rôle : icône, libellé, couleur du badge.
   const ROLE_META = {
-    admin:   { ic: '🛡️', label: 'Admin App',      color: '#f5c451' },
+    admin:   { ic: '🛡️', label: 'Admin Application', color: '#f5c451' },
     owner:   { ic: '👑', label: 'Propriétaire',  color: '#f5c451' },
     coach:   { ic: '📋', label: 'Coach principal', color: '#c8f169' },
     adjoint: { ic: '🎽', label: 'Coach adjoint', color: '#7dd3fc' },

@@ -17,7 +17,7 @@
   // Définition canonique des rôles (référence unique pour toute l'app)
   const ROLES = {
     OWNER:    { id: 'owner',    label: 'Owner',           weight: 100 },
-    ADMIN:    { id: 'admin',    label: 'Admin club',      weight: 80  },
+    ADMIN:    { id: 'admin',    label: 'Admin App',       weight: 80  },
     COACH:    { id: 'coach',    label: 'Coach principal', weight: 60  },
     ADJOINT:  { id: 'adjoint',  label: 'Coach adjoint',   weight: 55  },
     DIRIGEANT:{ id: 'dirigeant',label: 'Dirigeant',       weight: 50  },

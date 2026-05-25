@@ -1,7 +1,128 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-25 (vague 1 vote + multi-fixes)** (cache buster **v131**).
+> Document de reprise. Dernière mise à jour : **2026-05-25 (nuit) — chantier sécurité accès & membership** (cache buster **v159**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
+
+---
+
+## 🔐 Session du 25 mai (nuit) — Cycle membership complet
+
+Chantier transverse sur la sécurité d'accès et la gestion des membres.
+**9 fixes/features livrés et déployés en production** (Vercel auto-deploy).
+
+### 1. Affichage des membres par équipe (admin)
+- Panneau Admin → Clubs & équipes : la liste des compteurs ("2 adjoints · 1 parent")
+  est remplacée par **une ligne par personne** avec badge rôle coloré + email
+  (+ `displayName` si dispo).
+- Fichier : `admin-clubs-panel.jsx`
+
+### 2. Stockage du displayName à la consommation d'invite
+- `consumeInvite` lit `localStorage.cdd_coach_name` et le pousse dans la
+  membership Firestore via `saveMembership({..., displayName})`.
+- Les anciens membres rattachés AVANT ce commit n'ont PAS de `displayName`
+  (juste l'email). Les nouveaux rattachements oui.
+- Fichier : `firebase-sync.js` (saveMembership + consumeInvite)
+
+### 3. Révocation d'invitation = suppression de membership
+- **Bug critique corrigé** : `revokeInvite` ne supprimait QUE le doc invite,
+  la membership de la personne déjà consommatrice restait intacte → la
+  personne gardait son accès.
+- Désormais : si l'invite était consommée par un non-coach,
+  `removeTeamMembership(consumedBy, clubId, teamId)` est appelé.
+- Le coach principal est **JAMAIS** retiré par révocation (protection).
+- Confirm dialog contextuel : affiche l'email du consommateur si présent.
+- Fichier : `firebase-sync.js`, `invite-manager.jsx`
+
+### 4. Bouton "↔ Transférer" distinct dans admin
+- Remplace le bouton "Changer" générique par "Transférer" (jaune) quand
+  il y a déjà un coach, ou "Assigner" (vert) quand il n'y en a pas.
+- Fichier : `admin-clubs-panel.jsx`
+
+### 5. Force landing quand membership révoquée (`cdd_access_revoked`)
+- **Bug critique corrigé** : un user dont la membership Firestore avait été
+  supprimée pouvait toujours voir l'équipe car `arb_current_club` et
+  `cdd_active_context` restaient en localStorage.
+- Désormais : `pullCloudData` quand `clubIds.length === 0` purge
+  `arb_clubs`/`arb_teams`/`arb_current_club`/`cdd_active_context` ET
+  pose `localStorage.cdd_access_revoked = 'true'` si l'utilisateur avait
+  un club avant (= révocation, vs nouvel user).
+- L'event `cdd-data-rebuilt` est dispatché → React re-render → `_forceLanding`
+  bascule sur la landing.
+- Effacé automatiquement quand pullCloudData trouve une membership OK,
+  et au signOut.
+- Fichier : `firebase-sync.js` (pullCloudData branch empty + signOutUser), `app.jsx`
+
+### 6. Bandeau "⚠ Accès retiré" sur la landing
+- Quand `cdd_access_revoked` est posé, la landing affiche un bandeau orangé
+  explicite : email de l'utilisateur, raison probable, instructions pour
+  récupérer l'accès (demander un nouveau lien au coach), bouton "Me
+  déconnecter et essayer un autre compte".
+- Fichier : `screen-landing.jsx`
+
+### 7. Bouton "✕ Révoquer" dans "Membres du club" (coach)
+- Le coach principal peut désormais révoquer un membre directement depuis
+  Réglages → Membres du club, sans passer par les invitations.
+- Affichage enrichi : `displayName` en tête de carte + email en sous-titre,
+  badge "TOI" sur sa propre ligne.
+- Protections empilées :
+  - ❌ Pas de bouton pour admin app / owner / coach / soi-même
+  - ✅ Bouton actif pour adjoint, parent, joueur, lecteur (par équipe)
+- Confirmation explicite : nom + rôle + équipe + conséquences.
+- Fichier : `screen-onb-set.jsx` (ClubMembersPanel)
+
+### 8. Transfert coach principal self-service
+- Nouveau bouton "↔ Promouvoir coach" (jaune) sur les lignes Adjoint dans
+  "Membres du club", visible UNIQUEMENT si JE suis coach principal de
+  l'équipe (vérifié via `myTeamsAsCoach` Set).
+- Nouvelle fonction `transferTeamCoach({fromUid, toUid, clubId, teamId, demoteToRole})`
+  dans `firebase-sync.js` : transaction atomique via `writeBatch` qui :
+  - Rétrograde l'ancien coach en adjoint (ou retire si `demoteToRole = 'none'`)
+  - Promeut la cible en coach
+  - Recalcule `clubRole` sur les 2 docs
+- Pas de changement Firestore rules : `canManageClub` couvre déjà les updates.
+- Reload auto post-transfert pour appliquer le nouveau rôle.
+- Import ajouté : `writeBatch` depuis `firebase/firestore`.
+- Fichier : `firebase-sync.js`, `screen-onb-set.jsx`
+
+### 9. "Quitter ce club" supprime aussi la membership Firestore
+- **Bug critique corrigé** : `deleteClubAndData` (roles.js) ne touchait que
+  localStorage. Au prochain `pullCloudData`, la membership Firestore intacte
+  ré-attachait l'utilisateur → la sortie n'était jamais définitive.
+- Nouvelle fonction `cddData.leaveClub(clubId)` : supprime le doc Firestore
+  `memberships/{uid}_{clubId}`. Refuse si owner ou coach principal d'≥1 équipe
+  (message clair : "transfère d'abord ton rôle").
+- `LeaveClubModal.handleQuit` est désormais `async` et appelle `leaveClub`
+  AVANT le nettoyage local. En cas d'échec cloud → arrêt, pas de purge.
+- Fichier : `firebase-sync.js`, `screen-onb-set.jsx` (LeaveClubModal)
+
+### Bilan : cycle membership désormais étanche
+
+| Action | Cloud | Local | Feedback user |
+|---|---|---|---|
+| Coach invite | invite créée | — | lien copié |
+| Membre rejoint | membership créée + displayName | rattachement cache | accès débloqué |
+| Coach révoque un membre | membership supprimée | (au pull suivant) | bandeau landing |
+| Membre quitte | membership supprimée (refus si coach) | localStorage purgé | landing |
+| Coach transfère son rôle | batch atomique 2 docs | reload | message succès |
+| Admin assigne / transfère | membership(s) modifiée(s) | — | reload panneau |
+
+### Versions cache buster atteintes
+- `firebase-sync.js` : v159
+- `app.jsx` : v146
+- `app.html` : (modifié à chaque push)
+- `screen-onb-set.jsx` : v98
+- `screen-landing.jsx` : v153
+- `admin-clubs-panel.jsx` : v151
+- `invite-manager.jsx` : v154
+
+### À tester en conditions réelles (next session)
+Plan de test détaillé fourni dans l'échange. 6 scénarios :
+1. Révocation d'invite utilisée → bandeau côté révoqué
+2. Bouton Révoquer dans Membres du club → bandeau côté révoqué
+3. Protections UI (pas de bouton sur soi/admin/coach/owner)
+4. Re-invitation après révocation → flag effacé, retour normal
+5. Nouvel utilisateur (jamais rattaché) → PAS de bandeau
+6. Persistance après fermeture/reouverture onglet
 
 ---
 

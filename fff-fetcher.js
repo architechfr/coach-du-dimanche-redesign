@@ -529,13 +529,26 @@
      *   lost_games_count, goals_for_count, goals_against_count, goals_diff,
      *   penalty_point_count, forfeits_games_count, equipe.short_name
      */
-    normalizeRankRow(row, idx, myTeamName) {
+    normalizeRankRow(row, idx, opts) {
       const team = row.equipe || row.club || row.team || {};
       const name = team.short_name || team.name || team.club_name || `Équipe ${idx+1}`;
-      const isMe = myTeamName && (
-        name.toUpperCase().includes(myTeamName.toUpperCase()) ||
-        myTeamName.toUpperCase().includes(name.toUpperCase())
-      );
+      // opts peut être un string (legacy = myTeamName) ou un objet
+      // { myTeamName, myClubId }. Le myClubId (= cl_no FFF) est l'identifiant
+      // FIABLE qui marche pour tous les clubs, indépendamment du nom local.
+      const o = (typeof opts === 'string') ? { myTeamName: opts } : (opts || {});
+      const teamClubId = (team.club && (team.club.cl_no || team.club.id))
+                      || row.club_cl_no || row.cl_no || null;
+      let isMe = false;
+      // 1. Match par cl_no si disponible (universel)
+      if (o.myClubId && teamClubId != null && String(teamClubId) === String(o.myClubId)) {
+        isMe = true;
+      }
+      // 2. Fallback : match par nom (legacy, fragile)
+      else if (o.myTeamName) {
+        const a = name.toUpperCase();
+        const b = String(o.myTeamName).toUpperCase();
+        isMe = a.includes(b) || b.includes(a);
+      }
       const gf = row.goals_for_count ?? row.goals_for ?? row.bp ?? row.buts_pour ?? 0;
       const ga = row.goals_against_count ?? row.goals_against ?? row.bc ?? row.buts_contre ?? 0;
       return {
@@ -566,11 +579,15 @@
      *   m.home_is_forfeit / m.away_is_forfeit : 'O'/'N'
      *   m.poule_journee.number : journée
      */
-    normalizeMatchRow(m, myTeamName) {
+    normalizeMatchRow(m, opts) {
       const home = m.home || m.home_team || m.equipe_domicile || m.team_home || {};
       const away = m.away || m.away_team || m.equipe_exterieure || m.team_away || {};
       const hName = home.short_name || home.name || home.club_name || "?";
       const aName = away.short_name || away.name || away.club_name || "?";
+      // opts peut être un string (legacy = myTeamName) ou un objet
+      // { myTeamName, myClubId } — voir normalizeRankRow.
+      const o = (typeof opts === 'string') ? { myTeamName: opts } : (opts || {});
+      const myTeamName = o.myTeamName;
 
       // Numeric scores — strict, null != 0
       const sHomeRaw = m.home_score ?? m.score_home;
@@ -592,8 +609,20 @@
 
       const played = hasScore || isForfeit;
 
-      const isMyHome = myTeamName && hName.toUpperCase().includes(myTeamName.toUpperCase());
-      const isMyAway = myTeamName && aName.toUpperCase().includes(myTeamName.toUpperCase());
+      // Identification "notre équipe" : d'abord par cl_no (universel),
+      // sinon fallback nom (legacy, fragile).
+      const hCl = (home.club && (home.club.cl_no || home.club.id)) || home.cl_no || null;
+      const aCl = (away.club && (away.club.cl_no || away.club.id)) || away.cl_no || null;
+      let isMyHome = false, isMyAway = false;
+      if (o.myClubId) {
+        if (hCl != null && String(hCl) === String(o.myClubId)) isMyHome = true;
+        if (aCl != null && String(aCl) === String(o.myClubId)) isMyAway = true;
+      }
+      if (!isMyHome && !isMyAway && myTeamName) {
+        const mu = String(myTeamName).toUpperCase();
+        if (hName.toUpperCase().includes(mu)) isMyHome = true;
+        if (aName.toUpperCase().includes(mu)) isMyAway = true;
+      }
 
       let result = null;
       if (played) {
