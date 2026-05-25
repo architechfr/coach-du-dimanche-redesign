@@ -87,8 +87,11 @@ function ScreenClub({ go, tweaks }) {
       if (i < 0) { alert('Club introuvable dans le storage local.'); return; }
       const updated = {
         ...all[i],
-        name:        data.name.trim() || all[i].name,
-        short:       data.short.trim() || all[i].short,
+        name:        data.name.trim() || all[i].name || '',
+        // `short` doit être une string (ne JAMAIS être undefined sinon
+        // Firestore refuse tout le doc avec "Unsupported field value:
+        // undefined" — bug Florian 26/05/2026).
+        short:       data.short.trim() || all[i].short || all[i].name || '',
         description: (data.description || '').trim(),
         foundedYear: (data.foundedYear || '').toString().trim(),
         palmares:    (data.palmares || '').trim(),

@@ -348,7 +348,9 @@ function ScreenHome({ go, tweaks }) {
             <span className="tile-ic">📋</span>
             <span className="tile-t">Convocations</span>
             <span className="tile-s">
-              {next.noUpcoming
+              {liveMatch
+                ? <span style={{color:'#f97316', fontWeight:700}}>⚽ Match en cours</span>
+                : next.noUpcoming
                 ? 'En attente du prochain match'
                 : convocIds.length > 0
                 ? <>{respondedCount}/{convocIds.length} répondus{pendingCount > 0 ? <span style={{color:'#f97316', fontWeight:700}}> · {pendingCount} à relancer</span> : null}</>
@@ -379,10 +381,10 @@ function ScreenHome({ go, tweaks }) {
           </button>
         )}
         {isCoachLike && (
-          <button className="tile tile-match" onClick={() => go("match-prep")}>
+          <button className="tile tile-match" onClick={() => go(liveMatch ? "match" : "match-prep")}>
             <span className="tile-ic" style={{color:"#ef4444"}}>●</span>
-            <span className="tile-t">Prochain match</span>
-            <span className="tile-s">Préparer · lancer</span>
+            <span className="tile-t">{liveMatch ? 'Match en cours' : 'Prochain match'}</span>
+            <span className="tile-s">{liveMatch ? 'Reprendre le live' : 'Préparer · lancer'}</span>
           </button>
         )}
         {/* Championnat : visible pour tout le monde (info publique du club) */}

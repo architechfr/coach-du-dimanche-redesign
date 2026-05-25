@@ -615,14 +615,35 @@ function _lsJSON(key, fallback) {
 // #60 — NON-LOSSY : on sauvegarde l'OBJET COMPLET (tous les champs), pas un
 // sous-ensemble. Indispensable pour que la lecture cloud (C3) restitue des
 // données intactes (statuts, titulaires, compo, numéros…).
+// Strip récursivement les valeurs `undefined` d'un objet/tableau (Firestore
+// les rejette avec "Unsupported field value: undefined"). On les remplace
+// par `null` (que Firestore accepte et stocke comme "champ effacé").
+// Sans ça, un seul champ undefined dans l'arbre fait échouer tout le setDoc
+// — bug Florian 26/05/2026 : `short: undefined` cassait tout le save club.
+function _stripUndefined(value) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (Array.isArray(value)) return value.map(_stripUndefined);
+  if (typeof value === 'object') {
+    // Préserver les Timestamps Firestore (toMillis) et les FieldValue
+    if (typeof value.toMillis === 'function') return value;
+    if (typeof value._methodName === 'string') return value;
+    const out = {};
+    Object.keys(value).forEach(k => { out[k] = _stripUndefined(value[k]); });
+    return out;
+  }
+  return value;
+}
+
 async function saveClub(club) {
   if (!db || !club || !club.id) throw new Error('db/club.id requis');
-  await setDoc(doc(db, 'clubs', club.id), {
+  const payload = _stripUndefined({
     ...club,
     logoUrl: club.logoUrl || club.logoDataUrl || null,
     createdBy: _uid(),
     updatedAt: serverTimestamp(),
-  }, { merge: true });
+  });
+  await setDoc(doc(db, 'clubs', club.id), payload, { merge: true });
   return { ok: true, id: club.id };
 }
 
