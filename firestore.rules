@@ -155,9 +155,11 @@ service cloud.firestore {
       // place). L'auto-inscription payante d'un coach viendra plus tard.
       allow create: if isAdmin()
         && request.resource.data.createdBy is string
-        && request.resource.data.size() <= 20;
-      // Éditer le doc club (logo, infos) : admin ou coach principal.
-      allow update: if canManageClub(clubId) && request.resource.data.size() <= 20;
+        && request.resource.data.size() <= 30;
+      // Éditer le doc club (logo, infos, description, palmarès, mot du président,
+      // année fondation, etc.) : admin ou coach principal. Limite à 30 champs
+      // pour accommoder les enrichissements de fiche club.
+      allow update: if canManageClub(clubId) && request.resource.data.size() <= 30;
       allow delete: if isAdmin();
     }
 

@@ -195,9 +195,9 @@ function ScreenClub({ go, tweaks }) {
           coach principal/owner/admin uniquement, et seulement en mode lecture. */}
       {canEdit && !edit && window.cddData?.pullCloudData && (
         <div style={{padding:'0 14px 8px'}}>
-          <button onClick={async () => {
+          <button onClick={async (e) => {
+            const btn = e.currentTarget;
             try {
-              const btn = event.currentTarget;
               btn.disabled = true;
               btn.textContent = '⟳ Chargement…';
               await window.cddData.pullCloudData();
@@ -206,8 +206,10 @@ function ScreenClub({ go, tweaks }) {
               setData(buildInitial());
               btn.textContent = '✓ Rechargé depuis le cloud';
               setTimeout(() => { btn.disabled = false; btn.textContent = '⟳ Recharger depuis le cloud'; }, 1500);
-            } catch (e) {
-              alert('Echec du rechargement : ' + (e.message || e));
+            } catch (err) {
+              btn.disabled = false;
+              btn.textContent = '⟳ Recharger depuis le cloud';
+              alert('Echec du rechargement : ' + (err.message || err));
             }
           }}
           style={{
@@ -267,7 +269,7 @@ function ScreenClub({ go, tweaks }) {
             <span style={labelText}>CITATION COURTE (1-2 PHRASES)</span>
             <textarea value={data.presidentWord || ''}
               onChange={e => setData(d => ({...d, presidentWord: e.target.value}))}
-              placeholder='ex : "Le FCMH c\'est plus qu\'un club, c\'est une famille. Ici on forme des joueurs et des hommes."'
+              placeholder={`ex : "Le FCMH c'est plus qu'un club, c'est une famille. Ici on forme des joueurs et des hommes."`}
               rows={3}
               style={{...inputStyle, resize:'vertical', minHeight:70, lineHeight:1.4, fontStyle:'italic'}}/>
           </label>
