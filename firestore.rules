@@ -155,11 +155,14 @@ service cloud.firestore {
       // place). L'auto-inscription payante d'un coach viendra plus tard.
       allow create: if isAdmin()
         && request.resource.data.createdBy is string
-        && request.resource.data.size() <= 30;
+        && request.resource.data.size() <= 50;
       // Éditer le doc club (logo, infos, description, palmarès, mot du président,
-      // année fondation, etc.) : admin ou coach principal. Limite à 30 champs
-      // pour accommoder les enrichissements de fiche club.
-      allow update: if canManageClub(clubId) && request.resource.data.size() <= 30;
+      // année fondation, stade, contacts, fédération, réseaux sociaux, etc.) :
+      // admin ou coach principal. Limite à 50 champs — la fiche club enrichie
+      // (stadium {name,address,gpsUrl}, contacts[], socialMedia{}, etc.) cumule
+      // facilement 25-30 champs au top-level avec le merge, le seuil précédent
+      // de 30 bloquait silencieusement les saves (bug Florian 26/05/2026).
+      allow update: if canManageClub(clubId) && request.resource.data.size() <= 50;
       allow delete: if isAdmin();
     }
 

@@ -76,7 +76,10 @@ function ScreenClub({ go, tweaks }) {
   }));
 
   // ── Persistance ──────────────────────────────────────────────
-  const save = () => {
+  // save() est maintenant ASYNC : on attend le push cloud pour confirmer que
+  // les données sont vraiment montées (sans ça, une erreur permission-denied
+  // de Firestore restait silencieuse — bug Florian 26/05/2026).
+  const save = async () => {
     if (!clubId) { alert('Aucun club actif.'); return; }
     try {
       const all = JSON.parse(localStorage.getItem('arb_clubs') || '[]');
@@ -107,10 +110,26 @@ function ScreenClub({ go, tweaks }) {
       };
       all[i] = updated;
       localStorage.setItem('arb_clubs', JSON.stringify(all));
-      // Push cloud
+      // Push cloud SYNCHRONE — on attend la réponse Firestore pour confirmer
+      // que ça monte vraiment. Si rejection (rules, taille, perms), on alerte
+      // l'utilisateur ET on garde le local (pas de rollback : il pourra
+      // réessayer après une connexion ou un fix admin).
       if (window.cddData?.saveClub) {
-        window.cddData.saveClub(updated)
-          .catch(e => console.warn('[club] cloud push', e.message));
+        try {
+          await window.cddData.saveClub(updated);
+          console.info('[club] sauvegarde cloud OK ←', updated.id);
+        } catch (e) {
+          const msg = (e && e.message) || String(e);
+          const isPerm = /permission|insufficient|denied/i.test(msg);
+          alert('⚠ Sauvegarde locale OK, mais le cloud a REFUSÉ la mise à jour.\n\n'
+            + 'Détail : ' + msg + '\n\n'
+            + (isPerm
+                ? 'Permission refusée par Firestore. Soit la limite de champs '
+                  + 'a été atteinte (rules), soit ton rôle n\'autorise pas cette '
+                  + 'modification. Préviens l\'admin pour qu\'il publie les '
+                  + 'dernières firestore.rules.'
+                : 'Ré-essaie dans un moment. Si ça persiste, regarde la console (F12).'));
+        }
       }
       // Rebuild + close edit
       if (window.CDD_REBUILD) window.CDD_REBUILD();
