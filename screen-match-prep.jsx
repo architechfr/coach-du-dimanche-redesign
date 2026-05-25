@@ -52,7 +52,15 @@ function ScreenMatchPrep({ go, tweaks }) {
 
   // ── Statut préparation ────────────────────────────────────────
   const hasMatchInfo = teamId && window.CDD_MATCH_INFO?.hasAny?.(teamId, matchId);
-  const hasJerseys   = teamId && window.CDD_JERSEY?.hasOverrides?.(teamId, matchId);
+  // Validation des numéros : 2 chemins (l'un OU l'autre suffit)
+  //   • hasOverrides : le coach a modifié au moins un numéro spécifique au match
+  //   • wasReviewed  : le coach a explicitement cliqué "J'ai contrôlé" (=
+  //     les numéros saison sont OK pour ce match, pas besoin de les changer)
+  // Sans cette double condition, un coach satisfait des numéros saison était
+  // forcé d'en modifier un pour valider la checklist (bug Florian 26/05/2026).
+  const hasJerseys = !!(teamId && matchId && window.CDD_JERSEY &&
+    (window.CDD_JERSEY.hasOverrides?.(teamId, matchId)
+     || window.CDD_JERSEY.wasReviewed?.(teamId, matchId)));
   const hasMatchLineup = (() => {
     if (!teamId) return false;
     try {

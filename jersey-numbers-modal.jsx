@@ -43,6 +43,18 @@ function JerseyNumbersModal({ teamId, matchId, players, onClose, onConfirm, titl
   Object.values(edits).forEach(n => { if (n) counts[n] = (counts[n] || 0) + 1; });
   const dupes = Object.keys(counts).filter(n => counts[n] > 1);
 
+  // Compte les CHANGEMENTS pending (= numéros ≠ num saison). Sert à adapter
+  // le libellé du bouton primaire et le texte d'aide : un coach qui est OK
+  // avec les numéros saison doit pouvoir VALIDER sans rien modifier.
+  const _playerByIdForCount = {};
+  (players || []).forEach(p => { if (p && p.id) _playerByIdForCount[p.id] = p; });
+  const changesCount = Object.keys(edits).filter(pid => {
+    const v = edits[pid];
+    if (v === '' || v == null) return false;
+    return +v !== (_playerByIdForCount[pid]?.num);
+  }).length;
+  const hasChanges = changesCount > 0;
+
   const save = (skipConfirmDupes) => {
     if (dupes.length > 0 && !skipConfirmDupes) {
       if (!confirm(`⚠️ Numéros en doublon : ${dupes.join(', ')}\n\nDeux joueurs ne peuvent pas porter le même numéro pendant le match.\n\nEnregistrer quand même ?`)) return;
@@ -176,8 +188,19 @@ function JerseyNumbersModal({ teamId, matchId, players, onClose, onConfirm, titl
           })}
         </div>
 
+        {/* Aide contextuelle : si le coach n'a rien modifié, on lui dit
+            clairement qu'un clic sur le bouton primaire suffit à VALIDER. */}
+        <div style={{
+          padding:'6px 16px 0', fontSize:11, lineHeight:1.45,
+          color: hasChanges ? '#c8f169' : 'rgba(255,255,255,0.55)',
+        }}>
+          {hasChanges
+            ? <>✎ {changesCount} numéro{changesCount > 1 ? 's' : ''} modifié{changesCount > 1 ? 's' : ''} pour ce match — n'oublie pas d'enregistrer.</>
+            : <>👌 Les numéros saison te conviennent ? Clique <b>« J'ai contrôlé »</b> pour valider sans modifier.</>}
+        </div>
+
         <div style={{display:'flex', gap:8, padding:'10px 16px 16px',
-                     borderTop:'1px solid rgba(255,255,255,0.06)'}}>
+                     borderTop:'1px solid rgba(255,255,255,0.06)', marginTop:6}}>
           <button onClick={reset} type="button"
                   style={{flex:1, height:42, borderRadius:9, cursor:'pointer',
                           background:'rgba(255,255,255,0.05)', color:'rgba(255,255,255,0.75)',
@@ -197,7 +220,11 @@ function JerseyNumbersModal({ teamId, matchId, players, onClose, onConfirm, titl
                           background: savedFlash ? 'rgba(200,241,105,0.40)' : 'var(--acc, #c8f169)',
                           color:'#000', border:'none', fontSize:13.5, fontWeight:800,
                           letterSpacing:'.02em'}}>
-            {savedFlash ? '✓ Enregistré' : (confirmLabel || '💾 Enregistrer')}
+            {savedFlash
+              ? '✓ Enregistré'
+              : hasChanges
+                ? (confirmLabel || '💾 Enregistrer')
+                : '✓ J\'ai contrôlé'}
           </button>
         </div>
       </div>
