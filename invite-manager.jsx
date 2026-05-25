@@ -306,9 +306,6 @@ function InviteManager() {
       {invites && invites.map(inv => {
         const st = inviteStatus(inv);
         // Nom du joueur concerné — affiché pour les invitations parent/joueur.
-        // Source 1 : inv.playerName embarqué dans l'invite (v67+).
-        // Source 2 : lookup local dans CDD_PLAYERS via playerId (rétro-compat
-        // pour les invitations créées avant v67).
         let playerName = inv.playerName || '';
         if (!playerName && inv.playerId) {
           const p = players.find(x => x.id === inv.playerId);
@@ -316,8 +313,14 @@ function InviteManager() {
         }
         const showPlayer = !!playerName
           && (inv.role === 'parent' || inv.role === 'joueur');
+        // Email cible (si renseigné à la création) — visible côté coach
+        // pour savoir À QUI le lien a été destiné.
+        const targetEmail = (inv.email || '').trim();
+        // Email du consommateur si l'invite est utilisée.
+        const consumerEmail = (inv.consumedByEmail || '').trim();
+        const consumedAtStr = fmtDate(inv.consumedAt);
         return (
-          <div className="inv-row" key={inv.token}>
+          <div className="inv-row" key={inv.token} style={{flexWrap:'wrap'}}>
             <div className="inv-row-main">
               <span className="inv-row-label">
                 {inv.label || roleLabel(inv.role)}
@@ -328,7 +331,7 @@ function InviteManager() {
                 )}
               </span>
               <span className="inv-row-meta">
-                {roleLabel(inv.role)}{fmtDate(inv.createdAt) ? ' · ' + fmtDate(inv.createdAt) : ''}
+                {roleLabel(inv.role)}{fmtDate(inv.createdAt) ? ' · créée ' + fmtDate(inv.createdAt) : ''}
               </span>
             </div>
             <span className={`inv-badge inv-badge-${st.k}`}>{st.l}</span>
@@ -342,6 +345,42 @@ function InviteManager() {
             )}
             <button className="inv-row-btn inv-row-del" title="Révoquer"
                     onClick={() => revoke(inv.token)}>✕</button>
+            {/* Détails contextuels — email cible / consommateur. Sur une 2e
+                ligne sous le row principal (flexWrap), pour les coachs/adjoints
+                qui veulent savoir qui est attaché à quelle invitation. */}
+            {(targetEmail || consumerEmail) && (
+              <div style={{
+                width:'100%', marginTop:6, padding:'7px 9px', borderRadius:7,
+                background:'rgba(255,255,255,0.025)',
+                border:'1px solid rgba(255,255,255,0.06)',
+                fontSize:11, lineHeight:1.55,
+                color:'rgba(255,255,255,0.72)',
+              }}>
+                {targetEmail && (
+                  <div>
+                    📧 <span style={{opacity:.6}}>Cible :</span>{' '}
+                    <b style={{color:'#fff', wordBreak:'break-all'}}>{targetEmail}</b>
+                  </div>
+                )}
+                {consumerEmail && (
+                  <div style={{marginTop: targetEmail ? 3 : 0}}>
+                    ✅ <span style={{opacity:.6}}>Utilisée par :</span>{' '}
+                    <b style={{color:'#c8f169', wordBreak:'break-all'}}>{consumerEmail}</b>
+                    {consumedAtStr && (
+                      <span style={{opacity:.55}}> · le {consumedAtStr}</span>
+                    )}
+                  </div>
+                )}
+                {/* Cas: invite utilisée mais consumedByEmail absent (vieilles
+                    invites avant v153). On affiche au moins la date. */}
+                {!consumerEmail && st.k === 'used' && consumedAtStr && (
+                  <div style={{marginTop: targetEmail ? 3 : 0}}>
+                    ✅ <span style={{opacity:.6}}>Utilisée le {consumedAtStr}</span>
+                    <span style={{opacity:.45}}> (email du compte non journalisé)</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

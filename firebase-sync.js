@@ -2197,9 +2197,16 @@ async function consumeInvite(token) {
   }
 
   // Marque l'invitation consommée (non bloquant si ça échoue).
+  // Stocke aussi consumedByEmail pour que le coach voie QUI a consommé
+  // l'invite (pas seulement un uid Firebase abstrait).
   try {
     await setDoc(doc(db, 'invites', token),
-      { consumed: true, consumedBy: uid, consumedAt: serverTimestamp() },
+      {
+        consumed: true,
+        consumedBy: uid,
+        consumedByEmail: _email() || null,
+        consumedAt: serverTimestamp(),
+      },
       { merge: true });
   } catch (e) { console.warn('[invite] marquage consommé échoué', e.message); }
 
