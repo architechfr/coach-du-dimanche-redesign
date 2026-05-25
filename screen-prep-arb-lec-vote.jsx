@@ -1131,11 +1131,28 @@ window.ScreenLecteur = ScreenLecteur;
    SCREEN — Vote post-match
    ============================================================ */
 
-function ScreenVote({ go, tweaks }) {
-  // Liste de tous les matchs joués + arbitrés par le coach, pour permettre
-  // de noter n'importe quel match passé (pas seulement le dernier).
-  const playedMatches = (window.CDD_LAST_MATCHES || []).filter(m => m.coachArbitrated && m.id);
+function ScreenVote({ go, tweaks, match: matchProp }) {
+  // Liste de TOUS les matchs joués (coach v2 + FFF/V1 importés). Le vote doit
+  // être dispo sur tout match passé, pas seulement les arbitrés v2.
+  // Pour les matchs FFF qui n'ont pas d'id, on synthétise un id stable basé
+  // sur date+adversaire — il sert d'ancrage pour le doc cdd_v2_votes/{id}.
+  const playedMatches = (window.CDD_LAST_MATCHES || [])
+    .filter(m => m && m.played)
+    .map(m => {
+      if (m.id) return m;
+      const dateKey = (m.dateRaw || m.date || '').replace(/[^0-9]/g, '').slice(0, 8);
+      const oppKey  = (m.opp || 'unk').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '').slice(0, 16);
+      return { ...m, id: `fff_${dateKey}_${oppKey}` };
+    });
   const defaultMatchId = (() => {
+    // Match passé via prop (depuis Feuille de Match → Voter) : priorité absolue
+    if (matchProp && matchProp.id) return matchProp.id;
+    if (matchProp) {
+      const dKey = (matchProp.dateRaw || matchProp.date || '').replace(/[^0-9]/g, '').slice(0, 8);
+      const oKey = (matchProp.opp || 'unk').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const synth = `fff_${dKey}_${oKey}`;
+      if (playedMatches.some(m => m.id === synth)) return synth;
+    }
     try {
       const last = localStorage.getItem('cdd_match_last_finished');
       if (last && playedMatches.some(m => m.id === last)) return last;
@@ -1226,9 +1243,30 @@ function ScreenVote({ go, tweaks }) {
     } catch (e) { return null; }
   })();
   const playedLineup = lastFinishedMatch?.tA?.p || [];
-  const starters = (playedLineup.length > 0)
-    ? playedLineup.map(lp => CDD_PLAYERS.find(p => p.id === lp.id) || lp).filter(Boolean)
-    : CDD_CONVO.starters.map(id => CDD_PLAYERS.find(p => p.id === id)).filter(Boolean);
+  // Priorités de la source des joueurs à noter :
+  // 1. Lineup réel stocké dans le match coach (M.tA.p)
+  // 2. Pour les matchs FFF/V1 sans lineup : compo type de l'équipe active
+  // 3. Sinon : tous les joueurs actifs du squad (l'utilisateur note qui il veut, NS pour les autres)
+  const starters = (() => {
+    if (playedLineup.length > 0) {
+      return playedLineup.map(lp => CDD_PLAYERS.find(p => p.id === lp.id) || lp).filter(Boolean);
+    }
+    // Fallback compo type
+    try {
+      const teamId = window.CDD?.getActiveTeam?.()?.id;
+      const tpl = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
+      const tplStarters = teamId && tpl[teamId]?.starters;
+      if (Array.isArray(tplStarters) && tplStarters.length > 0) {
+        const ids = tplStarters.map(s => s && s.pid).filter(Boolean);
+        const resolved = ids.map(pid => CDD_PLAYERS.find(p => p.id === pid)).filter(Boolean);
+        if (resolved.length > 0) return resolved;
+      }
+    } catch (e) {}
+    // Fallback ultime : squad actif (hors réserve)
+    return (CDD_PLAYERS || [])
+      .filter(p => p && p.status !== 'reserve' && p.status !== 'suspended')
+      .slice(0, 18);
+  })();
 
   const setRating = (id, r) => {
     setVotes(v => ({...v, [id]: r}));

@@ -285,7 +285,7 @@ function App() {
       return;
     }
     if ((id === "fiche" || id === "carnet") && payload) setCurrentPlayer(payload);
-    if (id === "fiche-match" && payload) setCurrentMatch(payload);
+    if ((id === "fiche-match" || id === "vote") && payload) setCurrentMatch(payload);
     setScreen(id);
     setStack(s => [...s.slice(-3), id]);
     setScreenMenuOpen(false);
@@ -490,7 +490,7 @@ function App() {
             {screen === "prep"         && <ScreenPrep go={go} tweaks={t}/>}
             {screen === "arb"          && <ScreenArbitre go={go} tweaks={t}/>}
             {screen === "lecteur"      && <ScreenLecteur go={go} tweaks={t}/>}
-            {screen === "vote"         && <ScreenVote go={go} tweaks={t}/>}
+            {screen === "vote"         && <ScreenVote go={go} tweaks={t} match={currentMatch}/>}
             {screen === "transfert"    && <ScreenTransfert go={go} tweaks={t}/>}
             {screen === "sync"         && <ScreenSyncCloud go={go} tweaks={t}/>}
             {screen === "convoP"       && <ScreenConvoParent go={go} tweaks={t}/>}
@@ -695,6 +695,23 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
         </button>
         <button className="btn-cta" style={{flex:1}} onClick={() => go("share")}>
           ↗ Partager
+        </button>
+      </div>
+
+      {/* Voter & noter les joueurs — disponible sur TOUS les matchs joués
+          (coach v2 ET FFF/V1 importés). Tout le monde peut voter (parent,
+          joueur, coach), c'est une fonction de participation pas d'édition. */}
+      <div style={{padding:"0 20px 20px"}}>
+        <button onClick={() => go("vote", m)}
+          style={{
+            width:'100%', padding:'12px 16px',
+            background:'linear-gradient(135deg, rgba(245,196,81,.15), rgba(245,196,81,.05))',
+            border:'1px solid rgba(245,196,81,.40)',
+            borderRadius:11, color:'#f5c451',
+            fontSize:13, fontWeight:800, letterSpacing:'.04em',
+            cursor:'pointer',
+          }}>
+            🗳 Voter pour l'homme du match · noter les joueurs
         </button>
       </div>
 
