@@ -1338,7 +1338,7 @@ async function deleteJerseyNumbers(teamId, matchId) {
 // Cloud : collection friendly_matches, id = match.id (préfixe 'fr_*').
 async function saveFriendlyMatch(match) {
   if (!db || !match || !match.id || !match.teamId) return { ok: false, reason: 'no-db' };
-  await setDoc(doc(db, 'friendly_matches', String(match.id)), {
+  const payload = {
     id: String(match.id),
     teamId: String(match.teamId),
     clubId: match.clubId ? String(match.clubId) : null,
@@ -1349,7 +1349,12 @@ async function saveFriendlyMatch(match) {
     isAmical: true,
     updatedAt: serverTimestamp(),
     updatedBy: _uid(),
-  }, { merge: true });
+  };
+  // FIX 2026-05-26 : endedAt manquait → un match terminé sur un device
+  // continuait d'apparaître "à venir" sur les autres devices car ce champ
+  // n'était jamais propagé au cloud (et donc jamais relu non plus).
+  if (typeof match.endedAt === 'number') payload.endedAt = match.endedAt;
+  await setDoc(doc(db, 'friendly_matches', String(match.id)), payload, { merge: true });
   return { ok: true };
 }
 async function fetchFriendlyMatches(clubId) {
@@ -2478,7 +2483,7 @@ async function pullCloudData() {
     if (rawFriendlyMatches.length) {
       const allFm = JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}');
       let dirty = false;
-      rawFriendlyMatches.forEach(({ id, teamId, clubId, date, time, opponent, venue, updatedAt }) => {
+      rawFriendlyMatches.forEach(({ id, teamId, clubId, date, time, opponent, venue, updatedAt, endedAt }) => {
         if (!id || !teamId) return;
         const cloudMs = updatedAt && typeof updatedAt.toMillis === 'function'
           ? updatedAt.toMillis()
@@ -2487,6 +2492,16 @@ async function pullCloudData() {
         const i = allFm[teamId].findIndex(m => m.id === id);
         const local = i >= 0 ? allFm[teamId][i] : null;
         const localMs = local?.updatedAt || 0;
+        // Cas spécial : si le cloud a endedAt et que le local ne l'a pas, on
+        // applique JUSTE endedAt sans toucher au reste (préserve les éventuelles
+        // édits locales récentes : adversaire, heure...). Sans ça, un match
+        // terminé sur device A restait "à venir" sur device B qui avait édité
+        // le match juste avant.
+        if (local && typeof endedAt === 'number' && typeof local.endedAt !== 'number') {
+          allFm[teamId][i] = { ...local, endedAt, updatedAt: Math.max(localMs, cloudMs, Date.now()) };
+          dirty = true;
+          return;
+        }
         if (local && localMs > cloudMs && localMs > 0) return; // local plus récent
         const entry = {
           id, teamId, clubId: clubId || null,
@@ -2495,6 +2510,12 @@ async function pullCloudData() {
           createdAt: local?.createdAt || cloudMs || Date.now(),
           updatedAt: cloudMs || Date.now(),
         };
+        // FIX 2026-05-26 : récupère endedAt du cloud si présent. Préserve aussi
+        // endedAt local s'il existe (un device a marqué le match terminé mais
+        // le cloud n'a pas encore reçu la propagation). Le 1er endedAt observé
+        // gagne (LWW est dangereux ici car écraserait par null à chaque pull).
+        if (typeof endedAt === 'number') entry.endedAt = endedAt;
+        else if (local && typeof local.endedAt === 'number') entry.endedAt = local.endedAt;
         if (i >= 0) allFm[teamId][i] = entry;
         else allFm[teamId].push(entry);
         dirty = true;
