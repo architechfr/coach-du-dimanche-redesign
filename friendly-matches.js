@@ -153,9 +153,52 @@
   }
 
   // Retourne le prochain match amical à venir pour une équipe (date >= today).
+  // FIX 2026-05-26 : croisement avec les matchs LOCALEMENT TERMINÉS via
+  // scheduledMatchId. Sans ce check, un amical dont le endedAt n'a pas été
+  // propagé (race condition cross-device, push raté) restait "à venir"
+  // alors que son cdd_match_* local est marqué finished → bug Florian
+  // "le match s'affiche encore alors qu'il est joué".
+  // Bonus : on auto-pose endedAt sur les amicaux ainsi détectés (qui sera
+  // propagé au cloud via saveFriendlyMatch lors de l'update).
   function nextUpcoming(teamId) {
     const today = new Date().toISOString().slice(0, 10);
-    return list(teamId).find(m => String(m.date) >= today) || null;
+    // 1. Construit l'ensemble des scheduledMatchId déjà joués (st=finished
+    //    ou endedAt) en scannant les cdd_match_*.
+    const finishedSchedIds = new Set();
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith('cdd_match_')) continue;
+        if (k === 'cdd_match_current' || k === 'cdd_match_last_finished'
+            || k === 'cdd_match_lineup' || k === 'cdd_match_convoc'
+            || k === 'cdd_match_info' || k === 'cdd_match_jersey_numbers') continue;
+        try {
+          const m = JSON.parse(localStorage.getItem(k) || 'null');
+          if (m && (m.st === 'finished' || m.endedAt) && m.scheduledMatchId) {
+            finishedSchedIds.add(String(m.scheduledMatchId));
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+
+    // 2. Parcours candidats : skip si déjà joué + auto-marker endedAt
+    const candidates = list(teamId);
+    for (const m of candidates) {
+      if (String(m.date) < today) continue;
+      if (finishedSchedIds.has(String(m.id))) {
+        // Match déjà joué (preuve : un cdd_match_* terminé le référence)
+        // → on pose endedAt pour qu'il disparaisse définitivement de list()
+        // et que la propagation cloud nettoie les autres devices.
+        try {
+          console.info('[friendly:nextUpcoming] amical', m.id,
+            'déjà joué détecté via scheduledMatchId → auto-markEnded');
+          markEnded(teamId, m.id);
+        } catch (e) {}
+        continue;
+      }
+      return m;
+    }
+    return null;
   }
 
   function _dispatch(kind, detail) {
