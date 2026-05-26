@@ -273,6 +273,40 @@ function App() {
     return () => window.removeEventListener('cdd-auth-changed', sync);
   }, [screen]);
 
+  // ── Watcher "match en cours" cross-device (fix 2026-05-26 complémentaire) ──
+  // Démarre un onSnapshot sur teams/{activeTeamId}. À chaque event Firestore
+  // (coup d'envoi par le coach, but, carton, fin de match), le téléphone
+  // bascule l'UI en <2s — pas besoin de refresh manuel.
+  //
+  // Restart au changement d'équipe active OU à chaque cdd-data-rebuilt (qui
+  // est dispatché quand le contexte change). Cleanup au unmount.
+  useEffect(() => {
+    let unsub = null;
+    let currentTeamId = null;
+    const start = () => {
+      try {
+        const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+        const teamId = ctx.teamId || null;
+        if (!teamId || teamId === currentTeamId) return; // déjà watch sur cette team
+        if (typeof unsub === 'function') { try { unsub(); } catch (e) {} }
+        if (window.cddSync && window.cddSync.watchTeamLiveMatch) {
+          unsub = window.cddSync.watchTeamLiveMatch(teamId);
+          currentTeamId = teamId;
+          console.info('[liveMatch:watch] ▶ démarré sur team', teamId);
+        }
+      } catch (e) {}
+    };
+    // Lancement initial (si team déjà connue) et à chaque rebuild
+    start();
+    window.addEventListener('cdd-data-rebuilt', start);
+    window.addEventListener('cdd-sync-ready', start);
+    return () => {
+      window.removeEventListener('cdd-data-rebuilt', start);
+      window.removeEventListener('cdd-sync-ready', start);
+      if (typeof unsub === 'function') { try { unsub(); } catch (e) {} }
+    };
+  }, []);
+
   // Go to a screen, optionally with payload
   const go = (id, payload) => {
     if (id === "back") {

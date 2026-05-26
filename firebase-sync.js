@@ -737,6 +737,145 @@ async function fetchMatch(matchId) {
   }
 }
 
+// ─── Helper interne : reconstruit un match local depuis un doc cloud ───
+// Extrait du bloc inline de pullCloudData (lignes 2289+) pour pouvoir le
+// réutiliser dans watchTeamLiveMatch sans dupliquer la logique.
+//
+// Le format cloud (saveMatchToCloud) ≠ format local exact. On reconstruit
+// un objet local-compatible (champs critiques : teamA, teamB, score, ev, st…)
+// et on écrit sous cdd_match_{id} comme attendu par match-engine.
+function _applyCloudMatchToLocal(matchDoc, teamId, clubId) {
+  if (!matchDoc || !matchDoc.id) return false;
+  try {
+    const lmId = String(matchDoc.id);
+    const localShape = {
+      id: lmId,
+      teamId: teamId || matchDoc.teamId || null,
+      clubId: clubId || matchDoc.clubId || null,
+      tA: matchDoc.teamA ? {
+        n: matchDoc.teamA.n, c: matchDoc.teamA.c,
+        p: matchDoc.teamA.players || [],
+        bench: matchDoc.teamA.bench || [],
+      } : null,
+      tB: matchDoc.teamB ? {
+        n: matchDoc.teamB.n, c: matchDoc.teamB.c,
+        p: matchDoc.teamB.players || [],
+        bench: matchDoc.teamB.bench || [],
+      } : null,
+      sA: matchDoc.teamA ? matchDoc.teamA.score : 0,
+      sB: matchDoc.teamB ? matchDoc.teamB.score : 0,
+      st: matchDoc.status,
+      ch: matchDoc.period,
+      cfg: matchDoc.config || {},
+      ev: matchDoc.events || [],
+      yA: matchDoc.yellows ? matchDoc.yellows.A : 0,
+      yB: matchDoc.yellows ? matchDoc.yellows.B : 0,
+      rA: matchDoc.reds    ? matchDoc.reds.A    : 0,
+      rB: matchDoc.reds    ? matchDoc.reds.B    : 0,
+      uA: matchDoc.subs    ? matchDoc.subs.A    : 0,
+      uB: matchDoc.subs    ? matchDoc.subs.B    : 0,
+      at: matchDoc.addTime || 0,
+      tSt: matchDoc.tSt || null,
+      tOff: typeof matchDoc.tOff === 'number' ? matchDoc.tOff : 0,
+      startedAt: matchDoc.startedAt || null,
+      pauseStartedAt: matchDoc.pauseStartedAt || null,
+      inHalftime: matchDoc.inHalftime || false,
+      htStart: matchDoc.htStart || null,
+      isAtHome: typeof matchDoc.isAtHome === 'boolean' ? matchDoc.isAtHome : undefined,
+      matchType: matchDoc.matchType || null,
+      scheduledMatchId: matchDoc.scheduledMatchId || null,
+      endedAt: matchDoc.endedAt || null,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem('cdd_match_' + lmId, JSON.stringify(localShape));
+    localStorage.setItem('cdd_match_current', lmId);
+    return true;
+  } catch (e) {
+    console.warn('[liveMatch] _applyCloudMatchToLocal failed', e.message);
+    return false;
+  }
+}
+
+// ─── WATCH TEMPS RÉEL d'une équipe → propagation événementielle "match en cours" ───
+// Fix complémentaire 2026-05-26 du commit 6f98c0e : ajoute la réactivité.
+//
+// Avant : le téléphone ne voyait le match du PC qu'au prochain pullCloudData
+// (login/refresh manuel) ou au tick 10s s'il était déjà loggé. Pas de
+// rattrapage automatique au coup d'envoi.
+//
+// Après : onSnapshot permanent sur teams/{teamId}. À chaque event Firestore
+// (coup d'envoi par le coach, but, carton, fin de match), le téléphone réagit
+// en <2s et propage l'état au localStorage + dispatch cdd-data-rebuilt.
+//
+// IMPORTANT : onSnapshot ne déclenche QUE quand le doc team change. Le tick
+// 10s du coach (filet de sécurité) génère 1 read/10s pendant un match — coût
+// négligeable. Pas de "live tic-tac chez le téléphone" : on propage les
+// changements discrets, pas un fil minute par minute (volonté Florian).
+//
+// Retourne une fonction unsubscribe pour cleanup au unmount.
+function watchTeamLiveMatch(teamId) {
+  if (!db || !teamId) return () => {};
+  let lastSeenMatchId = null;
+  try {
+    const cur = localStorage.getItem('cdd_match_current');
+    if (cur) lastSeenMatchId = String(cur);
+  } catch (e) {}
+  return onSnapshot(
+    doc(db, 'teams', String(teamId)),
+    async (snap) => {
+      if (!snap.exists()) return;
+      const team = snap.data();
+      const lm = team && team.liveMatch;
+      const cloudMatchId = (lm && lm.matchId) ? String(lm.matchId) : null;
+
+      // ── CAS 1 : match en cours détecté côté cloud ──────────────────
+      if (cloudMatchId) {
+        // Anti-fantôme : "started > 6h" = match abandonné, on ignore.
+        const startedMs = (lm && typeof lm.startedAt === 'number') ? lm.startedAt : 0;
+        const SIX_H = 6 * 60 * 60 * 1000;
+        if (startedMs && (Date.now() - startedMs) > SIX_H) return;
+
+        // Fetch + applique en local si nouveau OU si update (score/event)
+        const matchDoc = await fetchMatch(cloudMatchId).catch(() => null);
+        if (!matchDoc) return;
+        const applied = _applyCloudMatchToLocal(matchDoc, teamId, team.clubId);
+        if (applied) {
+          const isNew = lastSeenMatchId !== cloudMatchId;
+          lastSeenMatchId = cloudMatchId;
+          if (isNew) {
+            console.info('[liveMatch:watch] ✓ NOUVEAU match en cours :', cloudMatchId, 'team', teamId);
+          } else {
+            console.info('[liveMatch:watch] ↻ update match :', cloudMatchId,
+              'score', matchDoc.teamA && matchDoc.teamA.score, '-', matchDoc.teamB && matchDoc.teamB.score);
+          }
+          try { window.dispatchEvent(new CustomEvent('cdd-data-rebuilt')); } catch (e) {}
+        }
+        return;
+      }
+
+      // ── CAS 2 : team.liveMatch effacé côté cloud (fin de match) ────
+      if (!cloudMatchId && lastSeenMatchId) {
+        console.info('[liveMatch:watch] ✓ match terminé côté cloud, cleanup local :', lastSeenMatchId);
+        try {
+          const finishedId = lastSeenMatchId;
+          // Pose le marker post-match pour que le suivant prenne la place
+          localStorage.setItem('cdd_match_last_finished', finishedId);
+          // Retire le pointeur courant
+          const cur = localStorage.getItem('cdd_match_current');
+          if (cur && String(cur) === finishedId) {
+            localStorage.removeItem('cdd_match_current');
+          }
+        } catch (e) {}
+        lastSeenMatchId = null;
+        try { window.dispatchEvent(new CustomEvent('cdd-data-rebuilt')); } catch (e) {}
+      }
+    },
+    (err) => {
+      console.warn('[liveMatch:watch] erreur onSnapshot team', teamId, ':', err.message);
+    }
+  );
+}
+
 // Liste les matchs TERMINÉS du club depuis Firestore (fix cross-device 2026-05-26).
 // Remplace le scan localStorage de listCoachFinishedMatches() côté UI : ainsi
 // l'historique "Derniers matchs" est identique sur tous les devices (PC, tél, etc.).
@@ -2910,6 +3049,7 @@ window.cddSync = {
   watchVotes,
   saveMatchToCloud, deleteMatchFromCloud,
   watchMatchFromCloud,
+  watchTeamLiveMatch,
   setPlayerStatus,
   watchPlayerStatuses,
   getMatchId,
