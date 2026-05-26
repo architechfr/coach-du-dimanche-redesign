@@ -389,8 +389,13 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
             </div>
           )}
           {M.startedAt && (M.st === 'paused' || inHt) && (
-            <div style={{fontSize:10, color:'rgba(255,255,255,.4)', marginTop:2}}>
-              Temps réel depuis coup d'envoi : {MATCH_HELPERS.fmtMMSS(realMs)}
+            <div style={{
+              fontSize:10, color:'rgba(255,255,255,.55)', marginTop:2,
+              textAlign:'center', fontWeight:600,
+              padding:'0 90px', // espace réservé au bouton Composition à droite
+              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+            }}>
+              ⏱ Réel : {MATCH_HELPERS.fmtMMSS(realMs)}
             </div>
           )}
           {inHt && M.htStart && (() => {
