@@ -713,13 +713,62 @@ function _stripUndefined(value) {
 
 async function saveClub(club) {
   if (!db || !club || !club.id) throw new Error('db/club.id requis');
-  const payload = _stripUndefined({
-    ...club,
-    logoUrl: club.logoUrl || club.logoDataUrl || null,
+
+  // ─── PROTECTION ANTI-ÉCRASEMENT (fix 2026-05-26 bug Florian) ───
+  // Avant : { ...club } spreadait TOUTES les clés même celles à undefined.
+  // _stripUndefined convertit undefined → null → écrase la valeur cloud
+  // avec null. Florian a perdu son stade 3 fois à cause de ça.
+  //
+  // Désormais : on construit le payload champ par champ, en n'incluant que
+  // les valeurs qui ont du contenu réel. Avec merge:true, omettre la clé
+  // préserve automatiquement la valeur cloud existante.
+  const payload = {
+    id: club.id,
     createdBy: _uid(),
     updatedAt: serverTimestamp(),
-  });
-  await setDoc(doc(db, 'clubs', club.id), payload, { merge: true });
+  };
+
+  // Champs scalaires : push seulement si non-vide
+  if (club.name && String(club.name).trim()) payload.name = club.name;
+  if (club.short && String(club.short).trim()) payload.short = club.short;
+  else if (club.name && String(club.name).trim()) payload.short = club.name;
+  if (club.description && String(club.description).trim()) payload.description = club.description;
+  if (club.foundedYear && String(club.foundedYear).trim()) payload.foundedYear = club.foundedYear;
+  if (club.palmares && String(club.palmares).trim()) payload.palmares = club.palmares;
+  if (club.presidentWord && String(club.presidentWord).trim()) payload.presidentWord = club.presidentWord;
+  if (club.federation && String(club.federation).trim()) payload.federation = club.federation;
+  if (club.district && String(club.district).trim()) payload.district = club.district;
+  if (club.primaryColor) payload.primaryColor = club.primaryColor;
+  if (club.secondaryColor) payload.secondaryColor = club.secondaryColor;
+  if (Array.isArray(club.colors) && club.colors.length) payload.colors = club.colors;
+
+  // Logo : prend la nouvelle valeur si fournie, sinon ne touche pas
+  const logoUrl = club.logoUrl || club.logoDataUrl;
+  if (logoUrl) payload.logoUrl = logoUrl;
+
+  // Stadium : objet structuré, push UNIQUEMENT si au moins un champ a du contenu
+  const stadiumHasContent = club.stadium && (
+    (club.stadium.name && String(club.stadium.name).trim()) ||
+    (club.stadium.address && String(club.stadium.address).trim()) ||
+    (club.stadium.gpsUrl && String(club.stadium.gpsUrl).trim())
+  );
+  if (stadiumHasContent) payload.stadium = club.stadium;
+
+  // Contacts : array, push uniquement si au moins 1 contact avec contenu
+  const contactsHasContent = Array.isArray(club.contacts)
+    && club.contacts.some(c => c && (c.role || c.name || c.phone || c.email));
+  if (contactsHasContent) payload.contacts = club.contacts;
+
+  // Social media : objet, push uniquement si au moins 1 lien
+  const socialHasContent = club.socialMedia && (
+    (club.socialMedia.facebook && String(club.socialMedia.facebook).trim()) ||
+    (club.socialMedia.instagram && String(club.socialMedia.instagram).trim()) ||
+    (club.socialMedia.website && String(club.socialMedia.website).trim())
+  );
+  if (socialHasContent) payload.socialMedia = club.socialMedia;
+
+  await setDoc(doc(db, 'clubs', club.id), _stripUndefined(payload), { merge: true });
+  console.info('[saveClub] ✓', club.id, 'champs:', Object.keys(payload).join(','));
   return { ok: true, id: club.id };
 }
 
