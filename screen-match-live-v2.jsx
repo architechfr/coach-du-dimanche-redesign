@@ -199,7 +199,20 @@ function CardOverlay({ color, side, player, hint, onClose, onCloseShow2 }) {
 // Team Badge — affiche le logo club si dispo, sinon fallback couleurs + initiale
 // ──────────────────────────────────────────────────────────
 function TeamBadgeBig({ team }) {
-  const logo = team && team.logoDataUrl;
+  let logo = team && team.logoDataUrl;
+  // Fallback (fix 2026-05-26) : si pas de logo sur le team object et que c'est
+  // mon club actif (match par nom court), prendre le logo du contexte local.
+  // Couvre le cas du device récepteur qui voit le scoreboard sans logo car le
+  // cloud doc n'a pas encore propagé tA.logoDataUrl (matchs legacy, race au mount).
+  if (!logo && team && team.n) {
+    const myClub = window.CDD_CLUB || {};
+    const myShort = myClub.short || myClub.name;
+    if (myShort && team.n === myShort) {
+      logo = (window.CDD_LOGO && window.CDD_LOGO.getForActiveClub && window.CDD_LOGO.getForActiveClub())
+          || myClub.logoDataUrl
+          || null;
+    }
+  }
   if (logo) {
     return (
       <div className="mv-team-badge" style={{
@@ -889,10 +902,12 @@ function ScreenMatchV2({ go, tweaks }) {
             M.tA.p = cloudDoc.teamA.players;
             M.tA.bench = Array.isArray(cloudDoc.teamA.bench) ? cloudDoc.teamA.bench : (M.tA.bench || []);
           }
+          if (cloudDoc.teamA && cloudDoc.teamA.logoDataUrl) M.tA.logoDataUrl = cloudDoc.teamA.logoDataUrl;
           if (cloudDoc.teamB && Array.isArray(cloudDoc.teamB.players) && cloudDoc.teamB.players.length > 0) {
             M.tB.p = cloudDoc.teamB.players;
             M.tB.bench = Array.isArray(cloudDoc.teamB.bench) ? cloudDoc.teamB.bench : (M.tB.bench || []);
           }
+          if (cloudDoc.teamB && cloudDoc.teamB.logoDataUrl) M.tB.logoDataUrl = cloudDoc.teamB.logoDataUrl;
           if (cloudDoc.teamA && typeof cloudDoc.teamA.score === 'number') M.sA = cloudDoc.teamA.score;
           if (cloudDoc.teamB && typeof cloudDoc.teamB.score === 'number') M.sB = cloudDoc.teamB.score;
           if (cloudDoc.status) M.st = cloudDoc.status;
@@ -977,10 +992,22 @@ function ScreenMatchV2({ go, tweaks }) {
           if (curr.tA && Array.isArray(doc.teamA.bench)) curr.tA.bench = doc.teamA.bench;
           changed = true;
         }
+        if (doc.teamA && doc.teamA.logoDataUrl && curr.tA) {
+          if (curr.tA.logoDataUrl !== doc.teamA.logoDataUrl) {
+            curr.tA.logoDataUrl = doc.teamA.logoDataUrl;
+            changed = true;
+          }
+        }
         if (doc.teamB && Array.isArray(doc.teamB.players) && doc.teamB.players.length > 0) {
           if (curr.tB) { curr.tB.p = doc.teamB.players; }
           if (curr.tB && Array.isArray(doc.teamB.bench)) curr.tB.bench = doc.teamB.bench;
           changed = true;
+        }
+        if (doc.teamB && doc.teamB.logoDataUrl && curr.tB) {
+          if (curr.tB.logoDataUrl !== doc.teamB.logoDataUrl) {
+            curr.tB.logoDataUrl = doc.teamB.logoDataUrl;
+            changed = true;
+          }
         }
       }
       // Cleanup post-match : si le cloud annonce 'finished', on bascule l'état
