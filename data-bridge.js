@@ -1398,6 +1398,39 @@ async function _triggerCloudLastMatchesRefresh() {
       '· local-only:', localOnly.length, '· FFF:', fffOnly.length);
     window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
 
+    // ─── ASTUCE CROISÉE (fix 2026-05-26 idée Florian) ─────────────────────
+    // Garde-fou : si un match cloud terminé référence un amical via
+    // scheduledMatchId, on marque CET amical comme terminé localement
+    // même si le sync direct de endedAt a échoué (cas le plus fréquent du
+    // bug "Prochain match qui réapparaît alors qu'il est joué").
+    //
+    // C'est une double protection : on n'est plus dépendant uniquement du
+    // champ endedAt poussé par saveFriendlyMatch (qui peut louper si le
+    // device origine était offline au moment de la fin de match).
+    try {
+      if (window.CDD_FRIENDLY && window.CDD_FRIENDLY.markEnded) {
+        let marked = 0;
+        const allFm = (() => {
+          try { return JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}'); }
+          catch (e) { return {}; }
+        })();
+        cloudDocs.forEach(d => {
+          const schedId = d && d.scheduledMatchId;
+          if (!schedId || !String(schedId).startsWith('fr_')) return;
+          // Cherche cet amical dans le local
+          for (const tid in allFm) {
+            const fm = (allFm[tid] || []).find(f => f && f.id === schedId);
+            if (fm && typeof fm.endedAt !== 'number') {
+              window.CDD_FRIENDLY.markEnded(tid, schedId);
+              marked++;
+              break;
+            }
+          }
+        });
+        if (marked) console.log('[lastMatches] ↻ amicaux marqués terminés via scheduledMatchId :', marked);
+      }
+    } catch (e) { console.warn('[lastMatches] cross-mark endedAt', e.message); }
+
     // ─── Backfill opportuniste : ré-uploade les matchs locaux absents du cloud,
     // pour qu'ils soient visibles cross-device au prochain refresh.
     // Limite 10/cycle pour ne pas spammer Firestore au login.
