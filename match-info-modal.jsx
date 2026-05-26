@@ -39,16 +39,25 @@ function MatchInfoModal({ teamId, matchId, matchLabel, onClose, onSaved }) {
       if (nextMatch.time && !working.kickoff) {
         working = { ...working, kickoff: nextMatch.time };
       }
-      // Pré-remplir le stade depuis le club si match à domicile ET stade vide.
+      // Pré-remplir le stade depuis le club si match à domicile.
+      // Fix 2026-05-26 : même si activeClub.stadium n'est pas configuré, on
+      // met un nom par défaut "Stade de [MonClub]" pour éviter le sentiment
+      // "l'app me redemande où je joue alors que c'est chez moi".
       const clubStadium = window.CDD_CLUB?.stadium;
-      if (isHome && clubStadium && !working.stadium.name && !working.stadium.address) {
-        working = {
-          ...working,
-          stadium: {
-            name:    clubStadium.name    || '',
-            address: clubStadium.address || '',
-          },
-        };
+      if (isHome) {
+        const patch = { ...working.stadium };
+        if (!patch.name) {
+          if (clubStadium && clubStadium.name) patch.name = clubStadium.name;
+          else if (myClubName) patch.name = 'Stade de ' + myClubName;
+        }
+        if (!patch.address && clubStadium && clubStadium.address) {
+          patch.address = clubStadium.address;
+        }
+        if (patch.name !== working.stadium.name || patch.address !== working.stadium.address) {
+          working = { ...working, stadium: patch };
+        }
+        // À domicile, l'opponent.city = ville de l'adversaire reste vide
+        // (on ne joue pas chez eux), ce n'est pas l'info critique pour nous.
       }
     } catch (e) {}
     return working;
@@ -121,6 +130,27 @@ function MatchInfoModal({ teamId, matchId, matchLabel, onClose, onSaved }) {
 
           {/* ───── Stade ───── */}
           <div style={sectionHeader}>🏟️ Stade du match</div>
+          {(() => {
+            // Bandeau d'aide si match à domicile + stade pas encore configuré
+            // dans la Page Club. Évite à Florian de re-saisir à chaque match.
+            const isHome = (window.CDD_NEXT_MATCH?.venue === 'Domicile');
+            const clubStadiumConfigured = !!(window.CDD_CLUB?.stadium?.name
+              || window.CDD_CLUB?.stadium?.address);
+            if (isHome && !clubStadiumConfigured) {
+              return (
+                <div style={{
+                  padding:'10px 12px', marginBottom:10, borderRadius:9,
+                  background:'rgba(96,165,250,0.10)', border:'1px solid rgba(96,165,250,0.35)',
+                  fontSize:12, color:'#bfdbfe', lineHeight:1.4,
+                }}>
+                  💡 <strong>Astuce</strong> — Configure ton stade dans <em>Réglages →
+                  🏢 Mon club</em>. Toutes les futures convocations à domicile seront
+                  pré-remplies automatiquement.
+                </div>
+              );
+            }
+            return null;
+          })()}
           <label style={labelStyle}>
             <span style={labelText}>NOM DU STADE</span>
             <input type="text" value={data.stadium.name}
