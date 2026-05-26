@@ -790,7 +790,7 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
           ))}
         </div>
       )}
-      <FicheMatchSyncBtn match={m}/>
+      <FicheMatchAutoSyncInfo/>
 
       <div style={{padding:"20px", display:"flex", gap:10}}>
         <button className="btn-cta ghost" style={{flex:1}} onClick={() => go("results")}>
@@ -860,7 +860,34 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
     </div>
   );
 }
-// ─── Bouton sync match dans le cloud (#11) ───
+// ─── Indicateur auto-sync (remplace l'ancien bouton "Sauvegarder dans le cloud") ──
+// Depuis les fixes 2026-05-26 (push événementiel + heartbeat + watcher),
+// chaque action (BUT, JAUNE, ROUGE, CHANGE, FIN MATCH) est sauvée auto.
+// Le bouton manuel n'a plus de raison d'être → remplacé par un indicateur
+// rassurant qui confirme que tout est dans le cloud.
+function FicheMatchAutoSyncInfo() {
+  return (
+    <div style={{padding:"0 20px 8px"}}>
+      <div style={{
+        width:'100%', padding:'12px 14px', borderRadius:12,
+        background:'rgba(34,197,94,0.10)',
+        border:'1px solid rgba(34,197,94,0.30)',
+        color:'#c8f169', textAlign:'center',
+        fontSize:13, fontWeight:700, letterSpacing:'.02em',
+      }}>
+        ✅ Sauvegardé automatiquement dans le cloud
+        <div style={{
+          fontSize:11, fontWeight:500, opacity:0.75, marginTop:3,
+          color:'rgba(255,255,255,0.7)', letterSpacing:0,
+        }}>
+          Tous les events (buts, cartons, changements) sont sync en temps réel
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DEPRECATED 2026-05-26 — gardé pour compat, plus appelé. À supprimer plus tard. ──
 function FicheMatchSyncBtn({ match }) {
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState('');
