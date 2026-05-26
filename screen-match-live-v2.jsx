@@ -882,6 +882,17 @@ function ScreenMatchV2({ go, tweaks }) {
           console.info('[liveMatch:mount] cloud plus complet (', cloudEv.length,
             'vs local', localEv.length, ') → adoption cloud');
           M.ev = cloudEv;
+          // Adoption aussi des compos terrain/banc + onField (fix bug 2026-05-26
+          // 'sub propagé en timeline mais pas dans team.p/bench') → un changement
+          // fait sur device A est visible dans la modale "Joueur sortant" de device B.
+          if (cloudDoc.teamA && Array.isArray(cloudDoc.teamA.players) && cloudDoc.teamA.players.length > 0) {
+            M.tA.p = cloudDoc.teamA.players;
+            M.tA.bench = Array.isArray(cloudDoc.teamA.bench) ? cloudDoc.teamA.bench : (M.tA.bench || []);
+          }
+          if (cloudDoc.teamB && Array.isArray(cloudDoc.teamB.players) && cloudDoc.teamB.players.length > 0) {
+            M.tB.p = cloudDoc.teamB.players;
+            M.tB.bench = Array.isArray(cloudDoc.teamB.bench) ? cloudDoc.teamB.bench : (M.tB.bench || []);
+          }
           if (cloudDoc.teamA && typeof cloudDoc.teamA.score === 'number') M.sA = cloudDoc.teamA.score;
           if (cloudDoc.teamB && typeof cloudDoc.teamB.score === 'number') M.sB = cloudDoc.teamB.score;
           if (cloudDoc.status) M.st = cloudDoc.status;
@@ -951,6 +962,27 @@ function ScreenMatchV2({ go, tweaks }) {
       Object.keys(upd).forEach(k => {
         if (curr[k] !== upd[k]) { curr[k] = upd[k]; changed = true; }
       });
+
+      // ── Propagation compos terrain/banc cross-device (fix 2026-05-26) ──
+      // Sans ce bloc, un sub fait sur device A propage ev dans la timeline
+      // de device B mais le filtre onField de la modale "Joueur sortant"
+      // restait obsolète → un joueur sorti réapparaissait comme sur le terrain.
+      // Règle : on n'adopte les compos cloud que si on a moins d'events que cloud
+      // (= on n'arbitre pas, on rattrape). Préserve le device qui arbitre.
+      const cloudEvCount = Array.isArray(doc.events) ? doc.events.length : 0;
+      const localEvCount = Array.isArray(curr.ev) ? curr.ev.length : 0;
+      if (cloudEvCount >= localEvCount) {
+        if (doc.teamA && Array.isArray(doc.teamA.players) && doc.teamA.players.length > 0) {
+          if (curr.tA) { curr.tA.p = doc.teamA.players; }
+          if (curr.tA && Array.isArray(doc.teamA.bench)) curr.tA.bench = doc.teamA.bench;
+          changed = true;
+        }
+        if (doc.teamB && Array.isArray(doc.teamB.players) && doc.teamB.players.length > 0) {
+          if (curr.tB) { curr.tB.p = doc.teamB.players; }
+          if (curr.tB && Array.isArray(doc.teamB.bench)) curr.tB.bench = doc.teamB.bench;
+          changed = true;
+        }
+      }
       // Cleanup post-match : si le cloud annonce 'finished', on bascule l'état
       // local pour que getLiveMatch() retourne null et que les autres écrans
       // (Accueil / Convocations / Match-prep) basculent sur le prochain match.
