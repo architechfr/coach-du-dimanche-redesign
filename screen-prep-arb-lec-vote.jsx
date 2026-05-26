@@ -438,6 +438,25 @@ function ScreenLecteur({ go, tweaks }) {
       setSendError("Aucun joueur sélectionné");
       return;
     }
+    // ─── FIX SÉCURITÉ 2026-05-26 (Florian) ───
+    // Un PARENT ne peut répondre QUE pour son propre enfant. Avant ce fix,
+    // un parent pouvait chercher n'importe quel joueur et envoyer son
+    // statut de présence — faille critique sur des données privées.
+    // Coach / Adjoint / Admin gardent leur capacité de saisir au nom des
+    // parents qui n'ont pas l'app (depuis l'écran Convocations).
+    try {
+      const role = window.CDD_ROLES?.effectiveRole?.();
+      if (role === 'parent') {
+        const myChildId = window.CDD_ROLES?.getChildOfParent?.();
+        if (myChildId && String(myChildId) !== String(playerId)) {
+          const msg = "Tu peux uniquement répondre pour ton propre enfant.";
+          console.warn('[lecteur] sendResponse REFUSÉ : parent essaie de répondre pour un autre joueur',
+            { myChildId, playerId });
+          setSendError(msg);
+          return;
+        }
+      }
+    } catch (e) {}
     setSending(true);
     setSendError(null);
     setResp(newResp);
@@ -768,9 +787,26 @@ function ScreenLecteur({ go, tweaks }) {
                     })()}
                   </div>
                 </div>
-                {/* Tant qu'aucune réponse OU mode édition → 3 boutons.
-                    Sinon → résumé compact + bouton Modifier. */}
-                {(!resp || editing) ? (
+                {(() => {
+                  // FIX SÉCURITÉ : un parent ne voit les boutons d'envoi QUE
+                  // si le joueur affiché est SON enfant. Pour les autres, seul
+                  // un message en lecture seule.
+                  const _role = window.CDD_ROLES?.effectiveRole?.();
+                  const _myChild = window.CDD_ROLES?.getChildOfParent?.();
+                  const _isMyChild = !_myChild || String(_myChild) === String(playerId);
+                  const _canRespond = _role !== 'parent' || _isMyChild;
+                  if (!_canRespond) {
+                    return (
+                      <div style={{
+                        padding:'14px 16px', textAlign:'center',
+                        color:'rgba(255,255,255,0.6)', fontSize:13, fontWeight:600,
+                        background:'rgba(0,0,0,0.25)',
+                      }}>
+                        🔒 Tu peux uniquement répondre pour ton propre enfant.
+                      </div>
+                    );
+                  }
+                  return (!resp || editing) ? (
                   <div className="lec-convo-cta">
                     <button
                       className={`lec-btn-resp lec-btn-yes ${resp === 'yes' ? 'on' : ''}`}
@@ -818,7 +854,8 @@ function ScreenLecteur({ go, tweaks }) {
                       ✎ Modifier
                     </button>
                   </div>
-                )}
+                );
+                })()}
               </>
             )}
           </div>
