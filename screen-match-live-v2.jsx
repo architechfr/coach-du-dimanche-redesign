@@ -329,6 +329,34 @@ function MatchHeader({ M, minute, onWhistle, onShowOnly, onShowLineup }) {
           }}>
             {MATCH_HELPERS.fmtMMSS ? MATCH_HELPERS.fmtMMSS(matchMs) : minute + ":00"}
           </div>
+          {/* Mini-score TOUJOURS visible sous le chrono — fix 2026-05-26.
+              Le scoreboard FIFA en haut peut être tronqué/écrasé selon le device,
+              on garantit ici que le score est lisible en permanence. */}
+          {(() => {
+            const _isAtHomeC = (M.isAtHome !== undefined)
+              ? !!M.isAtHome
+              : (window.CDD_NEXT_MATCH?.venue === 'Domicile');
+            const sLeft  = _isAtHomeC ? (M.sA ?? 0) : (M.sB ?? 0);
+            const sRight = _isAtHomeC ? (M.sB ?? 0) : (M.sA ?? 0);
+            const nLeft  = _isAtHomeC ? (M.tA && M.tA.n) : (M.tB && M.tB.n);
+            const nRight = _isAtHomeC ? (M.tB && M.tB.n) : (M.tA && M.tA.n);
+            return (
+              <div style={{
+                display:'flex', alignItems:'center', gap:10,
+                fontSize:'clamp(20px, 5.5vw, 30px)', fontWeight:900,
+                color:'#fff', fontVariantNumeric:'tabular-nums',
+                marginTop:-2, padding:'2px 8px',
+                background:'rgba(0,0,0,0.35)', borderRadius:8,
+                border:'1px solid rgba(255,255,255,0.10)',
+              }}>
+                <span style={{fontSize:'.45em', fontWeight:700, opacity:.7, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{nLeft}</span>
+                <span>{sLeft}</span>
+                <span style={{color:'rgba(255,255,255,0.4)', fontWeight:300}}>-</span>
+                <span>{sRight}</span>
+                <span style={{fontSize:'.45em', fontWeight:700, opacity:.7, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{nRight}</span>
+              </div>
+            );
+          })()}
           <div style={{
             display:'flex', alignItems:'center', gap:10, fontSize:13, fontWeight:800,
             letterSpacing:'.12em', textTransform:'uppercase',
