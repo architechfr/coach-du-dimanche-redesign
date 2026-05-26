@@ -204,21 +204,73 @@ async function saveMatchToCloud(match) {
     const { _prev, ...rest } = e || {};
     return rest;
   });
-  const payload = {
-    id: match.id,
-    teamA: { n: match.tA && match.tA.n, c: match.tA && match.tA.c, score: match.sA, players: (match.tA && match.tA.p) || [], bench: (match.tA && match.tA.bench) || [] },
-    teamB: { n: match.tB && match.tB.n, c: match.tB && match.tB.c, score: match.sB, players: (match.tB && match.tB.p) || [], bench: (match.tB && match.tB.bench) || [] },
-    status: match.st,
-    period: match.ch,
-    config: match.cfg || {},
-    events: cleanEv,
-    yellows: { A: match.yA || 0, B: match.yB || 0 },
-    reds:    { A: match.rA || 0, B: match.rB || 0 },
-    subs:    { A: match.uA || 0, B: match.uB || 0 },
-    addTime: match.at || 0,
-    savedAt: serverTimestamp(),
-    coachId: getVoterId(),
-  };
+
+  // ─── PROTECTION ANTI-ÉCRASEMENT (fix 2026-05-26 bug "tél tardif efface score") ───
+  // Avant : un device qui rejoint un match en cours, si son M local est vide
+  // (race condition de chargement), push sa version 0-event au cloud → écrase
+  // les buts/cartons des autres devices.
+  // Désormais : on fetch le doc cloud AVANT de push. Si cloud a PLUS d'events
+  // que notre local, on ne touche PAS aux events / teamA / teamB / scores —
+  // on push uniquement les méta-champs (chrono, status). 1 read par push
+  // (~6/min/match) = coût négligeable, intégrité maximale.
+  let cloudExisting = null;
+  try {
+    const existingDoc = await getDoc(doc(db, COLL_MATCHES, matchId));
+    if (existingDoc.exists()) cloudExisting = existingDoc.data();
+  } catch (e) { /* silencieux : si fetch échoue on push normalement */ }
+  const cloudEvCount = (cloudExisting && Array.isArray(cloudExisting.events))
+    ? cloudExisting.events.length : 0;
+  const heartbeatOnly = cloudExisting && cloudEvCount > cleanEv.length;
+  if (heartbeatOnly) {
+    console.info('[saveMatchToCloud] HEARTBEAT : cloud=', cloudEvCount,
+      'events vs local=', cleanEv.length, '→ events/teamA/teamB préservés cloud');
+  }
+
+  let payload;
+  if (heartbeatOnly) {
+    // Mode heartbeat : on ne touche QUE aux champs sûrs
+    payload = {
+      id: match.id,
+      status: match.st,
+      period: match.ch,
+      addTime: match.at || 0,
+      savedAt: serverTimestamp(),
+      coachId: getVoterId(),
+    };
+  } else {
+    // Mode complet : push tout (équipes, events, scores, méta)
+    const teamAPayload = {
+      n: match.tA && match.tA.n,
+      c: match.tA && match.tA.c,
+      score: match.sA,
+      players: (match.tA && match.tA.p) || [],
+      bench: (match.tA && match.tA.bench) || [],
+    };
+    if (match.tA && match.tA.logoDataUrl) teamAPayload.logoDataUrl = match.tA.logoDataUrl;
+    const teamBPayload = {
+      n: match.tB && match.tB.n,
+      c: match.tB && match.tB.c,
+      score: match.sB,
+      players: (match.tB && match.tB.p) || [],
+      bench: (match.tB && match.tB.bench) || [],
+    };
+    if (match.tB && match.tB.logoDataUrl) teamBPayload.logoDataUrl = match.tB.logoDataUrl;
+    payload = {
+      id: match.id,
+      teamA: teamAPayload,
+      teamB: teamBPayload,
+      status: match.st,
+      period: match.ch,
+      config: match.cfg || {},
+      events: cleanEv,
+      yellows: { A: match.yA || 0, B: match.yB || 0 },
+      reds:    { A: match.rA || 0, B: match.rB || 0 },
+      subs:    { A: match.uA || 0, B: match.uB || 0 },
+      addTime: match.at || 0,
+      savedAt: serverTimestamp(),
+      coachId: getVoterId(),
+    };
+  }
   // Champs chrono : ne PAS pousser un null s'il écraserait une valeur cloud
   // valide. Cas typique : un device distant qui a tiré un match sans tSt
   // (legacy v162) auto-save toutes les 10s — sans cette garde il écraserait
@@ -818,11 +870,13 @@ function _applyCloudMatchToLocal(matchDoc, teamId, clubId) {
       clubId: clubId || matchDoc.clubId || null,
       tA: matchDoc.teamA ? {
         n: matchDoc.teamA.n, c: matchDoc.teamA.c,
+        logoDataUrl: matchDoc.teamA.logoDataUrl || (existing && existing.tA && existing.tA.logoDataUrl) || null,
         p: matchDoc.teamA.players || [],
         bench: matchDoc.teamA.bench || [],
       } : null,
       tB: matchDoc.teamB ? {
         n: matchDoc.teamB.n, c: matchDoc.teamB.c,
+        logoDataUrl: matchDoc.teamB.logoDataUrl || (existing && existing.tB && existing.tB.logoDataUrl) || null,
         p: matchDoc.teamB.players || [],
         bench: matchDoc.teamB.bench || [],
       } : null,
@@ -864,12 +918,27 @@ function _applyCloudMatchToLocal(matchDoc, teamId, clubId) {
       if (localShape[k] !== undefined) cleanLocal[k] = localShape[k];
     });
     const final = existing ? { ...existing, ...cleanLocal } : cleanLocal;
+
+    // ─── Détection de changement VISIBLE (fix anti-clignotement 2026-05-26) ───
+    // Sans ce check, on dispatch cdd-data-rebuilt à chaque snapshot Firestore
+    // (toutes les 10s par le tick du coach) → React re-render tout → l'overlay
+    // debug clignote + UX moche. On ne dispatch QUE si quelque chose de visible
+    // a changé : nb d'events, statut, scores, période.
+    const sigOf = (m) => m ? [
+      (Array.isArray(m.ev) ? m.ev.length : 0),
+      m.st || '',
+      m.sA || 0,
+      m.sB || 0,
+      m.ch || 0,
+    ].join('|') : '';
+    const changedVisible = sigOf(existing) !== sigOf(final);
+
     localStorage.setItem('cdd_match_' + lmId, JSON.stringify(final));
     localStorage.setItem('cdd_match_current', lmId);
-    return true;
+    return { ok: true, changed: changedVisible };
   } catch (e) {
     console.warn('[liveMatch] _applyCloudMatchToLocal failed', e.message);
-    return false;
+    return { ok: false, changed: false };
   }
 }
 
@@ -915,17 +984,22 @@ function watchTeamLiveMatch(teamId) {
         // Fetch + applique en local si nouveau OU si update (score/event)
         const matchDoc = await fetchMatch(cloudMatchId).catch(() => null);
         if (!matchDoc) return;
-        const applied = _applyCloudMatchToLocal(matchDoc, teamId, team.clubId);
-        if (applied) {
+        const res = _applyCloudMatchToLocal(matchDoc, teamId, team.clubId);
+        if (res && res.ok) {
           const isNew = lastSeenMatchId !== cloudMatchId;
           lastSeenMatchId = cloudMatchId;
+          // Dispatch uniquement si NOUVEAU match ou si changement visible.
+          // Évite le clignotement à chaque snapshot 10s (chrono cloud avance
+          // mais rien de visible côté UI ne change).
           if (isNew) {
             console.info('[liveMatch:watch] ✓ NOUVEAU match en cours :', cloudMatchId, 'team', teamId);
-          } else {
+            try { window.dispatchEvent(new CustomEvent('cdd-data-rebuilt')); } catch (e) {}
+          } else if (res.changed) {
             console.info('[liveMatch:watch] ↻ update match :', cloudMatchId,
               'score', matchDoc.teamA && matchDoc.teamA.score, '-', matchDoc.teamB && matchDoc.teamB.score);
+            try { window.dispatchEvent(new CustomEvent('cdd-data-rebuilt')); } catch (e) {}
           }
-          try { window.dispatchEvent(new CustomEvent('cdd-data-rebuilt')); } catch (e) {}
+          // sinon : snapshot sans changement visible → silencieux
         }
         return;
       }
