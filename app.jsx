@@ -179,6 +179,62 @@ class ScreenErrorBoundary extends React.Component {
 }
 
 // ============================================================
+// SYNC DOT — indicateur permanent de l'état Firestore
+// ============================================================
+// Petit point coloré en haut à droite, à côté du menu ⋯ :
+//   🟢 vert  = sync OK
+//   🟡 orange = sync en cours (clic ignoré)
+//   🔴 rouge = sync KO (ad-blocker, 3G coupée, rules…)
+// Clic : déclenche un re-pull complet du cloud (forcePull).
+// État alimenté par 'cdd-sync-status-changed' (firebase-sync.js).
+function SyncDot() {
+  const initial = (typeof window !== 'undefined' && window.cddSync && window.cddSync.getSyncStatus)
+                  ? window.cddSync.getSyncStatus()
+                  : { ok: true, inFlight: false, lastError: null };
+  const [status, setStatus] = useState(initial);
+  useEffect(() => {
+    const onChange = (ev) => setStatus(ev.detail || {});
+    const onReady = () => {
+      try { setStatus(window.cddSync.getSyncStatus()); } catch (e) {}
+    };
+    window.addEventListener('cdd-sync-status-changed', onChange);
+    window.addEventListener('cdd-sync-ready', onReady);
+    return () => {
+      window.removeEventListener('cdd-sync-status-changed', onChange);
+      window.removeEventListener('cdd-sync-ready', onReady);
+    };
+  }, []);
+  const handleClick = async () => {
+    if (status.inFlight) return;
+    if (window.cddSync && window.cddSync.forcePull) {
+      await window.cddSync.forcePull();
+    }
+  };
+  const color = status.inFlight ? '#fbbf24'
+              : status.ok ? '#22c55e'
+              : '#ef4444';
+  const glyph = status.inFlight ? '⟳' : '●';
+  const title = status.inFlight ? 'Synchronisation en cours…'
+              : status.ok ? 'Sync OK · clic pour rafraîchir'
+              : ('Connexion cloud KO · ' + (status.lastError || 'clic pour retenter'));
+  return (
+    <button onClick={handleClick}
+            title={title}
+            aria-label={title}
+            disabled={status.inFlight}
+            style={{
+              background: 'transparent', border: 'none', cursor: status.inFlight ? 'wait' : 'pointer',
+              padding: '4px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, color: color, lineHeight: 1, fontWeight: 700,
+              opacity: status.inFlight ? 0.8 : 1,
+            }}>
+      {glyph}
+    </button>
+  );
+}
+window.SyncDot = SyncDot;
+
+// ============================================================
 // MAIN APP
 // ============================================================
 
@@ -475,7 +531,10 @@ function App() {
             <div className="app-hdr">
               <button className="app-hdr-btn back" onClick={() => go("back")}>‹</button>
               <div className="app-hdr-title">{headerTitle}</div>
-              <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+              <div style={{display:'flex', alignItems:'center', gap:2}}>
+                <SyncDot/>
+                <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+              </div>
             </div>
           )}
 
@@ -497,7 +556,10 @@ function App() {
                   )}
                   <span>{homeTitle}</span>
                 </div>
-                <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+                <div style={{display:'flex', alignItems:'center', gap:2}}>
+                  <SyncDot/>
+                  <button className="app-hdr-btn" onClick={() => setScreenMenuOpen(true)} aria-label="Tous les écrans">⋯</button>
+                </div>
               </div>
             );
           })()}

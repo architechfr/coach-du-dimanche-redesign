@@ -29,6 +29,50 @@ function FormDot({ r, big }) {
   return <span className={`fd ${cls} ${big?"fd-big":""}`}>{display}</span>;
 }
 
+// ---------- Bouton "🔄 Resynchroniser" pour le bandeau MATCH EN COURS ----------
+// Composant standalone (pas inline IIFE) pour respecter les règles de hooks
+// React (useState ne peut pas être appelé dans une fonction anonyme imbriquée
+// dans le JSX). Visible pour tous les profils. Au clic, déclenche un re-pull
+// complet du cloud via cddSync.forcePull(). Feedback visuel temporaire (2-4s).
+function ResyncMatchButton() {
+  const [syncState, setSyncState] = useState({ ok: null, msg: '' });
+  const handleResync = async () => {
+    if (!window.cddSync || !window.cddSync.forcePull) {
+      setSyncState({ ok: false, msg: 'Indisponible' });
+      return;
+    }
+    setSyncState({ ok: null, msg: 'Sync…' });
+    const r = await window.cddSync.forcePull();
+    if (r.ok) {
+      setSyncState({ ok: true, msg: '✓ Sync OK' });
+      setTimeout(() => setSyncState({ ok: null, msg: '' }), 2000);
+    } else {
+      setSyncState({ ok: false, msg: '❌ ' + (r.error || 'KO') });
+      setTimeout(() => setSyncState({ ok: null, msg: '' }), 4000);
+    }
+  };
+  const color = syncState.ok === true ? '#22c55e'
+              : syncState.ok === false ? '#fca5a5'
+              : '#93c5fd';
+  return (
+    <div style={{
+      margin:'6px 16px 0', padding:'0 4px',
+      display:'flex', alignItems:'center', justifyContent:'flex-end',
+    }}>
+      <button onClick={handleResync} style={{
+        background:'rgba(147,197,253,0.10)',
+        border:'1px solid ' + color,
+        color: color,
+        fontSize:11, fontWeight:700, letterSpacing:'.06em',
+        padding:'5px 12px', borderRadius:6, cursor:'pointer',
+        fontFamily:'inherit', display:'flex', alignItems:'center', gap:6,
+      }}>
+        <span>{syncState.msg || '🔄 Resynchroniser'}</span>
+      </button>
+    </div>
+  );
+}
+
 // ---------- Visuel jour/nuit auto selon heure ----------
 function pickCoachVisual() {
   const h = new Date().getHours();
@@ -198,6 +242,11 @@ function ScreenHome({ go, tweaks }) {
             </div>
           </span>
         </button>
+        {/* Bouton "🔄 Resync" — visible pour TOUS (parent, joueur, coach).
+            Force un re-pull complet du cloud pour rattraper un état désync
+            (3G capricieuse, ad-blocker, app en arrière-plan trop longtemps). */}
+        <ResyncMatchButton/>
+
         {/* Lien discret en dessous : permet de clôturer un match cassé/fantôme
             sans avoir à passer par l'écran match-live (qui peut être inaccessible
             si le chrono est cassé ou si on est sur un autre device que celui

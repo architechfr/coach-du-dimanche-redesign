@@ -737,6 +737,50 @@ async function fetchMatch(matchId) {
   }
 }
 
+// ─── Tracker d'état Firestore (fix UX 2026-05-26) ──────────────────────
+// État global de la connexion au cloud, exposé à l'UI via getSyncStatus()
+// + event 'cdd-sync-status-changed'. Permet à l'indicateur 🟢/🔴 en haut
+// du header et au bouton "🔄 Sync" du bandeau MATCH EN COURS de donner
+// au coach la visibilité sur la santé de la sync sans devoir ouvrir la
+// console. État initial optimiste (true) : on assume que ça marche jusqu'à
+// preuve du contraire.
+let _syncStatus = {
+  ok: true,            // true = sync OK, false = échec (ad-blocker, 3G, rules…)
+  lastPullAt: 0,       // ms epoch du dernier pull réussi
+  inFlight: false,     // true pendant un forcePull (anti-double clic)
+  lastError: null,     // string : message de la dernière erreur
+};
+function getSyncStatus() { return { ..._syncStatus }; }
+function _setSyncStatus(patch) {
+  _syncStatus = { ..._syncStatus, ...patch };
+  try {
+    window.dispatchEvent(new CustomEvent('cdd-sync-status-changed', { detail: { ..._syncStatus } }));
+  } catch (e) {}
+}
+// Force un re-pull complet du cloud. Utilisé par les boutons "🔄 Sync".
+// Retourne {ok, error?} pour feedback UI. Anti-double-clic via inFlight.
+async function forcePull() {
+  if (!db) return { ok: false, error: 'db non initialisé' };
+  if (_syncStatus.inFlight) return { ok: false, error: 'sync en cours' };
+  _setSyncStatus({ inFlight: true });
+  try {
+    const r = await pullCloudData();
+    const ok = r && r.ok !== false;
+    _setSyncStatus({
+      ok,
+      lastPullAt: Date.now(),
+      inFlight: false,
+      lastError: ok ? null : (r && r.error) || (r && r.reason) || 'pull KO',
+    });
+    // Force rebuild des globaux pour rerender React (CDD_LAST_MATCHES etc.)
+    try { if (window.CDD_REBUILD) window.CDD_REBUILD(); } catch (e) {}
+    return { ok, result: r };
+  } catch (e) {
+    _setSyncStatus({ ok: false, lastPullAt: Date.now(), inFlight: false, lastError: e.message });
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── Helper interne : reconstruit un match local depuis un doc cloud ───
 // Extrait du bloc inline de pullCloudData (lignes 2289+) pour pouvoir le
 // réutiliser dans watchTeamLiveMatch sans dupliquer la logique.
@@ -872,6 +916,8 @@ function watchTeamLiveMatch(teamId) {
     },
     (err) => {
       console.warn('[liveMatch:watch] erreur onSnapshot team', teamId, ':', err.message);
+      // Bascule l'indicateur 🟢→🔴 pour signaler la coupure (ad-blocker, 3G…)
+      _setSyncStatus({ ok: false, lastError: 'watch: ' + err.message });
     }
   );
 }
@@ -3050,6 +3096,7 @@ window.cddSync = {
   saveMatchToCloud, deleteMatchFromCloud,
   watchMatchFromCloud,
   watchTeamLiveMatch,
+  getSyncStatus, forcePull,
   setPlayerStatus,
   watchPlayerStatuses,
   getMatchId,
