@@ -597,7 +597,10 @@ function eventDescriptionFr(e) {
   if (e.tp === 'injury') return `Blessure ${cleanPlayerName(e.pl) || '(adversaire)'}`;
   if (e.tp === 'sub') {
     const out = cleanPlayerName(e.out || e.pl);
-    const inn = cleanPlayerName(e.in);
+    // BUG FIX 2026-05-26 : l'event est stocké avec `inn` (2 n, ligne 1383)
+    // mais on lisait `e.in` → toujours undefined → fallback "Changement : X".
+    // Désormais le libellé est complet "X sort, Y entre" comme prévu.
+    const inn = cleanPlayerName(e.inn || e.in);
     if (inn) return `${out} sort, ${inn} entre`;
     return `Changement : ${out}`;
   }
