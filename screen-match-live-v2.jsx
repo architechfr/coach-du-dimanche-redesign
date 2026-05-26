@@ -556,7 +556,14 @@ function ActionsMatrix({ M, disabled, onGoal, onCard, onSub, onInjury, isAtHome 
 // '#9 Léonis' -> 'Léonis', '#10 Djibril' -> 'Djibril'.
 function cleanPlayerName(lbl) {
   if (!lbl) return '';
-  return String(lbl).replace(/^#\d+\s*/, '').trim();
+  const s = String(lbl);
+  // BUG FIX 2026-05-26 : avant on supprimait systématiquement le préfixe #N.
+  // Pour les joueurs adverses (pas de nom saisi), le label est juste "#7" →
+  // après nettoyage on perdait TOUT et on affichait rien dans la timeline.
+  // Désormais : si après nettoyage il ne reste rien, on garde le label complet
+  // (= au moins le numéro de maillot). Ex : 'Changement : #7 sort, #11 entre'.
+  const withoutNum = s.replace(/^#\d+\s*/, '').trim();
+  return withoutNum || s.trim();
 }
 
 // Tag d'évènement en français (libellé court de l'action)
