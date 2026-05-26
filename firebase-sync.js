@@ -792,6 +792,26 @@ function _applyCloudMatchToLocal(matchDoc, teamId, clubId) {
   if (!matchDoc || !matchDoc.id) return false;
   try {
     const lmId = String(matchDoc.id);
+
+    // ── PROTECTION ANTI-ÉCRASEMENT (fix 2026-05-26 bug "but s'efface") ──
+    // Le tick auto-save 10s du device qui arbitre peut pousser un M sans
+    // les events poussés par un autre device (race condition). Si on accepte
+    // sans broncher, on perd les buts/cartons côté local.
+    // Stratégie : si on a déjà un M local AVEC PLUS D'EVENTS que le cloud,
+    // on préserve les events locaux + scores dérivés. Le reste (chrono,
+    // status, addTime) prend toujours le cloud (peu critique).
+    let existing = null;
+    try { existing = JSON.parse(localStorage.getItem('cdd_match_' + lmId) || 'null'); }
+    catch (e) {}
+    const cloudEvents = matchDoc.events || [];
+    const localEvents = (existing && Array.isArray(existing.ev)) ? existing.ev : [];
+    const preserveLocalEvents = localEvents.length > cloudEvents.length;
+    if (preserveLocalEvents) {
+      console.info('[liveMatch] préserve events locaux :',
+        localEvents.length, '> cloud', cloudEvents.length,
+        '— protection anti-écrasement (tick 10s remote)');
+    }
+
     const localShape = {
       id: lmId,
       teamId: teamId || matchDoc.teamId || null,
@@ -806,12 +826,16 @@ function _applyCloudMatchToLocal(matchDoc, teamId, clubId) {
         p: matchDoc.teamB.players || [],
         bench: matchDoc.teamB.bench || [],
       } : null,
-      sA: matchDoc.teamA ? matchDoc.teamA.score : 0,
-      sB: matchDoc.teamB ? matchDoc.teamB.score : 0,
+      sA: preserveLocalEvents
+            ? (existing && typeof existing.sA === 'number' ? existing.sA : 0)
+            : (matchDoc.teamA ? matchDoc.teamA.score : 0),
+      sB: preserveLocalEvents
+            ? (existing && typeof existing.sB === 'number' ? existing.sB : 0)
+            : (matchDoc.teamB ? matchDoc.teamB.score : 0),
       st: matchDoc.status,
       ch: matchDoc.period,
       cfg: matchDoc.config || {},
-      ev: matchDoc.events || [],
+      ev: preserveLocalEvents ? localEvents : cloudEvents,
       yA: matchDoc.yellows ? matchDoc.yellows.A : 0,
       yB: matchDoc.yellows ? matchDoc.yellows.B : 0,
       rA: matchDoc.reds    ? matchDoc.reds.A    : 0,
@@ -831,7 +855,16 @@ function _applyCloudMatchToLocal(matchDoc, teamId, clubId) {
       endedAt: matchDoc.endedAt || null,
       savedAt: Date.now(),
     };
-    localStorage.setItem('cdd_match_' + lmId, JSON.stringify(localShape));
+    // Merge avec existing : préserve les champs locaux qui ne seraient PAS
+    // dans le cloud (ex: isAtHome posé au coup d'envoi mais doc cloud lancé
+    // avant le fix v170 → on garde la valeur locale plutôt qu'undefined).
+    // localShape gagne sur existing pour les champs qu'il définit explicitement.
+    const cleanLocal = {};
+    Object.keys(localShape).forEach(k => {
+      if (localShape[k] !== undefined) cleanLocal[k] = localShape[k];
+    });
+    const final = existing ? { ...existing, ...cleanLocal } : cleanLocal;
+    localStorage.setItem('cdd_match_' + lmId, JSON.stringify(final));
     localStorage.setItem('cdd_match_current', lmId);
     return true;
   } catch (e) {
