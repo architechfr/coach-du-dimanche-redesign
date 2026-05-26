@@ -286,14 +286,22 @@ function isInHalftime(M) {
 // Pour les events anciens sans champ ch : on infère depuis la minute.
 function fmtMatchMinute(mn, ch, cfg) {
   const hd = (cfg && cfg.hd) || 45;
-  const hs = (cfg && cfg.hs) || 2;
-  let period = ch;
-  if (period == null) {
-    period = Math.min(hs, Math.max(1, Math.ceil((mn || 0) / hd)));
+  // Convention foot amateur (validée Florian 26/05/2026) :
+  //   - 1ère mi-temps : minute réelle, et temps additionnel affiché "45+X'"
+  //   - 2ème mi-temps (et au-delà) : minute réelle absolue (ex: "94'" pour 90+4)
+  //     → Florian préfère la lecture absolue à "90+4'"
+  //   - Garde-fou : si event tagué ch=1 mais minute énorme (ex: 86'), c'est
+  //     une erreur de période (le coach a oublié de cliquer Mi-temps). On
+  //     affiche la minute réelle "86'" au lieu de "45+41'" illisible.
+  if (mn <= hd) return `${mn}'`;
+  const overflow = mn - hd;
+  // Encore en 1ère MT déclarée ET temps additionnel plausible (≤ 15 min)
+  // → convention "45+X'"
+  if ((ch || 1) === 1 && overflow <= 15) {
+    return `${hd}+${overflow}'`;
   }
-  const periodEnd = hd * period;
-  if (mn <= periodEnd) return `${mn}'`;
-  return `${periodEnd} + ${mn - periodEnd}'`;
+  // 2ème MT ou plus, OU dépassement aberrant en 1ère MT : minute réelle
+  return `${mn}'`;
 }
 
 // Player helpers

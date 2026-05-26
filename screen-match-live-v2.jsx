@@ -984,6 +984,18 @@ function ScreenMatchV2({ go, tweaks }) {
         ev:            doc.events        || curr.ev,
         at:            typeof doc.addTime === 'number' ? doc.addTime : (curr.at || 0),
       };
+      // Log explicite des transitions critiques avant de muter curr (debug
+      // 2026-05-26 pour le bug "le téléphone croit qu'on est encore en 1ère MT").
+      if (curr.ch !== upd.ch) {
+        console.info('[liveMatch:watch] ▶ PÉRIODE', curr.ch, '→', upd.ch);
+      }
+      if (curr.inHalftime !== upd.inHalftime) {
+        console.info('[liveMatch:watch] ▶ MI-TEMPS', curr.inHalftime ? 'EN COURS' : 'TERMINÉE',
+          '→', upd.inHalftime ? 'EN COURS' : 'TERMINÉE');
+      }
+      if (curr.st !== upd.st) {
+        console.info('[liveMatch:watch] ▶ STATUT', curr.st, '→', upd.st);
+      }
       Object.keys(upd).forEach(k => {
         if (curr[k] !== upd[k]) { curr[k] = upd[k]; changed = true; }
       });
