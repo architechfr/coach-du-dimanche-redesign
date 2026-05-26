@@ -1029,6 +1029,12 @@ async function rebuildCDDGlobals() {
   // Render NOW with fallback, then fetch FFF in background if useful
   window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
 
+  // ─── ASYNC cloud refresh "Derniers matchs" (fix cross-device 2026-05-26) ───
+  // Fire-and-forget : récupère les matchs finis du club depuis Firestore et
+  // met à jour CDD_LAST_MATCHES. Le React re-render via cdd-data-rebuilt.
+  // Pas bloquant pour le rendu initial localStorage.
+  try { _triggerCloudLastMatchesRefresh(); } catch (e) {}
+
   // ─── ASYNC FFF fetch: NON-BLOCKING, cache-first ───
   // Only fetch if: config exists AND (no cache OR cache stale OR user forced refresh)
   if (fffCfg && window.CDD_FFF) {
@@ -1280,6 +1286,147 @@ async function applyFFFData(fffCfg, clubName, players) {
   window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
   window.dispatchEvent(new CustomEvent('cdd-fff-loaded'));
   console.log('%c[FFF] Data applied ✓', 'color:#c8f169;font-weight:900');
+}
+
+// ─── Refresh "Derniers matchs" depuis Firestore (fix cross-device 2026-05-26) ───
+// Sans ce refresh, l'historique vient uniquement du localStorage de chaque device
+// → PC et téléphone divergent (PC voit Bussy 2-1+1-0, téléphone voit 4-3).
+//
+// Stratégie : merge SANS PERTE
+//   1. Cloud items (Firestore, multi-device fiables) — priorité
+//   2. Local items absents du cloud (préserve les anciens matchs sans clubId)
+//   3. FFF items (championnat, jamais en cloud) — préservés
+// + backfill opportuniste : les local-only matchs sont ré-uploadés au cloud
+// avec leur clubId, pour devenir visibles cross-device au refresh suivant.
+
+function _cloudDocToLastMatchItem(d) {
+  if (!d || !d.id) return null;
+  const sA = (d.teamA && d.teamA.score) || 0;
+  const sB = (d.teamB && d.teamB.score) || 0;
+  const result = sA > sB ? 'W' : sA < sB ? 'L' : 'D';
+  const endedAt = d.endedAt
+    || (d.savedAt && d.savedAt.toMillis ? d.savedAt.toMillis() : 0);
+  const date = endedAt
+    ? new Date(endedAt).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
+    : '?';
+  const scorers = (d.events || [])
+    .filter(e => e && e.t === 'A' && e.tp === 'goal')
+    .map(e => (e.scorer || e.pl || '').replace(/^#\d+\s*/, ''))
+    .filter(Boolean);
+  let venue = '?';
+  if (d.isAtHome === true)  venue = 'H';
+  if (d.isAtHome === false) venue = 'E';
+  if (venue === '?' && d.scheduledMatchId) {
+    try {
+      const allFm = JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}');
+      for (const tid in allFm) {
+        const fm = (allFm[tid] || []).find(f => f && f.id === d.scheduledMatchId);
+        if (fm) {
+          const v = fm.venue;
+          if (v === 'H' || v === 'Domicile')  venue = 'H';
+          if (v === 'E' || v === 'Extérieur') venue = 'E';
+          break;
+        }
+      }
+    } catch (e) {}
+  }
+  return {
+    id: d.id,
+    date,
+    dateRaw: endedAt ? new Date(endedAt).toISOString() : null,
+    endedAt,
+    opp:  (d.teamB && d.teamB.n) || 'Adversaire',
+    home: (d.teamA && d.teamA.n) || 'Mon équipe',
+    away: (d.teamB && d.teamB.n) || 'Adversaire',
+    venue,
+    score: [sA, sB],
+    result,
+    journee: null,
+    forfeit: false,
+    played: true,
+    scorers,
+    matchType: d.matchType || 'amical',
+    coachArbitrated: true,
+  };
+}
+
+let _lastCloudLastMatchesRefreshAt = 0;
+let _cloudLastMatchesRefreshInFlight = false;
+
+async function _triggerCloudLastMatchesRefresh() {
+  // Debounce : si CDD_REBUILD est appelé en rafale (login, snapshot, pullCloudData)
+  // on n'envoie qu'1 seule requête Firestore par 200ms.
+  const now = Date.now();
+  if (_cloudLastMatchesRefreshInFlight) return;
+  if (now - _lastCloudLastMatchesRefreshAt < 200) return;
+  _lastCloudLastMatchesRefreshAt = now;
+  _cloudLastMatchesRefreshInFlight = true;
+  try {
+    const ctx = (() => {
+      try { return JSON.parse(localStorage.getItem('cdd_active_context') || '{}'); }
+      catch (e) { return {}; }
+    })();
+    const clubId = ctx.clubId || localStorage.getItem('arb_current_club');
+    if (!clubId) return;
+    if (!window.cddData || !window.cddData.fetchFinishedMatches) return;
+
+    const cloudDocs = await window.cddData.fetchFinishedMatches(clubId, 30);
+    if (cloudDocs === null) {
+      // Offline / erreur : on garde silencieusement le cache localStorage.
+      console.log('[lastMatches] cloud indisponible — fallback localStorage');
+      return;
+    }
+    const cloudItems = cloudDocs.map(_cloudDocToLastMatchItem).filter(Boolean);
+    const cloudIds = new Set(cloudItems.map(m => m.id));
+
+    // Merge sans perte (cloud + local-only + FFF), tri date desc, cap 99.
+    const current = Array.isArray(window.CDD_LAST_MATCHES) ? window.CDD_LAST_MATCHES : [];
+    const localMatches = (window.MATCH_HELPERS && window.MATCH_HELPERS.listCoachFinishedMatches)
+      ? window.MATCH_HELPERS.listCoachFinishedMatches()
+      : [];
+    const localOnly = localMatches.filter(m => m && !cloudIds.has(m.id));
+    const fffOnly   = current.filter(m => m && m.coachArbitrated === false);
+    const merged = [...cloudItems, ...localOnly, ...fffOnly]
+      .sort((a, b) => {
+        const dA = a.dateRaw ? new Date(a.dateRaw).getTime() : (a.endedAt || 0);
+        const dB = b.dateRaw ? new Date(b.dateRaw).getTime() : (b.endedAt || 0);
+        return dB - dA;
+      })
+      .slice(0, 99);
+    window.CDD_LAST_MATCHES = merged;
+    console.log('[lastMatches] ✓ cloud:', cloudItems.length,
+      '· local-only:', localOnly.length, '· FFF:', fffOnly.length);
+    window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
+
+    // ─── Backfill opportuniste : ré-uploade les matchs locaux absents du cloud,
+    // pour qu'ils soient visibles cross-device au prochain refresh.
+    // Limite 10/cycle pour ne pas spammer Firestore au login.
+    const toBackfill = localOnly.slice(0, 10);
+    if (toBackfill.length
+        && window.MATCH_HELPERS && window.MATCH_HELPERS.loadMatch
+        && window.cddSync && window.cddSync.saveMatchToCloud) {
+      let backfilled = 0;
+      for (const item of toBackfill) {
+        try {
+          const M = window.MATCH_HELPERS.loadMatch(item.id);
+          if (!M) continue;
+          // Sécurité : si le match legacy n'avait pas de cloisonnement, on
+          // pose le club/team actif AVANT push (sinon il n'apparaîtra pas dans
+          // la query où clubId == activeClub).
+          if (!M.clubId) M.clubId = String(clubId);
+          if (!M.tmId && ctx.teamId) M.tmId = String(ctx.teamId);
+          await window.cddSync.saveMatchToCloud(M);
+          backfilled++;
+        } catch (e) { /* silencieux : 1 match raté ne casse pas le batch */ }
+      }
+      if (backfilled) console.log('[lastMatches] ↑ backfill cloud :',
+        backfilled, '/', toBackfill.length, 'anciens matchs migrés');
+    }
+  } catch (e) {
+    console.warn('[lastMatches] refresh failed', e.message);
+  } finally {
+    _cloudLastMatchesRefreshInFlight = false;
+  }
 }
 
 // ─── API publique : régler la taille de la convoc d'une équipe ───

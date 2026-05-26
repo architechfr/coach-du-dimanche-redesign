@@ -230,6 +230,19 @@ async function saveMatchToCloud(match) {
   if (match.pauseStartedAt != null) payload.pauseStartedAt = match.pauseStartedAt;
   if (typeof match.inHalftime === 'boolean') payload.inHalftime = match.inHalftime;
   if (match.htStart != null)        payload.htStart = match.htStart;
+
+  // ─── Champs de filtrage cross-device (fix 2026-05-26) ───
+  // Permet à fetchFinishedMatches() de requêter Firestore par clubId au lieu
+  // de scanner localStorage. Sans ces champs, l'historique "Derniers matchs"
+  // diverge entre PC et téléphone (chaque device n'a que son propre cache).
+  // Tous écrits en merge:true → ne s'efface jamais s'ils sont déjà au cloud.
+  if (match.clubId)              payload.clubId = String(match.clubId);
+  if (match.tmId)                payload.teamId = String(match.tmId);
+  if (match.endedAt != null)     payload.endedAt = match.endedAt;
+  if (match.matchType)           payload.matchType = match.matchType;
+  if (typeof match.isAtHome === 'boolean') payload.isAtHome = match.isAtHome;
+  if (match.scheduledMatchId)    payload.scheduledMatchId = match.scheduledMatchId;
+
   await setDoc(doc(db, COLL_MATCHES, matchId), payload, { merge: true });
   return { ok: true, matchId };
 }
@@ -720,6 +733,40 @@ async function fetchMatch(matchId) {
     return d.exists() ? d.data() : null;
   } catch (e) {
     console.warn('[liveMatch] fetchMatch failed', e.message);
+    return null;
+  }
+}
+
+// Liste les matchs TERMINÉS du club depuis Firestore (fix cross-device 2026-05-26).
+// Remplace le scan localStorage de listCoachFinishedMatches() côté UI : ainsi
+// l'historique "Derniers matchs" est identique sur tous les devices (PC, tél, etc.).
+//
+// Stratégie de query : un seul where('clubId', '==') pour éviter tout index
+// composite Firestore. Le filtre status='finished' et le tri endedAt desc se
+// font côté client. À l'échelle d'un club amateur (<200 matchs / saison), c'est
+// largement supportable.
+//
+// Retourne `null` (et pas []) en cas d'erreur ou offline → signal au caller
+// pour qu'il garde silencieusement les données localStorage (mode dégradé).
+async function fetchFinishedMatches(clubId, limitN) {
+  if (!db || !clubId) return null;
+  const cap = limitN || 20;
+  try {
+    const q = query(collection(db, COLL_MATCHES), where('clubId', '==', String(clubId)));
+    const snap = await getDocs(q);
+    const docs = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if (data && data.status === 'finished') docs.push(data);
+    });
+    docs.sort((a, b) => {
+      const aEnd = a.endedAt || (a.savedAt && a.savedAt.toMillis ? a.savedAt.toMillis() : 0);
+      const bEnd = b.endedAt || (b.savedAt && b.savedAt.toMillis ? b.savedAt.toMillis() : 0);
+      return bEnd - aEnd;
+    });
+    return docs.slice(0, cap);
+  } catch (e) {
+    console.warn('[fetchFinishedMatches] erreur cloud (fallback localStorage):', e.message);
     return null;
   }
 }
@@ -2702,7 +2749,7 @@ async function forceResyncMatch() {
 window.cddData = {
   get ready() { return !!db; },
   saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
-  setTeamLiveMatch, clearTeamLiveMatch, fetchMatch,
+  setTeamLiveMatch, clearTeamLiveMatch, fetchMatch, fetchFinishedMatches,
   saveLineupTemplate,
   saveMatchLineup, fetchMatchLineups, deleteMatchLineup,
   saveMatchInfo, fetchMatchInfos, deleteMatchInfo,
