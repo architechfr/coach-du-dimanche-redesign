@@ -849,18 +849,68 @@ function ScreenMatchV2({ go, tweaks }) {
     _pushLive(M);
   };
 
-  // Auto-save toutes les 10 secondes pendant le match (#20)
-  // + push cloud → maintient le live à jour pour les viewers même si le
-  // coach n'a pas tapé d'action récemment (chrono qui avance, pause, etc.).
+  // ─── SUPPRIMÉ 2026-05-26 (fix Étape A2 cross-device) ────────────────────
+  // L'ancien tick auto-save 10s poussait M au cloud toutes les 10s — ce qui
+  // créait des race conditions où un device avec un M obsolète écrasait les
+  // events poussés par un autre device. Désormais : push événementiel pur
+  // (BUT/JAUNE/ROUGE/CHANGE/PAUSE/FIN appellent rerender() → _pushLive(M)).
+  //
+  // Pas de perte fonctionnelle :
+  //   - Le chrono côté viewer est calculé localement (M.tSt + Date.now()),
+  //     pas besoin que le coach re-push pour qu'il avance.
+  //   - Le pointeur team.liveMatch est posé une fois au startMatch (et au
+  //     mount rétroactif plus bas pour les matchs legacy).
+  //   - Le watcher onSnapshot côté autres devices reçoit chaque action en <2s.
+  //
+  // Bénéfices : zéro pollution Firestore en silence, zéro écrasement.
+
+  // ─── FIX ÉTAPE A1 (2026-05-26) : force fetch cloud au mount ────────────
+  // Évite qu'un M local obsolète n'écrase le cloud à jour. Quand un device
+  // rejoint un match en cours, on adopte la version cloud AVANT toute écriture.
+  // Si le local est plus récent (cas du device qui arbitre), on push immédiat.
   useEffectMV(() => {
     if (!M || M.notStarted || M.st === 'finished') return;
-    const tick = setInterval(() => {
-      M.savedAt = Date.now();
-      MATCH_HELPERS.saveMatch(M);
-      _pushLive(M);
-    }, 10000);
-    return () => clearInterval(tick);
-  }, [M, M && M.st, M && M.notStarted]);
+    if (!window.cddData || !window.cddData.fetchMatch) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cloudDoc = await window.cddData.fetchMatch(M.id);
+        if (cancelled || !cloudDoc) return;
+        const cloudEv = cloudDoc.events || [];
+        const localEv = M.ev || [];
+        if (cloudEv.length > localEv.length) {
+          console.info('[liveMatch:mount] cloud plus complet (', cloudEv.length,
+            'vs local', localEv.length, ') → adoption cloud');
+          M.ev = cloudEv;
+          if (cloudDoc.teamA && typeof cloudDoc.teamA.score === 'number') M.sA = cloudDoc.teamA.score;
+          if (cloudDoc.teamB && typeof cloudDoc.teamB.score === 'number') M.sB = cloudDoc.teamB.score;
+          if (cloudDoc.status) M.st = cloudDoc.status;
+          if (cloudDoc.period) M.ch = cloudDoc.period;
+          if (typeof cloudDoc.addTime === 'number') M.at = cloudDoc.addTime;
+          if (cloudDoc.tSt != null)        M.tSt = cloudDoc.tSt;
+          if (typeof cloudDoc.tOff === 'number') M.tOff = cloudDoc.tOff;
+          if (cloudDoc.startedAt != null)  M.startedAt = cloudDoc.startedAt;
+          if (cloudDoc.inHalftime != null) M.inHalftime = cloudDoc.inHalftime;
+          if (cloudDoc.htStart != null)    M.htStart = cloudDoc.htStart;
+          if (cloudDoc.yellows) { M.yA = cloudDoc.yellows.A || 0; M.yB = cloudDoc.yellows.B || 0; }
+          if (cloudDoc.reds)    { M.rA = cloudDoc.reds.A    || 0; M.rB = cloudDoc.reds.B    || 0; }
+          if (cloudDoc.subs)    { M.uA = cloudDoc.subs.A    || 0; M.uB = cloudDoc.subs.B    || 0; }
+          M.savedAt = Date.now();
+          MATCH_HELPERS.saveMatch(M);
+          forceRender({});
+        } else if (localEv.length > cloudEv.length) {
+          console.info('[liveMatch:mount] local plus complet (', localEv.length,
+            'vs cloud', cloudEv.length, ') → push immédiat des events locaux');
+          _pushLive(M);
+        } else {
+          console.info('[liveMatch:mount] local et cloud alignés (', localEv.length, 'events)');
+        }
+      } catch (e) {
+        console.warn('[liveMatch:mount] fetch cloud failed (offline ?) :', e.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [M && M.id]);
 
   // ── Watch cloud pour toute device avec match live ──────────────────────
   // S'abonne à Firestore et synchronise les champs critiques (tSt, tOff,
