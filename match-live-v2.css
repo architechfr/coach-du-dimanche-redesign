@@ -376,13 +376,17 @@
 }
 
 /* ─── Modal overlay ─────────────────────────────── */
+/* Fix 2026-05-26 (Florian) : opacity et blur réduits pour que le scoreboard
+   et le chrono restent lisibles derrière les drawers (Composition, Carton…).
+   Avant : .75 + blur(14px) → tout était caché. Maintenant : on devine le
+   score + chrono qui continuent d'avancer pendant qu'on choisit un carton. */
 .mv-modal-overlay {
   position: absolute;
   inset: 0;
   z-index: 200;
-  background: rgba(0,0,0,.75);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-end;
   animation: fadeIn .2s ease;
