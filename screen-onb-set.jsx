@@ -645,6 +645,11 @@ function ScreenSettings({ go, tweaks, setTweak }) {
         })();
         const clubById = {};
         allClubs.forEach(c => { if (c && c.id) clubById[c.id] = c; });
+        // Club actif courant — utilisé pour highlight + bouton « Activer ce club ».
+        const activeClubId = (() => {
+          try { return localStorage.getItem('arb_current_club') || null; }
+          catch (e) { return null; }
+        })();
         return (
           <div className="set-sec">
             <div className="set-sec-k">MES RATTACHEMENTS</div>
@@ -726,10 +731,17 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                   const effLabel = effRole
                     ? (window.CDD_ROLES?.roleLabel?.(effRole) || effRole)
                     : 'Membre';
+                  // Carte active = club courant (cdd_active_context.clubId / arb_current_club).
+                  // Mis en évidence visuel + bouton « Activer » caché (badge « Actif » à la place).
+                  const isActive = m.clubId === activeClubId;
                   return (
                     <div key={m.clubId} style={{
                       padding:'12px 14px', borderRadius:10,
-                      background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+                      background: isActive ? 'rgba(200,241,105,0.06)' : 'rgba(255,255,255,0.03)',
+                      border: isActive
+                        ? '1px solid rgba(200,241,105,0.45)'
+                        : '1px solid rgba(255,255,255,0.08)',
+                      boxShadow: isActive ? '0 0 0 1px rgba(200,241,105,0.08)' : 'none',
                     }}>
                       <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>
                         {/* Vrai logo via ClubBadge (résout cdd_club_logos[clubId]
@@ -762,7 +774,37 @@ function ScreenSettings({ go, tweaks, setTweak }) {
                           {teams.map(t => `${t.name || t.category || '?'} (${(t.players || []).length} j.)`).join(' · ')}
                         </div>
                       )}
-                      <div style={{display:'flex', gap:8, paddingLeft:48}}>
+                      <div style={{display:'flex', gap:8, paddingLeft:48, alignItems:'center', flexWrap:'wrap'}}>
+                        {/* Switch club actif : badge « Actif » si déjà actif,
+                            sinon bouton « Activer ce club » → écrit arb_current_club
+                            + cdd_active_context.clubId, dispatch event, reload.
+                            Logique miroir de switchClub() dans screen-transfert-sync-convp.jsx. */}
+                        {isActive ? (
+                          <span style={{
+                            padding:'5px 10px', borderRadius:6, fontSize:11, fontWeight:800,
+                            background:'rgba(200,241,105,0.15)',
+                            border:'1px solid rgba(200,241,105,0.45)',
+                            color:'#c8f169', fontFamily:'inherit',
+                          }}>✓ Club actif</span>
+                        ) : (
+                          <button onClick={() => {
+                            try {
+                              localStorage.setItem('arb_current_club', m.clubId);
+                              const ctxRaw = localStorage.getItem('cdd_active_context') || '{}';
+                              const ctx = JSON.parse(ctxRaw);
+                              ctx.clubId = m.clubId; ctx.teamId = null; ctx.matchId = null;
+                              localStorage.setItem('cdd_active_context', JSON.stringify(ctx));
+                              window.dispatchEvent(new CustomEvent('cdd-active-club-changed', { detail: { clubId: m.clubId } }));
+                              if (window.CDD_REBUILD) window.CDD_REBUILD();
+                              setTimeout(() => { try { location.reload(); } catch (e) {} }, 200);
+                            } catch (e) { alert('Erreur switch club : ' + e.message); }
+                          }} style={{
+                            padding:'5px 10px', borderRadius:6, fontSize:11, fontWeight:800,
+                            background:'linear-gradient(135deg,#c8f169,#a3e635)',
+                            border:'1px solid #c8f169', color:'#0a0e14',
+                            cursor:'pointer', fontFamily:'inherit',
+                          }}>✅ Activer ce club</button>
+                        )}
                         {/* Bouton « Quitter » volontairement discret (lien gris)
                             pour éviter les clics accidentels. La vraie sécurité
                             est dans la modale LeaveClubModal qui s'ouvre ensuite. */}
