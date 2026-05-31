@@ -160,13 +160,13 @@
 /* Slot name — bigger now since it's first name */
 .lu-slot-name {
   margin-top: 5px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   color: #fff;
   background: rgba(0,0,0,.78);
   padding: 2px 7px;
   border-radius: 5px;
-  max-width: 80px;
+  max-width: 96px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
