@@ -448,6 +448,9 @@ function ScreenLineup({ go, tweaks, matchId }) {
   // Aussi : nettoie les IDs orphelins (joueur supprimé de l'effectif depuis la dernière sauvegarde).
   const snapBench = (bench, reserve) => {
     const allPlayers = window.CDD_PLAYERS || [];
+    // Garde-fou anti-perte : si l'effectif n'est pas encore chargé (rebuild /
+    // pull cloud en cours), NE PAS filtrer — sinon on viderait la compo.
+    if (!allPlayers.length) return { bench: bench || [], reserve: reserve || [] };
     const playerExists = (pid) => allPlayers.some(p => p.id === pid);
     // 1. Garde uniquement les joueurs qui existent encore (cas effectif modifié depuis la sauvegarde)
     let cleanBench   = (bench || []).filter(playerExists);
@@ -621,6 +624,9 @@ function ScreenLineup({ go, tweaks, matchId }) {
   useEffect(() => {
     const activeTeam = window.CDD?.getActiveTeam?.();
     if (!activeTeam) return;
+    // Garde-fou anti-perte : effectif pas encore chargé → ne pas écrire (éviterait
+    // de persister une compo vidée par snapBench pendant un rebuild/pull cloud).
+    if (!window.CDD_PLAYERS || !window.CDD_PLAYERS.length) return;
     try {
       if (isMatchMode) {
         // Sauvegarde dans cdd_match_lineup[teamId][matchId] + push cloud
@@ -1115,7 +1121,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
                 {p ? (
                   <>
                     <div className="lu-slot-num num">{displayNum(p)}</div>
-                    <div className="lu-slot-name">{p.first}</div>
+                    <div className="lu-slot-name">{p.firstDisplay || p.first}</div>
                     <div className="lu-slot-pos">{POSITION_LABEL[s.pos]||s.pos}</div>
                     <div className="lu-slot-ovr num">{p.stats.ovr}</div>
                   </>
@@ -1143,7 +1149,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
             style={isPidSelected(p.id) ? {outline:"2px solid var(--acc, #c8f169)", outlineOffset:2} : null}
             onClick={() => handleTap({type:'bench', pid:p.id})}>
             <span className="lu-bench-num num">{displayNum(p)}</span>
-            <span className="lu-bench-name">{p.first}</span>
+            <span className="lu-bench-name">{p.firstDisplay || p.first}</span>
             <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
           </button>
@@ -1207,7 +1213,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
             style={isPidSelected(p.id) ? {outline:"2px solid var(--acc, #c8f169)", outlineOffset:2} : null}
             onClick={() => handleTap({type:'reserve', pid:p.id})}>
             <span className="lu-bench-num num">{displayNum(p)}</span>
-            <span className="lu-bench-name">{p.first}</span>
+            <span className="lu-bench-name">{p.firstDisplay || p.first}</span>
             <span className="lu-bench-pos">{POSITION_LABEL[p.pos]||p.pos}</span>
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
           </button>
