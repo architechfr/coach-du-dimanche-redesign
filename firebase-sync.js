@@ -2328,7 +2328,18 @@ async function pullCloudData() {
       const lc = clubById[cc.id] || {};
       const cloudLogo = cc.logoUrl || cc.logoDataUrl || null;
       const finalLogo = lc.logoDataUrl || cloudLogo || null;
-      clubById[cc.id] = { ...lc, ...cc, logoDataUrl: finalLogo };
+      // Protection anti-perte : le stade (objet imbriqué) ne doit pas être effacé
+      // par un pull cloud incomplet. Pour chaque champ on garde la valeur NON VIDE
+      // (cloud prioritaire si renseigné, sinon on conserve la saisie locale).
+      const _ls = lc.stadium || {}, _cs = cc.stadium || {};
+      const _pick = (c, l) => (c && String(c).trim()) ? c : (l || '');
+      const mergedStadium = {
+        ..._ls, ..._cs,
+        name:    _pick(_cs.name,    _ls.name),
+        address: _pick(_cs.address, _ls.address),
+        gpsUrl:  _pick(_cs.gpsUrl,  _ls.gpsUrl),
+      };
+      clubById[cc.id] = { ...lc, ...cc, logoDataUrl: finalLogo, stadium: mergedStadium };
       // Propage aussi dans cdd_club_logos pour que data-bridge.js le voit.
       if (cloudLogo && logosMap[cc.id] !== cloudLogo) {
         logosMap[cc.id] = cloudLogo;
