@@ -1124,6 +1124,14 @@ async function savePlayer(player, teamId, clubId) {
   return { ok: true, id: player.id };
 }
 
+// Supprime définitivement un joueur (doc players/{id}). Le nettoyage des
+// références (compo, convoc) est géré côté client (orphelins filtrés).
+async function deletePlayer(playerId) {
+  if (!db || !playerId) throw new Error('db/playerId requis');
+  await deleteDoc(doc(db, 'players', String(playerId)));
+  return { ok: true, id: playerId };
+}
+
 // Sauvegarde les stats overrides d'un joueur dans son doc Firestore.
 // statsObj = { PAC, SHO, PAS, DRI, DEF, PHY } ou null pour effacer.
 async function savePlayerStats(playerId, statsObj) {
@@ -2046,12 +2054,31 @@ async function pullCloudData() {
   const uid = _uid();
   if (!uid) return { ok: false, reason: 'not-signed-in' };
 
-  let memberships;
-  try { memberships = await fetchMemberships(uid); }
-  catch (e) { return { ok: false, reason: 'fetch-failed', error: e.message }; }
+  // [admin pull v2 — fix 2026-05-28] L'admin ne dépend PAS de ses memberships :
+  // il doit voir TOUS les clubs en base (USDF était invisible parce qu'il n'a
+  // pas de membership dessus). Pour les autres comptes, la logique d'origine
+  // (filtre par memberships) reste inchangée.
+  const isAdminPull = (_email() === ADMIN_EMAIL_DATA);
 
-  const clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
+  let clubIds;
+  if (isAdminPull) {
+    try {
+      const allClubs = await fetchAllClubs();
+      clubIds = (allClubs || []).map(c => c && c.id).filter(Boolean);
+    } catch (e) { return { ok: false, reason: 'fetch-all-failed', error: e.message }; }
+  } else {
+    let memberships;
+    try { memberships = await fetchMemberships(uid); }
+    catch (e) { return { ok: false, reason: 'fetch-failed', error: e.message }; }
+    clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
+  }
+
   if (clubIds.length === 0) {
+    // [admin pull v2] Pas de purge pour l'admin sur 0 résultat : blip réseau
+    // ou base vide ne doit jamais effacer son cache local.
+    if (isAdminPull) {
+      return { ok: true, empty: true, admin: true, counts: { clubs: 0, teams: 0, players: 0 } };
+    }
     // SÉCURITÉ : ce compte n'a AUCUN rattachement cloud.
     // 1. Purge cdd_memberships (entrées de CET email seulement, les autres
     //    comptes sur l'appareil partagé sont intacts).
@@ -3110,7 +3137,7 @@ async function forceResyncMatch() {
 
 window.cddData = {
   get ready() { return !!db; },
-  saveClub, saveTeam, savePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
+  saveClub, saveTeam, savePlayer, deletePlayer, savePlayerStats, savePlayerProfile, savePlayerNotes, savePlayerPerfDeltas,
   setTeamLiveMatch, clearTeamLiveMatch, fetchMatch, fetchFinishedMatches,
   saveLineupTemplate,
   saveMatchLineup, fetchMatchLineups, deleteMatchLineup,

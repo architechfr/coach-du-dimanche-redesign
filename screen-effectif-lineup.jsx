@@ -31,6 +31,12 @@ function ScreenEffectif({ go, tweaks }) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | rest | reserve
+  // Ajout manuel d'un joueur (matchs amicaux / recrues sans licence FFF).
+  const [addOpen, setAddOpen] = useState(false);
+  const [nf, setNf] = useState({ first: "", last: "", num: "", pos: "" });
+  const [addBusy, setAddBusy] = useState(false);
+  // Mode suppression (coach / adjoint / admin) — capacité 'effectif'.
+  const [delMode, setDelMode] = useState(false);
 
   // Suivi diffusion Carnet du joueur — coach voit où il en est dans l'envoi
   // des liens magiques aux parents. Source : cdd_carnet_shared écrit par CarnetActions.
@@ -83,6 +89,55 @@ function ScreenEffectif({ go, tweaks }) {
   const starsCount = CDD_PLAYERS.filter(p=>p.rarity==="icon"||p.rarity==="totw"||p.rarity==="hero").length;
   const availableCount = CDD_PLAYERS.filter(p => (p.raw?.status || p.status) === 'active').length;
 
+  // Crée un joueur sans licence FFF : écrit le cache local (affichage immédiat)
+  // ET Firestore (persistance/sync), puis rebuild des globals.
+  const addManualPlayer = async () => {
+    const first = nf.first.trim();
+    if (!first) { alert("Le prénom est requis."); return; }
+    const team = window.CDD?.getActiveTeam?.();
+    if (!team || !team.id) { alert("Aucune équipe active. Recharge la page."); return; }
+    const clubId = window.CDD?.getActiveClub?.()?.id || team.clubId || null;
+    const id = "p_manual_" + Date.now().toString(36);
+    const player = {
+      id, firstName: first, lastName: nf.last.trim(),
+      position: nf.pos || "", preferredNumber: nf.num ? parseInt(nf.num, 10) : null,
+      isStarter: false, status: "active",
+    };
+    setAddBusy(true);
+    try {
+      try {
+        const teams = JSON.parse(localStorage.getItem("arb_teams") || "[]");
+        const t = teams.find(x => x.id === team.id);
+        if (t) { t.players = t.players || []; t.players.push(player); localStorage.setItem("arb_teams", JSON.stringify(teams)); }
+      } catch (e) {}
+      if (window.cddData && window.cddData.savePlayer) {
+        try { await window.cddData.savePlayer(player, team.id, clubId); }
+        catch (e) { console.warn("[effectif] savePlayer cloud", e.message); }
+      }
+      if (window.CDD_REBUILD) window.CDD_REBUILD();
+      setNf({ first: "", last: "", num: "", pos: "" });
+      setAddOpen(false);
+    } finally { setAddBusy(false); }
+  };
+
+  // Suppression définitive d'un joueur (cache local + Firestore + rebuild).
+  const removePlayerFully = async (p) => {
+    if (!p || !p.id) return;
+    const label = `${p.first || ''} ${p.last || ''}`.trim() || 'ce joueur';
+    if (!confirm(`Supprimer ${label} de l'effectif ?\nAction définitive (le joueur disparaît sur tous les appareils).`)) return;
+    const team = window.CDD?.getActiveTeam?.();
+    try {
+      const teams = JSON.parse(localStorage.getItem("arb_teams") || "[]");
+      const t = teams.find(x => x.id === team?.id);
+      if (t && Array.isArray(t.players)) { t.players = t.players.filter(pp => pp.id !== p.id); localStorage.setItem("arb_teams", JSON.stringify(teams)); }
+    } catch (e) {}
+    if (window.cddData && window.cddData.deletePlayer) {
+      try { await window.cddData.deletePlayer(p.id); }
+      catch (e) { console.warn("[effectif] deletePlayer cloud", e.message); }
+    }
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+  };
+
   return (
     <div className="scr scr-effectif fade-in" data-screen-label="02 Effectif">
 
@@ -129,6 +184,32 @@ function ScreenEffectif({ go, tweaks }) {
           ⚙
         </button>
       </div>
+
+      {/* Ajout manuel + mode suppression — coach / adjoint / admin */}
+      {canEdit && (
+        <div style={{padding:'0 14px 4px', display:'flex', gap:8}}>
+          <button onClick={() => setAddOpen(true)}
+            style={{flex:1, padding:'10px', borderRadius:10, cursor:'pointer',
+                    background:'rgba(200,241,105,0.12)', color:'#c8f169',
+                    border:'1px dashed rgba(200,241,105,0.45)', fontWeight:800, fontSize:13}}>
+            ＋ Ajouter un joueur
+          </button>
+          <button onClick={() => setDelMode(d => !d)}
+            title="Activer/désactiver le mode suppression"
+            style={{padding:'10px 14px', borderRadius:10, cursor:'pointer', fontWeight:800, fontSize:13,
+                    background: delMode ? '#ef4444' : 'rgba(239,68,68,0.12)',
+                    color: delMode ? '#fff' : '#ef4444',
+                    border:'1px solid rgba(239,68,68,0.45)'}}>
+            {delMode ? '✓ Terminer' : '🗑'}
+          </button>
+        </div>
+      )}
+      {canEdit && delMode && (
+        <div style={{margin:'0 14px 8px', padding:'8px 12px', borderRadius:9, fontSize:12, fontWeight:700,
+                     background:'rgba(239,68,68,0.10)', border:'1px solid rgba(239,68,68,0.40)', color:'#fca5a5'}}>
+          Mode suppression actif — touche 🗑 sur un joueur pour le retirer définitivement.
+        </div>
+      )}
 
       {/* Filter panel (collapsible) */}
       {showFilters && (
@@ -249,7 +330,15 @@ function ScreenEffectif({ go, tweaks }) {
         <div className="ef-grid">
           {list.map(p => (
             <div key={p.id} style={{position:'relative'}}>
-              <FutCard player={p} size="md" onClick={() => go("fiche", p)} />
+              <FutCard player={p} size="md" onClick={() => delMode ? removePlayerFully(p) : go("fiche", p)} />
+              {canEdit && delMode && (
+                <button onClick={(e) => { e.stopPropagation(); removePlayerFully(p); }}
+                        title="Supprimer ce joueur"
+                        style={{position:'absolute', top:4, left:4, zIndex:3, width:26, height:26, borderRadius:13,
+                                background:'#ef4444', color:'#fff', border:'2px solid #fff', cursor:'pointer',
+                                fontSize:13, fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center',
+                                boxShadow:'0 2px 6px rgba(0,0,0,0.5)'}}>🗑</button>
+              )}
               {/* Badge "carnet envoyé" : info coach uniquement (suivi diffusion) */}
               {canEdit && carnetShared[p.id] && (
                 <span title={`Carnet envoyé au parent (${new Date(carnetShared[p.id].sharedAt).toLocaleDateString('fr-FR')})`}
@@ -269,7 +358,15 @@ function ScreenEffectif({ go, tweaks }) {
         <div className="ef-list">
           {list.map(p => (
             <div key={p.id} style={{position:'relative'}}>
-              <FutCard player={p} variant="row" onClick={() => go("fiche", p)} />
+              <FutCard player={p} variant="row" onClick={() => delMode ? removePlayerFully(p) : go("fiche", p)} />
+              {canEdit && delMode && (
+                <button onClick={(e) => { e.stopPropagation(); removePlayerFully(p); }}
+                        title="Supprimer ce joueur"
+                        style={{position:'absolute', top:'50%', left:8, transform:'translateY(-50%)', zIndex:3,
+                                width:28, height:28, borderRadius:14, background:'#ef4444', color:'#fff',
+                                border:'2px solid #fff', cursor:'pointer', fontSize:14, fontWeight:900,
+                                display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 2px 6px rgba(0,0,0,0.5)'}}>🗑</button>
+              )}
               {/* Badge "carnet envoyé" : info coach uniquement */}
               {canEdit && carnetShared[p.id] && (
                 <span title={`Carnet envoyé au parent (${new Date(carnetShared[p.id].sharedAt).toLocaleDateString('fr-FR')})`}
@@ -283,6 +380,46 @@ function ScreenEffectif({ go, tweaks }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Modale — Ajouter un joueur (sans licence FFF) */}
+      {addOpen && (
+        <div onClick={() => !addBusy && setAddOpen(false)}
+             style={{position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.6)',
+                     display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+          <div onClick={e => e.stopPropagation()}
+               style={{width:'100%', maxWidth:360, background:'#0f1a12', borderRadius:14,
+                       border:'1px solid rgba(200,241,105,0.25)', padding:18}}>
+            <div style={{fontSize:16, fontWeight:900, color:'#fff', marginBottom:12}}>Ajouter un joueur</div>
+            <input autoFocus placeholder="Prénom *" value={nf.first}
+                   onChange={e => setNf(s => ({...s, first:e.target.value}))}
+                   style={{width:'100%', boxSizing:'border-box', marginBottom:8, padding:'10px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.05)', color:'#fff', fontSize:14}}/>
+            <input placeholder="Nom" value={nf.last}
+                   onChange={e => setNf(s => ({...s, last:e.target.value}))}
+                   style={{width:'100%', boxSizing:'border-box', marginBottom:8, padding:'10px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.05)', color:'#fff', fontSize:14}}/>
+            <div style={{display:'flex', gap:8, marginBottom:14}}>
+              <input type="number" placeholder="N°" value={nf.num}
+                     onChange={e => setNf(s => ({...s, num:e.target.value}))}
+                     style={{width:80, boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.05)', color:'#fff', fontSize:14}}/>
+              <select value={nf.pos} onChange={e => setNf(s => ({...s, pos:e.target.value}))}
+                      style={{flex:1, padding:'10px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.05)', color:'#fff', fontSize:14}}>
+                <option value="">Poste (optionnel)</option>
+                <option value="Gardien">Gardien</option>
+                <option value="Défenseur">Défenseur</option>
+                <option value="Milieu">Milieu</option>
+                <option value="Attaquant">Attaquant</option>
+              </select>
+            </div>
+            <div style={{display:'flex', gap:8}}>
+              <button onClick={() => !addBusy && setAddOpen(false)}
+                      style={{flex:1, padding:'10px', borderRadius:8, cursor:'pointer', background:'rgba(255,255,255,0.06)', color:'#fff', border:'1px solid rgba(255,255,255,0.15)', fontWeight:700}}>Annuler</button>
+              <button onClick={addManualPlayer} disabled={addBusy || !nf.first.trim()}
+                      style={{flex:1, padding:'10px', borderRadius:8, cursor:'pointer', background:'#c8f169', color:'#0B1320', border:'none', fontWeight:900, opacity:(addBusy||!nf.first.trim())?0.5:1}}>
+                {addBusy ? "Ajout…" : "Ajouter"}</button>
+            </div>
+            <div style={{marginTop:10, fontSize:11, opacity:0.6, color:'#fff'}}>Sans licence FFF — pour matchs amicaux et tests. Poste et numéro modifiables ensuite dans la fiche.</div>
+          </div>
         </div>
       )}
     </div>
@@ -342,7 +479,12 @@ function ScreenLineup({ go, tweaks, matchId }) {
       formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : '4-3-3';
     }
     const snapped = snapBench(s.bench, s.reserve);
-    return { formation, starters: s.starters, bench: snapped.bench, reserve: snapped.reserve };
+    // Réconcilier avec l'effectif courant : toute recrue absente du template
+    // sauvegardé (import FFF récent, ajout manuel) doit apparaître en réserve,
+    // sinon elle est invisible dans la compo et impossible à faire monter.
+    const _used = new Set([...Object.values(s.starters || {}), ...snapped.bench, ...snapped.reserve].filter(Boolean));
+    const _missing = (window.CDD_PLAYERS || []).filter(p => !_used.has(p.id)).map(p => p.id);
+    return { formation, starters: s.starters, bench: snapped.bench, reserve: [...snapped.reserve, ..._missing] };
   };
 
   const buildInitial = () => {
