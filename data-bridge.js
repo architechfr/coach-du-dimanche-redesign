@@ -262,6 +262,9 @@ function deriveStats(player) {
   return stats;
 }
 
+// Photos USDF Vétérans (import PDF licences FFF) — dossier dédié, routées par nom de fichier.
+var CDD_USDF_PHOTOS = {"AFROUNE_Karim.jpg":1,"AMANDE_Bruno.jpg":1,"AROUSSI_Djamel.jpg":1,"ASNOUN_Dan.jpg":1,"BEN-ZAIED_Nasreddine.jpg":1,"BOITELET_Julien.jpg":1,"BRUNAUD_Pascal.jpg":1,"BUTIN_David.jpg":1,"CAMARA_Abdoulaye.jpg":1,"CARLOSSE-VRIENS_Mickael.jpg":1,"CHEGHANNOU_Sami.jpg":1,"CHEN_Yongchuan.jpg":1,"DA-SILVA_Mike.jpg":1,"DELPLACE_David.jpg":1,"DUSSAUSSAY_Yannis.jpg":1,"GOMEZ_Marc.jpg":1,"GOURTI_Mohamed.jpg":1,"HEBERT_Thomas.jpg":1,"HYZY_Cedric.jpg":1,"ILLARI_Romain.jpg":1,"JACQUES_Alexandre.jpg":1,"JARRET_Guillaume.jpg":1,"KEWERKOPF_Arnaud.jpg":1,"LAPORT_Miguel.jpg":1,"LAURENT_Franck.jpg":1,"MARTELO-SILVA-DOS-SA_Joao.jpg":1,"MELLOT_Flavien.jpg":1,"MERIC_Charles.jpg":1,"MERIC_Guillaume.jpg":1,"MOUSSET_Remy.jpg":1,"NDIAYE_Ousmane.jpg":1,"NGUON_Laurent.jpg":1,"PASSE_Corentin.jpg":1,"PREVOST_Cedric.jpg":1,"RIBEIRO-MACHADO_Philippe.jpg":1,"RJILI_Ridha.jpg":1,"ROUSSELAT_Rodolphe.jpg":1,"SADDIK_Jonayd.jpg":1,"TATOT_Jeremy.jpg":1};
+
 // Resolve photo URL from licence number → FFF photo
 function resolvePhoto(player) {
   if (player.photoDataUrl) return player.photoDataUrl;
@@ -277,6 +280,7 @@ function resolvePhoto(player) {
     .replace(/[\u0300-\u036f]/g, "");
   const norm = (s) => stripAccents(s).trim().replace(/\s+/g, "-");
   const file = `${norm(player.lastName)}_${norm(player.firstName)}.jpg`;
+  if (CDD_USDF_PHOTOS[file]) return `assets/photos_USDF_Veteran_2025-2026/${file}`;
   return `assets/photos_U15_2025-2026/${file}`;
 }
 
