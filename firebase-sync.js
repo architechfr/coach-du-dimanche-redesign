@@ -2061,13 +2061,20 @@ async function pullCloudData() {
   const isAdminPull = (_email() === ADMIN_EMAIL_DATA);
 
   let clubIds;
+  // [fix 2026-06-01] `memberships` hissé au scope fonction : il est relu plus
+  // bas (écriture cdd_memberships + branche « cloud vide »). Tant qu'il était
+  // déclaré uniquement dans la branche non-admin, le chemin ADMIN plantait
+  // avec ReferenceError "memberships is not defined" → resync admin cassée.
+  let memberships = [];
   if (isAdminPull) {
     try {
       const allClubs = await fetchAllClubs();
       clubIds = (allClubs || []).map(c => c && c.id).filter(Boolean);
     } catch (e) { return { ok: false, reason: 'fetch-all-failed', error: e.message }; }
+    // L'admin a aussi sa propre membership (owner) : on la charge pour garder
+    // le cache local cdd_memberships juste. Best-effort, non bloquant.
+    try { memberships = await fetchMemberships(uid); } catch (e) {}
   } else {
-    let memberships;
     try { memberships = await fetchMemberships(uid); }
     catch (e) { return { ok: false, reason: 'fetch-failed', error: e.message }; }
     clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
