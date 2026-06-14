@@ -71,9 +71,23 @@ function activeTeamFormat() {
   } catch (e) { return '11'; }
 }
 
+// Liste des formations disponibles pour un format (lit CDD_FORMATIONS_ALL,
+// rempli au rebuild). Fallback '11' si format inconnu.
+function formationsForFormat(format) {
+  const all = window.CDD_FORMATIONS_ALL || {};
+  return Object.keys(all[format] || all['11'] || {});
+}
+// Formation par défaut d'un format (1re de la liste). Sert de fallback partout
+// à la place du '4-3-3' codé en dur (qui n'existe pas en foot à 8/5/futsal).
+function defaultFormationFor(format) {
+  const ks = formationsForFormat(format);
+  return ks[0] || '4-3-3';
+}
+
 window.CDD_TEAM_HELPERS = {
   isAdultTeam, activeTeamIsAdult,
   teamFormat, formatMeta, activeTeamFormat, TEAM_FORMATS,
+  formationsForFormat, defaultFormationFor,
 };
 
 // Convert FFF position labels → standard short codes
@@ -711,8 +725,12 @@ async function rebuildCDDGlobals() {
 
   window.CDD_PLAYERS = players;
 
-  // Formations (unchanged)
-  window.CDD_FORMATIONS = {
+  // Formations — catalogue PAR FORMAT (Phase 1 multi-format, 2026-06-14).
+  // Le foot à 11 reste IDENTIQUE à l'existant. window.CDD_FORMATIONS pointe
+  // ensuite sur le sous-ensemble du format de l'équipe active → tous les
+  // écrans (qui lisent CDD_FORMATIONS) reçoivent automatiquement les bonnes
+  // formations. Défaut '11' → aucune équipe actuelle ne change.
+  const FORMATIONS_11 = {
     "4-3-3": [
       { pos:"GK",  x:50, y:92 },
       { pos:"DG",  x:14, y:72 }, { pos:"DC", x:36, y:75 }, { pos:"DC", x:64, y:75 }, { pos:"DD", x:86, y:72 },
@@ -764,6 +782,76 @@ async function rebuildCDDGlobals() {
       { pos:"AG",  x:20, y:22 }, { pos:"BU", x:50, y:18 }, { pos:"AD", x:80, y:22 },
     ],
   };
+
+  // ── Foot à 8 (1 GK + 7 joueurs de champ) ──
+  const FORMATIONS_8 = {
+    "3-3-1": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DG", x:18, y:70 }, { pos:"DC", x:50, y:73 }, { pos:"DD", x:82, y:70 },
+      { pos:"MG", x:20, y:48 }, { pos:"MC", x:50, y:50 }, { pos:"MD", x:80, y:48 },
+      { pos:"BU", x:50, y:20 },
+    ],
+    "2-3-2": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DC", x:35, y:72 }, { pos:"DC", x:65, y:72 },
+      { pos:"MG", x:20, y:50 }, { pos:"MC", x:50, y:50 }, { pos:"MD", x:80, y:50 },
+      { pos:"BU", x:35, y:22 }, { pos:"BU", x:65, y:22 },
+    ],
+    "3-1-3": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DG", x:20, y:72 }, { pos:"DC", x:50, y:74 }, { pos:"DD", x:80, y:72 },
+      { pos:"MC", x:50, y:52 },
+      { pos:"AG", x:20, y:26 }, { pos:"BU", x:50, y:22 }, { pos:"AD", x:80, y:26 },
+    ],
+    "2-4-1": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DC", x:35, y:73 }, { pos:"DC", x:65, y:73 },
+      { pos:"MG", x:16, y:50 }, { pos:"MC", x:40, y:52 }, { pos:"MC", x:60, y:52 }, { pos:"MD", x:84, y:50 },
+      { pos:"BU", x:50, y:22 },
+    ],
+  };
+
+  // ── Foot à 5 (1 GK + 4 joueurs de champ) ──
+  const FORMATIONS_5 = {
+    "1-2-1": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DC", x:50, y:72 },
+      { pos:"MG", x:28, y:50 }, { pos:"MD", x:72, y:50 },
+      { pos:"BU", x:50, y:24 },
+    ],
+    "2-2": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DG", x:32, y:70 }, { pos:"DD", x:68, y:70 },
+      { pos:"AG", x:32, y:28 }, { pos:"AD", x:68, y:28 },
+    ],
+    "2-1-1": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DG", x:32, y:72 }, { pos:"DD", x:68, y:72 },
+      { pos:"MC", x:50, y:50 },
+      { pos:"BU", x:50, y:24 },
+    ],
+  };
+
+  // ── Futsal (1 GK + 4) — variantes typiques ──
+  const FORMATIONS_FUTSAL = {
+    "1-2-1": FORMATIONS_5["1-2-1"],
+    "2-2":   FORMATIONS_5["2-2"],
+    "3-1": [
+      { pos:"GK", x:50, y:90 },
+      { pos:"DG", x:24, y:68 }, { pos:"DC", x:50, y:72 }, { pos:"DD", x:76, y:68 },
+      { pos:"BU", x:50, y:26 },
+    ],
+  };
+
+  // Catalogue complet + sélection du sous-ensemble du format actif.
+  window.CDD_FORMATIONS_ALL = {
+    '11': FORMATIONS_11, '8': FORMATIONS_8, '5': FORMATIONS_5, 'futsal': FORMATIONS_FUTSAL,
+  };
+  const _activeFmt = (window.CDD_TEAM_HELPERS && window.CDD_TEAM_HELPERS.activeTeamFormat)
+    ? window.CDD_TEAM_HELPERS.activeTeamFormat() : '11';
+  window.CDD_FORMATIONS = window.CDD_FORMATIONS_ALL[_activeFmt] || FORMATIONS_11;
+  // Formation par défaut du format actif (remplace le '4-3-3' codé en dur).
+  window.CDD_DEFAULT_FORMATION = Object.keys(window.CDD_FORMATIONS)[0] || '4-3-3';
 
   // Next match — par défaut "À déterminer" jusqu'à ce que FFF nous donne un vrai match.
   // Si applyFFFData a déjà rempli CDD_NEXT_MATCH avec un vrai match, on le préserve
@@ -1697,7 +1785,7 @@ function _ensureMatchLineup(teamId, matchId) {
         }
       });
     return {
-      formation: ml.formation || '4-3-3',
+      formation: ml.formation || (window.CDD_DEFAULT_FORMATION || '4-3-3'),
       starters: cleanStarters,
       bench:    Array.isArray(ml.bench)   ? dd(ml.bench).filter(id => !seenPids.has(id))   : [],
       reserve:  Array.isArray(ml.reserve) ? dd(ml.reserve).filter(id => !seenPids.has(id)) : [],
@@ -1705,7 +1793,7 @@ function _ensureMatchLineup(teamId, matchId) {
     };
   }
   // Hériter de la compo type (cdd_lineup_template)
-  let formation = '4-3-3';
+  let formation = (window.CDD_DEFAULT_FORMATION || '4-3-3');
   let starters = {};
   let bench = [];
   try {
@@ -1810,7 +1898,7 @@ window.CDD_CONVOC = {
     ml.reserve = ml.reserve.filter(id => id !== playerId);
     // Ajouter dans la cible
     if (slot === 'starter') {
-      const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[ml.formation || '4-3-3']) || [];
+      const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[ml.formation || (window.CDD_DEFAULT_FORMATION || '4-3-3')]) || [];
       for (let i = 0; i < Math.max(slots.length, 11); i++) {
         if (!ml.starters[i]) { ml.starters[i] = playerId; break; }
       }
