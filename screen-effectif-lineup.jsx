@@ -105,10 +105,24 @@ function ScreenEffectif({ go, tweaks }) {
     };
     setAddBusy(true);
     try {
+      // 1) Cache dédié joueurs ponctuels — survit aux pull cloud, re-fusionné
+      //    par CDD.getPlayers(). C'est le filet de sécurité qui garantit que le
+      //    joueur ne disparaîtra plus de la compo ni du terrain au coup d'envoi.
+      try {
+        const manualAll = JSON.parse(localStorage.getItem("cdd_manual_players") || "{}");
+        if (!manualAll[team.id]) manualAll[team.id] = [];
+        if (!manualAll[team.id].some(p => p.id === player.id)) manualAll[team.id].push(player);
+        localStorage.setItem("cdd_manual_players", JSON.stringify(manualAll));
+      } catch (e) {}
+      // 2) arb_teams (effectif local) — écriture GARANTIE : si l'équipe n'est
+      //    pas encore présente localement, on crée l'entrée au lieu de l'ignorer.
       try {
         const teams = JSON.parse(localStorage.getItem("arb_teams") || "[]");
-        const t = teams.find(x => x.id === team.id);
-        if (t) { t.players = t.players || []; t.players.push(player); localStorage.setItem("arb_teams", JSON.stringify(teams)); }
+        let t = teams.find(x => x.id === team.id);
+        if (!t) { t = { id: team.id, clubId, players: [] }; teams.push(t); }
+        t.players = t.players || [];
+        if (!t.players.some(p => p.id === player.id)) t.players.push(player);
+        localStorage.setItem("arb_teams", JSON.stringify(teams));
       } catch (e) {}
       if (window.cddData && window.cddData.savePlayer) {
         try { await window.cddData.savePlayer(player, team.id, clubId); }
@@ -130,6 +144,15 @@ function ScreenEffectif({ go, tweaks }) {
       const teams = JSON.parse(localStorage.getItem("arb_teams") || "[]");
       const t = teams.find(x => x.id === team?.id);
       if (t && Array.isArray(t.players)) { t.players = t.players.filter(pp => pp.id !== p.id); localStorage.setItem("arb_teams", JSON.stringify(teams)); }
+    } catch (e) {}
+    // Purge le cache dédié joueurs ponctuels — sinon le filet de sécurité
+    // (CDD.getPlayers) ressusciterait un joueur ponctuel qu'on vient de supprimer.
+    try {
+      const manualAll = JSON.parse(localStorage.getItem("cdd_manual_players") || "{}");
+      if (team?.id && Array.isArray(manualAll[team.id])) {
+        manualAll[team.id] = manualAll[team.id].filter(pp => pp.id !== p.id);
+        localStorage.setItem("cdd_manual_players", JSON.stringify(manualAll));
+      }
     } catch (e) {}
     if (window.cddData && window.cddData.deletePlayer) {
       try { await window.cddData.deletePlayer(p.id); }

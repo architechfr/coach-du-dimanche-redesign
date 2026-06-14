@@ -108,6 +108,11 @@ function buildDefaultTeams() {
       const ml = allM[activeTeam.id]?.[matchId];
       if (ml && ml.starters) {
         const idsInOrder = Object.keys(ml.starters).sort((a,b) => +a - +b).map(k => ml.starters[k]);
+        // Diagnostic : signaler tout titulaire posé dans la compo mais introuvable
+        // dans CDD_PLAYERS au coup d'envoi (typiquement un joueur ponctuel évincé
+        // par une synchro). Le filet de sécurité CDD.getPlayers doit empêcher ce cas.
+        const _missing = idsInOrder.filter(id => id && !byId(id));
+        if (_missing.length) console.warn('[match-engine] titulaires introuvables au lancement (joueurs ponctuels ?) :', _missing);
         const matchStarters = idsInOrder.map(byId).filter(Boolean);
         if (matchStarters.length > 0) {
           starters = matchStarters;

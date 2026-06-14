@@ -131,8 +131,26 @@
     getPlayers() {
       const team = this.getActiveTeam();
       if (!team) return [];
-      stats.lastPlayerCount = (team.players || []).length;
-      return team.players || [];
+      const players = (team.players || []).slice();
+      // ── FILET DE SÉCURITÉ joueurs ponctuels (sans licence FFF) ──
+      // Les joueurs ponctuels (id 'p_manual_…', créés pour les matchs amicaux /
+      // tests d'entre-saison) sont stockés dans une clé dédiée
+      // cdd_manual_players[teamId] qui SURVIT aux pull cloud. On les re-fusionne
+      // ici — getPlayers() est la source unique lue par la compo (playerOf), par
+      // le rebuild de CDD_PLAYERS et par le lancement de match (byId). Ainsi un
+      // joueur ponctuel ne peut JAMAIS disparaître quand une synchro cloud
+      // écrase team.players. Dédoublonnage par id : si le cloud a déjà le
+      // joueur, c'est la version cloud qui prime (le filet ne fait rien).
+      try {
+        const manualAll = getRaw('cdd_manual_players', {}) || {};
+        const manual = manualAll[team.id] || [];
+        if (manual.length) {
+          const have = new Set(players.map(p => p && p.id));
+          for (const m of manual) { if (m && m.id && !have.has(m.id)) players.push(m); }
+        }
+      } catch (e) {}
+      stats.lastPlayerCount = players.length;
+      return players;
     },
 
     getStarters() {
