@@ -642,6 +642,32 @@ function computeAge(dateStr) {
   }
 
 // ─── BUILD THE GLOBAL CDD_* OBJECTS from real CDD adapter ───
+// Fusionne les matchs arbitrés (coach : amicaux/entraînements/champ détaillés)
+// avec les matchs de CHAMPIONNAT FFF joués (résultats officiels), dédupliqués
+// par adversaire + date (±2j) et triés du plus récent au plus ancien.
+// FIX 2026-06-15 : les matchs de championnat disparaissaient de "Derniers
+// matchs" car rebuildCDDGlobals écrasait la liste avec les seuls matchs coach.
+// On garde les FFF joués dans window.CDD_FFF_PLAYED (posé par applyFFFData) et
+// on les re-fusionne à CHAQUE rebuild.
+function _mergeLastMatches(coachMatches, fffPlayed) {
+  const sameOppDate = (a, b) => {
+    const opp = (a.opp || '').toLowerCase() === (b.opp || '').toLowerCase();
+    const dA = a.dateRaw ? new Date(a.dateRaw).getTime() : 0;
+    const dB = b.dateRaw ? new Date(b.dateRaw).getTime() : 0;
+    return opp && dA && dB && Math.abs(dA - dB) < 2 * 86400000;
+  };
+  const merged = [...(coachMatches || [])];
+  (fffPlayed || []).forEach(f => {
+    if (f && !merged.some(c => sameOppDate(c, f))) merged.push(f);
+  });
+  merged.sort((a, b) => {
+    const dA = a.dateRaw ? new Date(a.dateRaw).getTime() : (a.endedAt || 0);
+    const dB = b.dateRaw ? new Date(b.dateRaw).getTime() : (b.endedAt || 0);
+    return dB - dA;
+  });
+  return merged.slice(0, 99);
+}
+
 async function rebuildCDDGlobals() {
   const adapter = window.CDD;
   if (!adapter) {
@@ -985,7 +1011,9 @@ async function rebuildCDDGlobals() {
   const coachFinished = (window.MATCH_HELPERS && window.MATCH_HELPERS.listCoachFinishedMatches)
     ? window.MATCH_HELPERS.listCoachFinishedMatches()
     : [];
-  window.CDD_LAST_MATCHES = coachFinished;
+  // On RE-FUSIONNE les matchs de championnat FFF déjà connus (sinon ce rebuild
+  // les ferait disparaître de l'accueil jusqu'au prochain applyFFFData).
+  window.CDD_LAST_MATCHES = _mergeLastMatches(coachFinished, window.CDD_FFF_PLAYED);
   window.CDD_STANDINGS = [];
   window.CDD_TOP_SCORERS = [];
 
@@ -1346,17 +1374,10 @@ async function applyFFFData(fffCfg, clubName, players) {
       const dateMatch = dateA && dateB && Math.abs(dateA - dateB) < 2 * 86400000;
       return oppMatch && dateMatch;
     };
-    const merged = [...coachMatches];
-    fffMatches.forEach(f => {
-      if (!coachMatches.some(c => matchesOppDate(c, f))) merged.push(f);
-    });
-    // Tri par date desc, en gardant les sans-date en queue
-    merged.sort((a, b) => {
-      const dA = a.dateRaw ? new Date(a.dateRaw).getTime() : (a.endedAt || 0);
-      const dB = b.dateRaw ? new Date(b.dateRaw).getTime() : (b.endedAt || 0);
-      return dB - dA;
-    });
-    window.CDD_LAST_MATCHES = merged.slice(0, 99);
+    // Mémorise les matchs de championnat joués → les rebuilds ultérieurs
+    // (rebuildCDDGlobals) les re-fusionnent au lieu de les perdre.
+    window.CDD_FFF_PLAYED = fffMatches;
+    window.CDD_LAST_MATCHES = _mergeLastMatches(coachMatches, fffMatches);
 
     // Also store all matches (past + upcoming) for full agenda
     window.CDD_ALL_MATCHES = [...played, ...upcoming.map(m => ({
@@ -1596,17 +1617,16 @@ async function _triggerCloudLastMatchesRefresh() {
       ? window.MATCH_HELPERS.listCoachFinishedMatches()
       : [];
     const localOnly = localMatches.filter(m => m && !cloudIds.has(m.id));
-    const fffOnly   = current.filter(m => m && m.coachArbitrated === false);
-    const merged = [...cloudItems, ...localOnly, ...fffOnly]
-      .sort((a, b) => {
-        const dA = a.dateRaw ? new Date(a.dateRaw).getTime() : (a.endedAt || 0);
-        const dB = b.dateRaw ? new Date(b.dateRaw).getTime() : (b.endedAt || 0);
-        return dB - dA;
-      })
-      .slice(0, 99);
+    // Matchs de championnat FFF : on prend la liste mémorisée si dispo, sinon
+    // ceux déjà présents dans la liste courante. _mergeLastMatches dédoublonne
+    // (adversaire+date) vs cloud+local et trie.
+    const fffPlayed = (Array.isArray(window.CDD_FFF_PLAYED) && window.CDD_FFF_PLAYED.length)
+      ? window.CDD_FFF_PLAYED
+      : current.filter(m => m && m.coachArbitrated === false);
+    const merged = _mergeLastMatches([...cloudItems, ...localOnly], fffPlayed);
     window.CDD_LAST_MATCHES = merged;
     console.log('[lastMatches] ✓ cloud:', cloudItems.length,
-      '· local-only:', localOnly.length, '· FFF:', fffOnly.length);
+      '· local-only:', localOnly.length, '· FFF:', fffPlayed.length);
     window.dispatchEvent(new CustomEvent('cdd-data-rebuilt'));
 
     // ─── ASTUCE CROISÉE (fix 2026-05-26 idée Florian) ─────────────────────
