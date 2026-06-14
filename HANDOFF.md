@@ -1,7 +1,48 @@
 # HANDOFF — Coach du Dimanche V2
 
-> Document de reprise. Dernière mise à jour : **2026-05-26 — chantier UX coach + sync cloud cross-device + ICS agenda** (cache buster **v162** / data-bridge **v134**).
+> Document de reprise. Dernière mise à jour : **2026-06-14 — suppression atomique + buteurs par compétition + multi-format foot à 8/5/futsal** (data-bridge **v143** / match-engine **v140**).
 > Pour reprendre dans un nouveau chat : dire « lis HANDOFF.md ».
+
+---
+
+## 🚀 Session du 14 juin — suppression atomique, buteurs par compétition, MULTI-FORMAT
+
+Grosse session structurante. Tout livré et poussé sur `main`. **Foot à 11 strictement inchangé** à chaque étape.
+
+### 1. Onglet Amicaux + suppression atomique anti-résurrection (tombstones)
+**Problème** : l'onglet Amicaux ne montrait que les amicaux *programmés non joués* (filtre `endedAt`), jamais les résultats. Et supprimer un match était fragile : « je supprime un 2e match, le 1er revient » → cause = suppression cloud *fire-and-forget* + `pullCloudData` qui re-merge les amicaux de façon **additive** (jamais de purge).
+- **Tombstones** (`cdd_deleted_matches`, dans `friendly-matches.js`) : un id supprimé n'est **plus jamais** ré-affiché ni re-mergé. Helpers `tombstone/isTombstoned/tombstones`.
+- **`CDD_FRIENDLY.purgeMatch({teamId, matchId, friendlyId})`** : suppression ATOMIQUE des **deux** représentations d'un amical joué (l'amical `fr_*` ET le match arbitré `m_*` lié via `scheduledMatchId`) — local + cloud + lineup/info/jersey.
+- `pullCloudData` (firebase-sync) : le merge des amicaux **skip + purge** les tombstones.
+- `listCoachFinishedMatches` (match-engine) : filtre les tombstones.
+- **Onglet Amicaux refait** (`screen-results-conv.jsx`) : section **📅 À venir** + section **🏁 Résultats** (amicaux ET entraînements, score + buteurs + lien feuille de match + 🗑 suppression). Anti-doublon À venir/Résultats.
+- Suppression branchée aussi sur la feuille de match (`app.jsx`) et la modale d'édition amical (`friendly-match-modal.jsx`).
+
+### 2. Classement buteurs + passes par compétition (champ vs amical)
+**Problème** : l'onglet Buteurs était VIDE. Cause : `buildTopScorers`/`applyRealStats` lisaient le store legacy `arb_m` avec les mauvais champs (`m.events`/`e.type`) alors que les buts sont dans `m.ev` (`tp:'goal'`, `t:'A'`, `scorer/scorerId`, `passer`).
+- **Agrégateur unique** `aggregateTeamMatchStats()` (data-bridge) : scanne `cdd_match_*`, côté A, **bucketé par compétition** (championnat/coupe vs amical/entraînement), respecte club/équipe + tombstones. Compte **buts ET passes décisives**. Inclut les buteurs **ponctuels** (rattachés par label si pas dans l'effectif) → tout buteur apparaît, comme dans « Derniers matchs ».
+- `buildTopScorers` + `applyRealStats` (cartes joueur) consomment cette source unique.
+- Onglet Buteurs : filtre **Tout / Championnat / Amical**.
+- Cohérence suppression : supprimer un match recalcule le classement (tombstone + `CDD_REBUILD`).
+
+### 3. MULTI-FORMAT foot à 11 / 8 / 5 / futsal (Phases 0 → 1c + live)
+Socle pour rendre l'app utilisable en foot à 8 (équipes enfants ET adultes demi-terrain), foot à 5, futsal. **Défaut `'11'` → rien ne change pour l'existant.**
+- **Phase 0 — socle** : `team.format` (`11|8|5|futsal`) + `team.isAdult` **explicites**, réglables dans **Club → Équipes du club** (`screen-club.jsx`), persistés `arb_teams` + cloud (saveTeam pass-through, pas de modif `firestore.rules`). Helpers `CDD_TEAM_HELPERS.teamFormat/formatMeta/activeTeamFormat/TEAM_FORMATS`. `isAdultTeam` respecte le réglage explicite (heuristique en défaut).
+- **Phase 1a — formations** : `CDD_FORMATIONS_ALL` par format (F8 : 3-3-1/2-3-2/3-1-3/2-4-1 ; F5 : 1-2-1/2-2/2-1-1 ; futsal : 1-2-1/2-2/3-1 ; F11 inchangé). `window.CDD_FORMATIONS` = sous-ensemble du format actif → écrans adaptatifs automatiquement. `window.CDD_DEFAULT_FORMATION` remplace les `'4-3-3'` codés en dur.
+- **Phase 1b — convoc + config match** : `CDD_CONVOC.getLimits()` (banc/convoc par format) ; `match-engine.newMatch` dérive durées/joueurs/changements du format (F8 2×30/8/7, F5 2×25/5/∞, futsal 2×20/5/∞) et stocke `m.format`.
+- **Phase 1c — polish** : tous les `'4-3-3'` et compteurs `=== 11` résiduels rendus format-aware (results-conv, match-prep « compo prête » sur N titulaires, tactique, tv, compo-libre, effectif-lineup) + descriptions des nouvelles formations.
+- **Live durci** : `buildDefaultTeams` + adversaire générique/saisi respectent le nb de joueurs du format.
+
+### 4. Git / OneDrive — fin des prompts `y/n` au push
+Cause : **147 objets loose en double** (`prune-packable`) que OneDrive/Defender empêchaient de supprimer → git re-tentait à chaque op. Réglé par `git gc --prune=now` (→ 0 loose, 1 pack) + `gc.auto 0` global. **Recommandé** : exclure le dossier projet de Windows Defender.
+
+### Versions cache buster à jour
+`data-bridge v143`, `match-engine v140`, `screen-results-conv v147`, `screen-club v146`, `screen-effectif-lineup v121`, `screen-match-prep v125`, `screen-match-live-v2 v142`, `screen-tactique v96`, `screen-tv v77`, `screen-compo-libre v2`, `friendly-matches v121`, `friendly-match-modal v81`, `app.jsx v151`.
+
+### TODO / pistes next session
+- **Tester un parcours F8 complet en vrai** (créer équipe F8, compo 8, convoc, lancer, feuille de match).
+- Suppression cross-appareils : aujourd'hui définitive sur l'appareil qui supprime (cloud effacé) ; un autre appareil déjà ouvert peut garder un fantôme → SOS Resync. Possible amélioration : tombstones propagés au cloud.
+- Mineurs détails F8 : snap du banc dans l'éditeur de compo type, `slice(0,11)` d'affichage live (inoffensif).
 
 ---
 

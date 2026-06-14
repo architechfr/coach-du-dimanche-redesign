@@ -8,6 +8,29 @@ Voir `HANDOFF.md` à la racine du projet pour le détail commit par commit jusqu
 
 ---
 
+## Session 14/06/2026 — Suppression atomique, buteurs par compétition, MULTI-FORMAT
+
+### Contexte initial
+Florian signale : (1) incohérence onglet Amicaux (pas les résultats des matchs joués) ; (2) bug suppression « je supprime un 2e match, le 1er revient » ; (3) onglet Buteurs vide ; (4) volonté de rendre l'app utilisable en **foot à 8 / 5 / futsal** (gros dossier, équipes enfants + adultes demi-terrain).
+
+### Livré (poussé sur main, 11-a-side strictement inchangé)
+1. **Suppression atomique anti-résurrection (tombstones)**. Cause du « ça revient » = suppression cloud fire-and-forget + merge **additif** de `pullCloudData` (jamais de purge). Solution : `cdd_deleted_matches` (tombstones) dans `friendly-matches.js` ; `CDD_FRIENDLY.purgeMatch()` supprime les **2 représentations** d'un amical joué (`fr_*` + `m_*` lié via `scheduledMatchId`, local+cloud+lineup/info/jersey) ; merge cloud et `listCoachFinishedMatches` filtrent les tombstones. Onglet Amicaux refait (À venir + Résultats avec feuille de match + 🗑).
+2. **Buteurs/passes par compétition**. Cause du vide = `arb_m` + `m.events`/`e.type` au lieu de `cdd_match_*` + `m.ev`/`e.tp`. Nouvel **agrégateur unique** `aggregateTeamMatchStats()` (data-bridge) : `cdd_match_*`, côté A, bucketé champ vs amical, buts + passes, inclut les ponctuels par label, respecte tombstones. Consommé par `buildTopScorers` ET `applyRealStats`. Filtre UI Tout/Championnat/Amical.
+3. **Multi-format Phases 0→1c + live**. `team.format` (`11|8|5|futsal`) + `team.isAdult` explicites réglables page Club ; `CDD_FORMATIONS_ALL` par format + `window.CDD_FORMATIONS` = format actif + `CDD_DEFAULT_FORMATION` ; `CDD_CONVOC.getLimits()` (convoc/banc par format) ; `newMatch` config par format (+ `m.format`) ; tous les `'4-3-3'`/`=== 11` résiduels rendus format-aware ; `buildDefaultTeams`/adversaire respectent le nb de joueurs.
+4. **Git/OneDrive** : fin des prompts `y/n` au push = nettoyage des objets loose en double (`git gc --prune=now`) + `gc.auto 0` global. Reco : exclure le dossier de Defender.
+
+### Leçons / pièges confirmés
+- **Merge additif = fuite cross-device** : `pullCloudData` n'enlève jamais les entrées locales absentes du cloud → un élément supprimé ressuscite. Toujours coupler suppression cloud + **tombstone local** (et idéalement pruning du merge).
+- **Double représentation d'un amical joué** : `fr_*` (programmé) ET `m_*` (arbitré, lié par `scheduledMatchId`). Toute suppression doit traiter les deux.
+- **Événements match** : la source de vérité buts/cartons est `m.ev` (`tp:'goal'|'yellow'|'red'`, `t:'A'|'B'`, `scorer/scorerId`, `passer` en LABEL), PAS `m.events`/`arb_m`. Les passeurs/cartons n'ont qu'un label → rattachement par n°+prénom.
+- **Multi-format sans casse** : centraliser via `window.CDD_FORMATIONS` (sous-ensemble du format actif) + `CDD_DEFAULT_FORMATION` ; défaut `'11'` garantit zéro régression.
+
+### TODO next session
+- Tester un **parcours F8 complet en vrai**.
+- Suppression **cross-appareils** (tombstones cloud) si un fantôme persiste sur un 2e device.
+
+---
+
 ## Session 26/05/2026 (nuit) — Cross-device + Event sourcing
 
 ### Durée
