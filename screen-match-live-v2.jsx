@@ -2240,7 +2240,7 @@ function LineupOverlay({ M, onClose }) {
   const injuredPlayers = [...injured].map(l => playerByLbl[l]).filter(Boolean);
   const excludedPlayers = [...excluded].map(l => playerByLbl[l]).filter(Boolean);
   const primary = team.c || '#22c55e';
-  const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
+  const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[(window.CDD_DEFAULT_FORMATION || '4-3-3')]) || [];
   return (
     <div className="mv-modal-overlay" onClick={onClose} style={{zIndex:9999}}>
       <div className="mv-modal" onClick={e => e.stopPropagation()}

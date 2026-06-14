@@ -502,7 +502,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
     if (!s || !s.formation || !s.starters || !Array.isArray(s.bench) || !Array.isArray(s.reserve)) return null;
     let formation = s.formation;
     if (!CDD_FORMATIONS[formation]) {
-      formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : '4-3-3';
+      formation = (s.basedOn && CDD_FORMATIONS[s.basedOn]) ? s.basedOn : (window.CDD_DEFAULT_FORMATION || '4-3-3');
     }
     const snapped = snapBench(s.bench, s.reserve);
     // Réconcilier avec l'effectif courant : toute recrue absente du template
@@ -553,7 +553,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
       } catch (e) {}
     }
     // 2. FFF lineupTemplate sinon isStarter
-    const formation = '4-3-3';
+    const formation = (window.CDD_DEFAULT_FORMATION || '4-3-3');
     const slots = CDD_FORMATIONS[formation];
     const tpl = activeTeam?.lineupTemplate;
     const startersIds = (tpl?.startersIds && tpl.startersIds.length)
@@ -606,7 +606,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
   const canEdit = _baseCanEdit && !_matchInProgress;
 
   // Garde-fou : si lineup.formation est inconnue, prendre 4-3-3 par défaut (12 emplacements)
-  const slots = CDD_FORMATIONS[lineup.formation] || CDD_FORMATIONS['4-3-3'];
+  const slots = CDD_FORMATIONS[lineup.formation] || CDD_FORMATIONS[(window.CDD_DEFAULT_FORMATION || '4-3-3')];
   const playerOf = (pid) => pid && CDD_PLAYERS.find(p => p.id === pid);
   const starterPlayers = slots.map((_, i) => playerOf(lineup.starters[i])).filter(Boolean);
   const benchPlayers = lineup.bench.map(pid => playerOf(pid)).filter(Boolean);
@@ -1298,6 +1298,16 @@ const FORMATION_DESCRIPTIONS = {
   "4-5-1":   "Compact · 1 pointe",
   "4-1-4-1": "Sentinelle · transition",
   "3-4-3":   "Très offensif · 3 devant",
+  // Foot à 8
+  "3-3-1":   "Foot à 8 · équilibré",
+  "2-3-2":   "Foot à 8 · offensif",
+  "3-1-3":   "Foot à 8 · ailiers hauts",
+  "2-4-1":   "Foot à 8 · milieu dense",
+  // Foot à 5 / futsal
+  "1-2-1":   "Foot à 5 · losange",
+  "2-2":     "Foot à 5 · carré",
+  "2-1-1":   "Foot à 5 · pointe basse",
+  "3-1":     "Futsal · pivot",
 };
 
 // Mini formation diagram for picker cards

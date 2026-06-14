@@ -14,22 +14,22 @@ const { useState: useCL, useRef: useCLRef, useEffect: useCLEff } = React;
 function ScreenCompoLibre({ go, tweaks }) {
   // Récupérer le lineup courant
   const teamId = (window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam()?.id) || null;
-  const formations = (window.CDD_FORMATIONS && Object.keys(window.CDD_FORMATIONS)) || ['4-3-3'];
+  const formations = (window.CDD_FORMATIONS && Object.keys(window.CDD_FORMATIONS)) || [(window.CDD_DEFAULT_FORMATION || '4-3-3')];
 
   const loadInitial = () => {
-    let formation = '4-3-3';
+    let formation = (window.CDD_DEFAULT_FORMATION || '4-3-3');
     let starters = {};
     let customPositions = null;
     try {
       const all = JSON.parse(localStorage.getItem('cdd_lineup_template') || '{}');
       const s = teamId && all[teamId];
       if (s) {
-        formation = s.formation === 'custom' ? (s.basedOn || '4-3-3') : (s.formation || '4-3-3');
+        formation = s.formation === 'custom' ? (s.basedOn || (window.CDD_DEFAULT_FORMATION || '4-3-3')) : (s.formation || (window.CDD_DEFAULT_FORMATION || '4-3-3'));
         starters = s.starters || {};
         customPositions = s.customPositions || null;
       }
     } catch (e) {}
-    const slots = window.CDD_FORMATIONS[formation] || window.CDD_FORMATIONS['4-3-3'];
+    const slots = window.CDD_FORMATIONS[formation] || window.CDD_FORMATIONS[(window.CDD_DEFAULT_FORMATION || '4-3-3')];
     // positions effectives : customPositions si présent, sinon slots formation
     const positions = {};
     slots.forEach((slot, i) => {
@@ -91,7 +91,7 @@ function ScreenCompoLibre({ go, tweaks }) {
 
   const reset = () => {
     if (!confirm('Réinitialiser aux positions de la formation ' + state.formation + ' ?')) return;
-    const slots = window.CDD_FORMATIONS[state.formation] || window.CDD_FORMATIONS['4-3-3'];
+    const slots = window.CDD_FORMATIONS[state.formation] || window.CDD_FORMATIONS[(window.CDD_DEFAULT_FORMATION || '4-3-3')];
     const positions = {};
     slots.forEach((slot, i) => { positions[i] = { x: slot.x, y: slot.y }; });
     setState(s => ({ ...s, positions }));

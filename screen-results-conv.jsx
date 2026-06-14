@@ -1107,9 +1107,9 @@ function ScreenConvocations({ go, tweaks }) {
           }
         } catch (e) {}
         if (!pitchLineup || !pitchLineup.starters) return null;
-        const formation = pitchLineup.formation || '4-3-3';
+        const formation = pitchLineup.formation || (window.CDD_DEFAULT_FORMATION || '4-3-3');
         const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[formation])
-                   || (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
+                   || (window.CDD_FORMATIONS && window.CDD_FORMATIONS[(window.CDD_DEFAULT_FORMATION || '4-3-3')]) || [];
         const allPlayers = window.CDD_PLAYERS || [];
         const playerOf = (pid) => pid && allPlayers.find(p => p.id === pid);
         const club = window.CDD_CLUB || {};

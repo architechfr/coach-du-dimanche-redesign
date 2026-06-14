@@ -160,9 +160,9 @@ function TacEditor({ teamId, schemeId, onBack }) {
               ? lineup.formation
               : (lineup.basedOn && window.CDD_FORMATIONS && window.CDD_FORMATIONS[lineup.basedOn])
                 ? lineup.basedOn
-                : '4-3-3';
+                : (window.CDD_DEFAULT_FORMATION || '4-3-3');
             const slots = window.CDD_FORMATIONS[formationName];
-            if (slots && slots.length === 11) {
+            if (slots && slots.length > 0) {
               players = slots.map((slot, i) => {
                 const pid = lineup.starters && lineup.starters[i];
                 const p = pid && window.CDD_PLAYERS && window.CDD_PLAYERS.find(x => x.id === pid);

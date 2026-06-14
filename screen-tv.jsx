@@ -45,7 +45,7 @@ function ScreenTV({ go, tweaks, source, matchId }) {
   //   sinon                         → compo type saison (cdd_lineup_template[tid])
   //                                   comportement historique depuis Feuille de match
   const isMatchSource = source === 'match' && !!matchId;
-  let formation = '4-3-3';
+  let formation = (window.CDD_DEFAULT_FORMATION || '4-3-3');
   let templateStartersMap = {};
   let templateBench = [];
   let sourceLabel = '';   // utilisé pour le bandeau
@@ -93,7 +93,7 @@ function ScreenTV({ go, tweaks, source, matchId }) {
   } catch (e) {}
 
   const slots = (window.CDD_FORMATIONS && window.CDD_FORMATIONS[formation]) ||
-                (window.CDD_FORMATIONS && window.CDD_FORMATIONS['4-3-3']) || [];
+                (window.CDD_FORMATIONS && window.CDD_FORMATIONS[(window.CDD_DEFAULT_FORMATION || '4-3-3')]) || [];
   const playerOf = (pid) => pid && window.CDD_PLAYERS && window.CDD_PLAYERS.find(p => p.id === pid);
 
   // Titulaires : exactement ce que le coach a posé, slot par slot.
@@ -193,9 +193,9 @@ function ScreenTV({ go, tweaks, source, matchId }) {
         </div>
       </div>
 
-      {fillCount < 11 && (
+      {fillCount < slots.length && (
         <div className="tv-warn">
-          ⚠️ Seulement {fillCount}/11 titulaires convoqués. Complète la convocation puis reviens ici.
+          ⚠️ Seulement {fillCount}/{slots.length} titulaires convoqués. Complète la convocation puis reviens ici.
         </div>
       )}
 

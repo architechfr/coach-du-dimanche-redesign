@@ -66,7 +66,11 @@ function ScreenMatchPrep({ go, tweaks }) {
     try {
       const all = JSON.parse(localStorage.getItem('cdd_match_lineup') || '{}');
       const ml = all[teamId] && all[teamId][matchId];
-      return !!(ml && ml.starters && Object.keys(ml.starters).length >= 11);
+      // Nb de titulaires requis = joueurs du format (11/8/5). Sans ça, une
+      // compo de foot à 8 (8 titulaires) n'était jamais comptée comme "prête".
+      const _need = ((window.CDD_TEAM_HELPERS && window.CDD_TEAM_HELPERS.formatMeta
+        && window.CDD_TEAM_HELPERS.formatMeta(window.CDD_TEAM_HELPERS.activeTeamFormat()).players) || 11);
+      return !!(ml && ml.starters && Object.keys(ml.starters).length >= _need);
     } catch (e) { return false; }
   })();
   // Réponses parents
