@@ -2579,11 +2579,22 @@ async function pullCloudData() {
   // On fusionne : tout id cloud absent en local est ajouté, et si l'id existe
   // en local, on garde la version la plus récente (updatedAt).
   try {
+    // Pierres tombales : ids de matchs supprimés localement. On NE les
+    // réintègre jamais (anti-résurrection) et on purge toute trace locale.
+    let _tombSet;
+    try {
+      const _t = (window.CDD_FRIENDLY && window.CDD_FRIENDLY.tombstones)
+        ? window.CDD_FRIENDLY.tombstones()
+        : JSON.parse(localStorage.getItem('cdd_deleted_matches') || '[]');
+      _tombSet = new Set((Array.isArray(_t) ? _t : []).map(String));
+    } catch (e) { _tombSet = new Set(); }
+
     if (rawFriendlyMatches.length) {
       const allFm = JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}');
       let dirty = false;
       rawFriendlyMatches.forEach(({ id, teamId, clubId, date, time, opponent, venue, updatedAt, endedAt }) => {
         if (!id || !teamId) return;
+        if (_tombSet.has(String(id))) return; // match supprimé → jamais ré-ajouté
         const cloudMs = updatedAt && typeof updatedAt.toMillis === 'function'
           ? updatedAt.toMillis()
           : (typeof updatedAt === 'number' ? updatedAt : 0);
@@ -2619,7 +2630,31 @@ async function pullCloudData() {
         else allFm[teamId].push(entry);
         dirty = true;
       });
+      // Purge des entrées locales mises en pierre tombale (le merge cloud est
+      // additif et ne supprime jamais sinon → un amical supprimé persistait).
+      for (const tk in allFm) {
+        if (!Array.isArray(allFm[tk])) continue;
+        const before = allFm[tk].length;
+        allFm[tk] = allFm[tk].filter(m => m && !_tombSet.has(String(m.id)));
+        if (allFm[tk].length !== before) dirty = true;
+        if (allFm[tk].length === 0) { delete allFm[tk]; dirty = true; }
+      }
       if (dirty) localStorage.setItem('cdd_friendly_matches', JSON.stringify(allFm));
+    } else if (_tombSet.size) {
+      // Aucun amical cloud à fusionner, mais on purge quand même toute trace
+      // locale d'un match supprimé (cas où le resync ne renvoie rien).
+      try {
+        const allFm = JSON.parse(localStorage.getItem('cdd_friendly_matches') || '{}');
+        let dirty = false;
+        for (const tk in allFm) {
+          if (!Array.isArray(allFm[tk])) continue;
+          const before = allFm[tk].length;
+          allFm[tk] = allFm[tk].filter(m => m && !_tombSet.has(String(m.id)));
+          if (allFm[tk].length !== before) dirty = true;
+          if (allFm[tk].length === 0) { delete allFm[tk]; dirty = true; }
+        }
+        if (dirty) localStorage.setItem('cdd_friendly_matches', JSON.stringify(allFm));
+      } catch (e) {}
     }
   } catch (e) {}
 

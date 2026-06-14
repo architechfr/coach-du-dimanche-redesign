@@ -246,82 +246,194 @@ function ScreenResults({ go, tweaks }) {
                       background:'rgba(168,85,247,0.10)', color:'#c4b5fd',
                       border:'1px dashed rgba(168,85,247,0.40)',
                       cursor:'pointer', fontWeight:800, fontSize:13,
-                      letterSpacing:'.04em', marginBottom:12,
+                      letterSpacing:'.04em', marginBottom:14,
                       display:'flex', alignItems:'center', justifyContent:'center', gap:8,
                     }}>
               <span>🤝</span><span>+ AJOUTER UN MATCH AMICAL</span>
             </button>
           )}
 
-          {/* Liste des amicaux */}
-          {friendlyList.length === 0 ? (
-            <div className="rs-cal-empty">
-              <div className="rs-cal-empty-ic">🤝</div>
-              <div className="rs-cal-empty-t">Aucun match amical</div>
-              <div className="rs-cal-empty-d">
-                Les matchs amicaux (préparation, tournoi, jubilé…) ne sont pas dans
-                le calendrier FFF. Ajoute-les ici pour les retrouver dans Convocations.
-              </div>
-            </div>
-          ) : (
-            <div style={{display:'flex', flexDirection:'column', gap:8}}>
-              {friendlyList.map(m => {
-                const past = m.date && m.date < new Date().toISOString().slice(0, 10);
-                const dDisp = (() => {
-                  const r = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.date || '');
-                  return r ? (r[3] + '/' + r[2] + '/' + r[1]) : (m.date || '');
-                })();
-                return (
-                  <div key={m.id} style={{
-                    padding:'12px 14px', borderRadius:10,
-                    background: past ? 'rgba(255,255,255,0.02)' : 'rgba(168,85,247,0.06)',
-                    border: '1px solid ' + (past ? 'rgba(255,255,255,0.06)' : 'rgba(168,85,247,0.25)'),
-                    opacity: past ? 0.7 : 1,
-                    display:'flex', gap:10, alignItems:'center',
-                  }}>
-                    <div style={{
-                      width:42, textAlign:'center', flexShrink:0,
-                      borderRight:'1px solid rgba(255,255,255,0.08)', paddingRight:10,
-                    }}>
-                      <div style={{fontSize:18, fontWeight:900, lineHeight:1, color:'#c4b5fd'}}>
-                        {dDisp.slice(0,2)}
-                      </div>
-                      <div style={{fontSize:9.5, fontWeight:700, opacity:0.65, marginTop:3, letterSpacing:'.04em'}}>
-                        {dDisp.slice(3,5)}/{dDisp.slice(6,10)}
-                      </div>
-                    </div>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:13, fontWeight:800, color:'#fff', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                        <span style={{
-                          fontSize:9, padding:'2px 6px', borderRadius:5,
-                          background:'rgba(168,85,247,0.20)', color:'#c4b5fd',
-                          border:'1px solid rgba(168,85,247,0.40)', fontWeight:800,
-                          letterSpacing:'.06em',
-                        }}>AMICAL</span>
-                        <span>{m.venue === 'H' ? '🏠 vs' : '🚗 @'} {m.opponent || 'Adversaire'}</span>
-                      </div>
-                      <div style={{fontSize:11, opacity:0.65, marginTop:3, display:'flex', gap:8}}>
-                        {m.time && <span>🕐 {m.time}</span>}
-                        {past && <span style={{color:'rgba(255,255,255,0.5)'}}>· terminé</span>}
-                      </div>
-                    </div>
-                    {_canEditRes && (
-                      <button onClick={() => setFriendlyModal({ mode: 'edit', match: m })}
-                              title="Éditer ce match amical"
-                              style={{
-                                padding:'6px 10px', borderRadius:8, cursor:'pointer',
-                                background:'rgba(255,255,255,0.05)', color:'#c4b5fd',
-                                border:'1px solid rgba(168,85,247,0.30)',
-                                fontSize:11, fontWeight:700, flexShrink:0,
-                              }}>
-                        ✎
-                      </button>
-                    )}
+          {(() => {
+            // ── COHÉRENCE (2026-06-14) ───────────────────────────────────
+            // Avant : cet onglet ne montrait que les amicaux PROGRAMMÉS et non
+            // joués (CDD_FRIENDLY.list exclut endedAt). Les amicaux DÉJÀ JOUÉS
+            // n'apparaissaient nulle part ici alors qu'ils sont dans "Derniers
+            // matchs" sur l'Accueil → incohérence signalée par Florian.
+            // Maintenant : deux sections — "À venir" (programmés) + "Résultats"
+            // (amicaux ET entraînements arbitrés, avec score + feuille de match).
+            const played = (window.MATCH_HELPERS?.listCoachFinishedMatches?.() || [])
+              .filter(m => m.matchType === 'amical' || m.matchType === 'entrainement');
+            // Anti-doublon : un amical déjà joué (mais dont le endedAt n'a pas été
+            // posé sur l'entrée programmée — race cross-device) ne doit pas
+            // apparaître à la fois dans "À venir" ET dans "Résultats".
+            const playedSchedIds = new Set(
+              played.map(m => m.scheduledMatchId).filter(Boolean).map(String)
+            );
+            const upcoming = friendlyList // déjà filtré (non joués, non tombstone)
+              .filter(m => !playedSchedIds.has(String(m.id)));
+
+            const dispDate = (iso) => {
+              const r = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+              return r ? (r[3] + '/' + r[2] + '/' + r[1]) : (iso || '');
+            };
+            const sectionH = {
+              fontSize:11, fontWeight:900, letterSpacing:'.10em',
+              color:'rgba(255,255,255,0.55)', textTransform:'uppercase',
+              margin:'4px 2px 8px',
+            };
+            const typeMeta = (mt) => mt === 'entrainement'
+              ? { l:'ENTR.', c:'#94a3b8' }
+              : { l:'AMICAL', c:'#c4b5fd' };
+
+            if (upcoming.length === 0 && played.length === 0) {
+              return (
+                <div className="rs-cal-empty">
+                  <div className="rs-cal-empty-ic">🤝</div>
+                  <div className="rs-cal-empty-t">Aucun match amical</div>
+                  <div className="rs-cal-empty-d">
+                    Les matchs amicaux (préparation, tournoi, jubilé…) ne sont pas dans
+                    le calendrier FFF. Ajoute-les ici : tu les retrouveras dans
+                    Convocations, puis leur résultat s'affichera ci-dessous une fois joués.
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              );
+            }
+
+            return (
+              <>
+                {/* ───────── À VENIR (programmés, non joués) ───────── */}
+                {upcoming.length > 0 && (
+                  <>
+                    <div style={sectionH}>📅 À venir</div>
+                    <div style={{display:'flex', flexDirection:'column', gap:8, marginBottom:18}}>
+                      {upcoming.map(m => {
+                        const dDisp = dispDate(m.date);
+                        return (
+                          <div key={m.id} style={{
+                            padding:'12px 14px', borderRadius:10,
+                            background:'rgba(168,85,247,0.06)',
+                            border:'1px solid rgba(168,85,247,0.25)',
+                            display:'flex', gap:10, alignItems:'center',
+                          }}>
+                            <div style={{
+                              width:42, textAlign:'center', flexShrink:0,
+                              borderRight:'1px solid rgba(255,255,255,0.08)', paddingRight:10,
+                            }}>
+                              <div style={{fontSize:18, fontWeight:900, lineHeight:1, color:'#c4b5fd'}}>
+                                {dDisp.slice(0,2)}
+                              </div>
+                              <div style={{fontSize:9.5, fontWeight:700, opacity:0.65, marginTop:3, letterSpacing:'.04em'}}>
+                                {dDisp.slice(3,5)}/{dDisp.slice(6,10)}
+                              </div>
+                            </div>
+                            <div style={{flex:1, minWidth:0}}>
+                              <div style={{fontSize:13, fontWeight:800, color:'#fff', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                                <span style={{
+                                  fontSize:9, padding:'2px 6px', borderRadius:5,
+                                  background:'rgba(168,85,247,0.20)', color:'#c4b5fd',
+                                  border:'1px solid rgba(168,85,247,0.40)', fontWeight:800,
+                                  letterSpacing:'.06em',
+                                }}>AMICAL</span>
+                                <span>{m.venue === 'H' ? '🏠 vs' : '🚗 @'} {m.opponent || 'Adversaire'}</span>
+                              </div>
+                              <div style={{fontSize:11, opacity:0.65, marginTop:3, display:'flex', gap:8}}>
+                                {m.time && <span>🕐 {m.time}</span>}
+                              </div>
+                            </div>
+                            {_canEditRes && (
+                              <button onClick={() => setFriendlyModal({ mode: 'edit', match: m })}
+                                      title="Éditer ce match amical"
+                                      style={{
+                                        padding:'6px 10px', borderRadius:8, cursor:'pointer',
+                                        background:'rgba(255,255,255,0.05)', color:'#c4b5fd',
+                                        border:'1px solid rgba(168,85,247,0.30)',
+                                        fontSize:11, fontWeight:700, flexShrink:0,
+                                      }}>
+                                ✎
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {/* ───────── RÉSULTATS (joués : amicaux + entraînements) ───────── */}
+                {played.length > 0 && (
+                  <>
+                    <div style={sectionH}>🏁 Résultats</div>
+                    <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                      {played.map(m => {
+                        const tm = typeMeta(m.matchType);
+                        // Score affiché identique à l'Accueil : "nous – eux".
+                        // Pour les matchs arbitrés, score[0] = notre équipe.
+                        const [us, them] = (m.venue === 'E')
+                          ? [m.score[1], m.score[0]]
+                          : [m.score[0], m.score[1]];
+                        const fdCls = m.result === 'W' ? 'fd-w' : m.result === 'L' ? 'fd-l' : 'fd-d';
+                        const fdTxt = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : 'N';
+                        return (
+                          <div key={m.id} style={{
+                            padding:'10px 12px', borderRadius:10,
+                            background:'rgba(255,255,255,0.02)',
+                            border:'1px solid rgba(255,255,255,0.07)',
+                            display:'flex', gap:10, alignItems:'center',
+                          }}>
+                            <span className={`fd ${fdCls} fd-big`} style={{flexShrink:0}}>{fdTxt}</span>
+                            <button onClick={() => go('fiche-match', m)}
+                                    title="Voir la feuille de match"
+                                    style={{
+                                      flex:1, minWidth:0, textAlign:'left', cursor:'pointer',
+                                      background:'none', border:'none', padding:0, color:'inherit',
+                                      fontFamily:'inherit',
+                                    }}>
+                              <div style={{fontSize:13, fontWeight:800, color:'#fff', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+                                <span style={{
+                                  fontSize:9, padding:'2px 6px', borderRadius:5,
+                                  background: tm.c + '22', color: tm.c,
+                                  border:'1px solid ' + tm.c + '55', fontWeight:800,
+                                  letterSpacing:'.06em',
+                                }}>{tm.l}</span>
+                                <span>{m.venue === 'H' ? '🏠' : m.venue === 'E' ? '🚗' : ''} {m.opp}</span>
+                              </div>
+                              <div style={{fontSize:10.5, opacity:0.6, marginTop:3, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                                {m.date}
+                                {m.scorers && m.scorers.length > 0 &&
+                                  <> · ⚽ {m.scorers.slice(0,3).join(', ')}{m.scorers.length > 3 ? '…' : ''}</>}
+                                <> · feuille de match →</>
+                              </div>
+                            </button>
+                            <div style={{fontWeight:900, fontSize:18, color:'#fff', flexShrink:0, letterSpacing:'.02em'}}>
+                              {us}<span style={{opacity:0.4, margin:'0 2px'}}>–</span>{them}
+                            </div>
+                            {_canEditRes && (
+                              <button
+                                onClick={() => {
+                                  const label = `${m.opp} (${us}–${them})`;
+                                  if (!window.confirm(`Supprimer définitivement le match :\n\n${label}\n${m.date || ''}\n\nLa feuille de match et les données liées seront effacées. Cette action est irréversible.`)) return;
+                                  const tid = _teamIdRes || null;
+                                  window.CDD_FRIENDLY?.purgeMatch?.({ teamId: tid, matchId: m.id, friendlyId: m.scheduledMatchId || null });
+                                }}
+                                title="Supprimer ce match"
+                                style={{
+                                  padding:'6px 9px', borderRadius:8, cursor:'pointer',
+                                  background:'rgba(255,107,107,0.08)', color:'#ff8a8a',
+                                  border:'1px solid rgba(255,107,107,0.32)',
+                                  fontSize:12, fontWeight:700, flexShrink:0,
+                                }}>
+                                🗑
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

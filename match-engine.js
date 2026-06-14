@@ -501,6 +501,9 @@ function listCoachFinishedMatches() {
       try {
         const m = JSON.parse(localStorage.getItem(k) || 'null');
         if (!m || (m.st !== 'finished' && !m.endedAt)) continue;
+        // Pierre tombale : un match supprimé ne réapparaît jamais ici, même si
+        // son cdd_match_<id> traîne encore (cloud delete raté / resync).
+        if (window.CDD_FRIENDLY?.isTombstoned?.(m.id)) continue;
         // Filtre STRICT par club actif : un match sans clubId ou d'un autre
         // club est masqué — évite que les matchs d'un autre club fuient ici.
         if (activeClub && m.clubId !== activeClub) continue;
@@ -546,6 +549,8 @@ function listCoachFinishedMatches() {
           played: true,
           scorers,
           matchType: m.matchType || 'amical',
+          // Lien vers l'amical programmé (fr_*) pour la suppression atomique.
+          scheduledMatchId: m.scheduledMatchId || null,
           coachArbitrated: true,    // flag pour distinguer des matchs FFF officiels
         });
       } catch (e) {}

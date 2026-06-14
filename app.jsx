@@ -833,18 +833,25 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
             const label = `${m.home || 'Mon équipe'} ${m.score?.[0] ?? '?'}-${m.score?.[1] ?? '?'} ${m.opp || 'Adversaire'}`;
             if (!window.confirm(`Supprimer définitivement le match :\n\n${label}\n${m.date || ''}\n\nCette action est irréversible.`)) return;
             try {
-              // 1) localStorage : suppression du match + nettoyage des marqueurs
-              localStorage.removeItem('cdd_match_' + m.id);
-              const lastFin = localStorage.getItem('cdd_match_last_finished');
-              if (lastFin === m.id) localStorage.removeItem('cdd_match_last_finished');
-              const cur = localStorage.getItem('cdd_match_current');
-              if (cur === m.id) localStorage.removeItem('cdd_match_current');
-              // 2) Firestore : best-effort, fire-and-forget
-              if (window.cddSync?.deleteMatchFromCloud) {
-                window.cddSync.deleteMatchFromCloud(m.id).catch(e => console.warn('[fiche-match] cloud delete failed:', e));
+              // Suppression ATOMIQUE via purgeMatch : enlève le match arbitré
+              // (local + cloud) ET, si c'est un amical, l'amical programmé lié
+              // (cdd_friendly_matches + cloud + lineup/info/jersey), avec pierres
+              // tombales pour que rien ne ressuscite au prochain resync.
+              if (window.CDD_FRIENDLY?.purgeMatch) {
+                const tid = window.CDD?.getActiveTeam?.()?.id || null;
+                window.CDD_FRIENDLY.purgeMatch({ teamId: tid, matchId: m.id, friendlyId: m.scheduledMatchId || null });
+              } else {
+                // Fallback historique (ne devrait pas arriver)
+                localStorage.removeItem('cdd_match_' + m.id);
+                const lastFin = localStorage.getItem('cdd_match_last_finished');
+                if (lastFin === m.id) localStorage.removeItem('cdd_match_last_finished');
+                const cur = localStorage.getItem('cdd_match_current');
+                if (cur === m.id) localStorage.removeItem('cdd_match_current');
+                if (window.cddSync?.deleteMatchFromCloud) {
+                  window.cddSync.deleteMatchFromCloud(m.id).catch(e => console.warn('[fiche-match] cloud delete failed:', e));
+                }
+                if (window.CDD_REBUILD) window.CDD_REBUILD();
               }
-              // 3) Rebuild + retour à l'accueil
-              if (window.CDD_REBUILD) window.CDD_REBUILD();
               go('home');
             } catch (e) {
               console.error('[fiche-match] suppression échouée:', e);

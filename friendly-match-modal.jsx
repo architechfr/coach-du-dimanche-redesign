@@ -60,8 +60,14 @@ function FriendlyMatchModal({ teamId, clubId, existing, onClose, onSaved }) {
 
   const remove = () => {
     if (!isEdit) return;
-    if (!confirm(`Supprimer le match amical contre ${existing.opponent} du ${existing.date} ?\n\nLes données liées (convocation, compo, infos) seront aussi effacées.`)) return;
-    window.CDD_FRIENDLY?.remove?.(teamId, existing.id);
+    if (!confirm(`Supprimer le match amical contre ${existing.opponent} du ${existing.date} ?\n\nLes données liées (convocation, compo, infos, feuille de match) seront aussi effacées définitivement.`)) return;
+    // Suppression ATOMIQUE : enlève l'amical programmé ET, s'il a été joué, le
+    // match arbitré lié + son cloud, avec pierre tombale anti-résurrection.
+    if (window.CDD_FRIENDLY?.purgeMatch) {
+      window.CDD_FRIENDLY.purgeMatch({ teamId, friendlyId: existing.id });
+    } else {
+      window.CDD_FRIENDLY?.remove?.(teamId, existing.id);
+    }
     if (onClose) onClose();
   };
 

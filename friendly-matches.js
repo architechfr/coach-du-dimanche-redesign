@@ -37,6 +37,43 @@
     return typeof matchId === 'string' && matchId.indexOf('fr_') === 0;
   }
 
+  /* ── TOMBSTONES (anti-résurrection) ─────────────────────────────
+     PROBLÈME résolu (2026-06-14) : supprimer un match était fragile.
+     1. La suppression cloud est fire-and-forget. 2. pullCloudData
+     re-pull les amicaux et MERGE de façon additive (jamais de purge).
+     → un match supprimé réapparaissait au prochain resync (focus),
+     d'où le bug "je supprime un 2e match, le 1er revient".
+
+     La parade : dès qu'on supprime un id (amical fr_* OU match m_*),
+     on l'inscrit dans une liste de pierres tombales locale. Toute
+     lecture (list, listCoachFinishedMatches) et tout merge cloud
+     ignorent désormais cet id DÉFINITIVEMENT sur ce device. La
+     suppression cloud réelle (deleteDoc) reste tentée pour propager
+     aux autres devices, mais même si elle échoue (offline, ad-block),
+     le match ne ressuscitera jamais ici.
+     ────────────────────────────────────────────────────────────── */
+  const TOMB_KEY = 'cdd_deleted_matches';
+  function _readTomb() {
+    try { const a = JSON.parse(localStorage.getItem(TOMB_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function _writeTomb(arr) {
+    // On borne à 1000 entrées (largement suffisant ; évite une croissance infinie).
+    try { localStorage.setItem(TOMB_KEY, JSON.stringify(arr.slice(-1000))); } catch (e) {}
+  }
+  function tombstone(/* ...ids */) {
+    const set = new Set(_readTomb().map(String));
+    for (let i = 0; i < arguments.length; i++) {
+      const id = arguments[i];
+      if (id) set.add(String(id));
+    }
+    _writeTomb([...set]);
+  }
+  function isTombstoned(id) {
+    return !!id && _readTomb().indexOf(String(id)) >= 0;
+  }
+  function tombstones() { return _readTomb(); }
+
   // Liste les matchs amicaux d'une équipe, triés par date croissante.
   // Par défaut, EXCLUT les matchs terminés (endedAt présent) → ils ne
   // doivent plus apparaître comme "à venir" sur les écrans de préparation.
@@ -45,6 +82,8 @@
     if (!teamId) return [];
     const all = _read();
     let arr = (all[teamId] || []).slice();
+    // Un match mis en pierre tombale ne reparaît jamais (anti-résurrection).
+    arr = arr.filter(m => m && !isTombstoned(m.id));
     if (!opts || !opts.includeEnded) {
       arr = arr.filter(m => !m.endedAt);
     }
@@ -127,6 +166,8 @@
     if (arr.length === 0) delete all[teamId];
     else all[teamId] = arr;
     _write(all);
+    // Pierre tombale : empêche toute résurrection au prochain resync cloud.
+    tombstone(matchId);
     // Nettoyage des données liées (idempotent)
     try { window.CDD_MATCH_INFO?.clear?.(teamId, matchId); } catch (e) {}
     try {
@@ -201,11 +242,92 @@
     return null;
   }
 
+  // Liste les clés localStorage des matchs JOUÉS (cdd_match_<id>), en
+  // ignorant les clés marqueurs/agrégats. Utilitaire interne pour purgeMatch.
+  function _eachMatchRecord(cb) {
+    const SKIP = new Set([
+      'cdd_match_current', 'cdd_match_last_finished', 'cdd_match_lineup',
+      'cdd_match_convoc', 'cdd_match_info', 'cdd_match_jersey_numbers',
+    ]);
+    try {
+      // Snapshot des clés d'abord (on va supprimer pendant l'itération).
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('cdd_match_') && !SKIP.has(k)) keys.push(k);
+      }
+      for (const k of keys) {
+        let m = null;
+        try { m = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
+        if (m) cb(k, m);
+      }
+    } catch (e) {}
+  }
+
+  // ── SUPPRESSION ATOMIQUE COMPLÈTE D'UN MATCH ────────────────────
+  // Un match amical JOUÉ existe sous DEUX formes :
+  //   • l'amical programmé  : cdd_friendly_matches[teamId][] (id 'fr_*')
+  //   • le match arbitré     : cdd_match_<id> (id 'm_*', + scheduledMatchId='fr_*')
+  //                            + cloud cdd_v2_matches/<id> + votes/<id>
+  // Supprimer une seule forme laissait un fantôme. purgeMatch supprime TOUT
+  // (les deux formes, local + cloud, + données liées) et pose les pierres
+  // tombales correspondantes. Idempotent et résistant au resync.
+  //
+  // Args : { teamId, matchId?, friendlyId? } — au moins un des deux ids.
+  //   - matchId    : id 'm_*' d'un match arbitré (depuis la feuille de match)
+  //   - friendlyId : id 'fr_*' d'un amical programmé (depuis l'onglet Amicaux)
+  function purgeMatch(opts) {
+    opts = opts || {};
+    const tid = opts.teamId || (window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam()?.id) || null;
+    let frId = opts.friendlyId ? String(opts.friendlyId) : null;
+    const matchIds = new Set();
+    if (opts.matchId) matchIds.add(String(opts.matchId));
+
+    // 1. Résolution croisée via les enregistrements de matchs joués :
+    //    - si on part d'un matchId, on récupère son scheduledMatchId (= frId)
+    //    - on collecte TOUS les cdd_match_* qui référencent ce frId
+    _eachMatchRecord((k, m) => {
+      const mid = String(m.id || k.replace('cdd_match_', ''));
+      if (opts.matchId && mid === String(opts.matchId) && m.scheduledMatchId) {
+        frId = frId || String(m.scheduledMatchId);
+      }
+    });
+    if (frId) {
+      _eachMatchRecord((k, m) => {
+        if (m.scheduledMatchId && String(m.scheduledMatchId) === frId) {
+          matchIds.add(String(m.id || k.replace('cdd_match_', '')));
+        }
+      });
+    }
+
+    // 2. Pierres tombales sur tous les ids concernés (anti-résurrection).
+    tombstone(frId, ...matchIds);
+
+    // 3. Suppression des enregistrements de matchs joués (local + marqueurs + cloud).
+    matchIds.forEach(id => {
+      try { localStorage.removeItem('cdd_match_' + id); } catch (e) {}
+      try { if (localStorage.getItem('cdd_match_current') === id) localStorage.removeItem('cdd_match_current'); } catch (e) {}
+      try { if (localStorage.getItem('cdd_match_last_finished') === id) localStorage.removeItem('cdd_match_last_finished'); } catch (e) {}
+      try { window.cddSync?.deleteMatchFromCloud?.(id)?.catch?.(() => {}); } catch (e) {}
+    });
+
+    // 4. Suppression de l'amical programmé (local + cloud + lineup/info/jersey).
+    //    remove() gère déjà le nettoyage complet + la pierre tombale du fr_*.
+    if (frId && tid) {
+      try { remove(tid, frId); } catch (e) {}
+    }
+
+    if (window.CDD_REBUILD) window.CDD_REBUILD();
+    _dispatch('purged', { teamId: tid, friendlyId: frId, matchIds: [...matchIds] });
+    return true;
+  }
+
   function _dispatch(kind, detail) {
     try { window.dispatchEvent(new CustomEvent('cdd-friendly-changed', { detail: { kind, ...detail } })); } catch (e) {}
   }
 
   window.CDD_FRIENDLY = {
     isAmical, list, get, create, update, remove, nextUpcoming, markEnded,
+    purgeMatch, tombstone, isTombstoned, tombstones,
   };
 })();
