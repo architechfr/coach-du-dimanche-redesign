@@ -2572,9 +2572,10 @@ function MatchSummaryShareModal({ M, onClose }) {
       if (existing) {
         existing.count++;
         existing.minutes.push({ mn: e.mn, ch: e.ch });
+        if (e.passer) existing.assists.push(cleanLbl(e.passer));
       } else {
         const player = e.scorerId ? (window.CDD_PLAYERS || []).find(p => p.id === e.scorerId) : null;
-        scorers.push({ label, display: cleanLbl(label), count: 1, minutes: [{ mn: e.mn, ch: e.ch }], player, isPenalty: !!e.penalty });
+        scorers.push({ label, display: cleanLbl(label), count: 1, minutes: [{ mn: e.mn, ch: e.ch }], player, isPenalty: !!e.penalty, assists: e.passer ? [cleanLbl(e.passer)] : [] });
       }
     }
   });
@@ -2726,9 +2727,16 @@ function MatchSummaryShareModal({ M, onClose }) {
                 {scorers.map((s, i) => (
                   <div key={i} style={{display:'flex', alignItems:'center', gap:8, fontSize:13}}>
                     <span style={{fontSize:14}}>⚽</span>
-                    <span style={{fontWeight:700, flex:1}}>
-                      {s.player ? `${s.player.first} ${s.player.last || ''}`.trim() : s.display}
-                      {s.count > 1 && <span style={{color:primary, marginLeft:6}}>×{s.count}</span>}
+                    <span style={{flex:1, minWidth:0, display:'flex', flexDirection:'column'}}>
+                      <span style={{fontWeight:700}}>
+                        {s.player ? `${s.player.first} ${s.player.last || ''}`.trim() : s.display}
+                        {s.count > 1 && <span style={{color:primary, marginLeft:6}}>×{s.count}</span>}
+                      </span>
+                      {s.assists && s.assists.length > 0 && (
+                        <span style={{fontSize:10, opacity:0.5, fontWeight:500}}>
+                          passe : {[...new Set(s.assists)].join(', ')}
+                        </span>
+                      )}
                     </span>
                     <span style={{opacity:0.55, fontSize:11}}>
                       {s.minutes.map(min =>
@@ -2815,7 +2823,7 @@ function MatchSummaryShareModal({ M, onClose }) {
             flex:1, padding:'14px', borderRadius:12, background:'rgba(255,255,255,0.08)',
             border:'1px solid rgba(255,255,255,0.18)', color:'#fff', cursor:'pointer',
             fontWeight:700, fontSize:13,
-          }}>💾 Télécharger</button>
+          }}>💾 Image</button>
           <button onClick={() => exportImage(true)} disabled={busy} style={{
             flex:1, padding:'14px', borderRadius:12, color:'#fff', border:'none', cursor:'pointer',
             background:'linear-gradient(135deg, #25D366, #128C7E)',
@@ -2823,6 +2831,25 @@ function MatchSummaryShareModal({ M, onClose }) {
             boxShadow:'0 4px 14px rgba(37,211,102,.35)',
           }}>📲 Partager</button>
         </div>
+        {/* Feuille de match TEXTE complète (façon V1) : timeline, stats, effectif. */}
+        <button onClick={async () => {
+          try {
+            const text = window.MATCH_HELPERS?.buildMatchSheetText?.(M) || '';
+            if (!text) { setMsg('❌ Feuille indisponible'); return; }
+            if (navigator.share) {
+              await navigator.share({ title: 'Feuille de match', text });
+              setMsg('✓ Partagé');
+            } else if (navigator.clipboard) {
+              await navigator.clipboard.writeText(text);
+              setMsg('✓ Feuille copiée');
+            } else { setMsg('❌ Partage indisponible'); }
+            setTimeout(() => setMsg(''), 2200);
+          } catch (e) { if (e && e.name !== 'AbortError') setMsg('❌ ' + (e.message || e)); }
+        }} disabled={busy} style={{
+          width:'100%', padding:'13px', borderRadius:12, cursor:'pointer',
+          background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.16)',
+          color:'#fff', fontWeight:700, fontSize:13,
+        }}>📋 Feuille de match (texte) · WhatsApp / SMS</button>
         {msg && <div style={{color:'#c8f169', fontSize:12, fontWeight:700}}>{msg}</div>}
       </div>
     </div>

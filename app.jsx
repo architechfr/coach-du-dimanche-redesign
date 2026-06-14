@@ -712,6 +712,7 @@ function App() {
 // SCREEN — Feuille de match (récap dernier match terminé)
 // ============================================================
 function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
+  const [showSummary, setShowSummary] = React.useState(false);
   const matches = (window.CDD_LAST_MATCHES || []).filter(m => m.played);
   const m = matchProp || matches[0]; // match sélectionné ou dernier par défaut
   if (!m) {
@@ -796,7 +797,14 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
         <button className="btn-cta ghost" style={{flex:1}} onClick={() => go("results")}>
           ← Saison
         </button>
-        <button className="btn-cta" style={{flex:1}} onClick={() => go("share")}>
+        <button className="btn-cta" style={{flex:1}} onClick={() => {
+          // Partager une feuille de match = partager le RÉSULTAT (résumé du
+          // match), PAS la convocation du prochain match. On recharge le match
+          // complet (timeline) par son id pour alimenter la carte résumé.
+          const full = (m.id && window.MATCH_HELPERS?.loadMatch?.(m.id)) || null;
+          if (full && window.MatchSummaryShareModal) { setShowSummary(true); }
+          else { alert("Le résumé partageable n'est disponible que pour les matchs que tu as arbitrés dans l'app."); }
+        }}>
           ↗ Partager
         </button>
       </div>
@@ -856,6 +864,13 @@ function ScreenFicheMatch({ go, tweaks, match: matchProp }) {
             Réservé coach principal · adjoint · admin
           </div>
         </div>
+      )}
+
+      {/* Partage du RÉSUMÉ du match (carte score + buteurs + homme du match). */}
+      {showSummary && window.MatchSummaryShareModal && (
+        <window.MatchSummaryShareModal
+          M={window.MATCH_HELPERS.loadMatch(m.id)}
+          onClose={() => setShowSummary(false)}/>
       )}
     </div>
   );

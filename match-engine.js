@@ -597,6 +597,111 @@ function editEvent(M, eventIdx, patch) {
   return true;
 }
 
+// ─── FEUILLE DE MATCH — export texte (façon V1, partage WhatsApp/SMS) ───
+// Génère un compte rendu texte complet et lisible d'un match TERMINÉ à partir
+// de l'objet M : score, buteurs regroupés, statistiques, timeline détaillée
+// des événements (buts+passeurs+minutes, cartons, changements, blessures),
+// effectif de mon équipe, faits marquants. Convention : M.tA = mon équipe,
+// M.tB = adversaire. Buteurs lus via e.scorer (jamais devinés par numéro).
+function buildMatchSheetText(M) {
+  if (!M) return '';
+  const A = M.tA || {}, B = M.tB || {};
+  const nameA = A.n || 'Mon équipe', nameB = B.n || 'Adversaire';
+  const sA = M.sA || 0, sB = M.sB || 0;
+  const clean = (lbl) => String(lbl || '').replace(/^#\S+\s*/, '').trim();
+  const fmtMin = (e) => {
+    try { return fmtMatchMinute(e.mn, e.ch, M.cfg); } catch (x) { return (e.mn != null ? e.mn + "'" : ''); }
+  };
+  const L = [];
+  L.push('━━━━━━━━━━━━━━━');
+  L.push('⚽ FEUILLE DE MATCH');
+  L.push('━━━━━━━━━━━━━━━');
+  L.push('');
+  L.push(`${nameA}  ${sA} - ${sB}  ${nameB}`);
+  const dateStr = M.endedAt
+    ? new Date(M.endedAt).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
+  const fmtJeu = `${(M.cfg && M.cfg.hs) || 2}×${(M.cfg && M.cfg.hd) || 45}min`;
+  const lieu = M.isAtHome === true ? 'Domicile' : (M.isAtHome === false ? 'Extérieur' : '');
+  const meta = [dateStr, fmtJeu, lieu].filter(Boolean).join(' · ');
+  if (meta) L.push(meta);
+  L.push('');
+
+  // Buteurs de mon équipe, regroupés avec minutes
+  const goalsA = (M.ev || []).filter(e => e && e.tp === 'goal' && e.t === 'A');
+  if (goalsA.length) {
+    const byScorer = [];
+    goalsA.forEach(e => {
+      const nm = clean(e.scorer || e.pl) || 'But';
+      let row = byScorer.find(r => r.nm === nm);
+      if (!row) { row = { nm, mins: [], assists: [] }; byScorer.push(row); }
+      row.mins.push(fmtMin(e));
+      if (e.passer) row.assists.push(clean(e.passer));
+    });
+    L.push('⚽ BUTEURS');
+    byScorer.forEach(r => {
+      let line = `• ${r.nm} (${r.mins.join(', ')})`;
+      const passers = [...new Set(r.assists.filter(Boolean))];
+      if (passers.length) line += ` — passe : ${passers.join(', ')}`;
+      L.push(line);
+    });
+    L.push('');
+  }
+
+  // Statistiques symétriques
+  L.push('📊 STATISTIQUES');
+  L.push(`⚽ Buts : ${sA} - ${sB}`);
+  L.push(`🟨 Jaunes : ${M.yA || 0} - ${M.yB || 0}`);
+  L.push(`🟥 Rouges : ${M.rA || 0} - ${M.rB || 0}`);
+  L.push(`🔄 Changements : ${M.uA || 0} - ${M.uB || 0}`);
+  L.push('');
+
+  // Timeline détaillée (les deux équipes), triée par minute
+  const keep = { goal: 1, yellow: 1, red: 1, sub: 1, injury: 1 };
+  const evs = (M.ev || []).filter(e => e && keep[e.tp]).slice()
+    .sort((a, b) => ((a.mn || 0) - (b.mn || 0)) || ((a.ts || 0) - (b.ts || 0)));
+  if (evs.length) {
+    L.push('📋 DÉROULÉ DU MATCH');
+    evs.forEach(e => {
+      const min = fmtMin(e);
+      const team = e.t === 'A' ? nameA : nameB;
+      let line = '';
+      if (e.tp === 'goal') {
+        const who = clean(e.scorer || e.pl) || 'But';
+        const extra = [];
+        if (e.passer) extra.push('passe ' + clean(e.passer));
+        if (e.penalty) extra.push(e.penaltyType === 'hand' ? 'penalty main' : 'penalty');
+        line = `${min} ⚽ ${who}${extra.length ? ' (' + extra.join(', ') + ')' : ''} — ${team}`;
+      } else if (e.tp === 'yellow') {
+        line = `${min} 🟨 ${clean(e.pl)} — ${team}`;
+      } else if (e.tp === 'red') {
+        line = `${min} 🟥 ${clean(e.pl)}${e.auto ? ' (2e jaune)' : ''} — ${team}`;
+      } else if (e.tp === 'sub') {
+        line = `${min} 🔄 ${clean(e.out)} ↦ ${clean(e.inn)} — ${team}`;
+      } else if (e.tp === 'injury') {
+        line = `${min} 🚑 ${clean(e.pl)} — ${team}`;
+      }
+      if (line) L.push(line);
+    });
+    L.push('');
+  }
+
+  // Effectif de mon équipe (titulaires + banc)
+  const tokens = [...(A.p || []), ...(A.bench || [])];
+  const names = tokens.map(t => {
+    const nm = (t.first || t.last) ? `${t.first || ''} ${t.last || ''}`.trim() : (t.num != null ? '#' + t.num : '');
+    return nm;
+  }).filter(Boolean);
+  if (names.length) {
+    L.push(`👥 EFFECTIF ${nameA}`);
+    L.push(names.join(', '));
+    L.push('');
+  }
+
+  L.push('— Coach du Dimanche');
+  return L.join('\n');
+}
+
 // MUTATION au lieu d'assignment pour éviter race condition avec screen-match-live-v2.jsx
 if (!window.MATCH_HELPERS) window.MATCH_HELPERS = {};
 Object.assign(window.MATCH_HELPERS, {
@@ -605,7 +710,7 @@ Object.assign(window.MATCH_HELPERS, {
   startSilenceLoop, stopSilenceLoop, addAT, setOpponent, setInjured, checkAlerts,
   getLiveMatch, listCoachFinishedMatches, computeExploits, editEvent,
   gPauseMs, gRealMs, fmtMMSS, isInHalftime, fmtMatchMinute,
-  computeChronoMs,
+  computeChronoMs, buildMatchSheetText,
 });
 if (!window.MATCH_SFX) window.MATCH_SFX = {};
 Object.assign(window.MATCH_SFX, { playWhistle, playGoal, playCard, playBuzzer, vibrate });
