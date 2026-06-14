@@ -478,21 +478,31 @@ function ScreenLineup({ go, tweaks, matchId }) {
     // 1. Garde uniquement les joueurs qui existent encore (cas effectif modifié depuis la sauvegarde)
     let cleanBench   = (bench || []).filter(playerExists);
     let cleanReserve = (reserve || []).filter(playerExists);
-    // 2. Top-up si banc < 3 : on pioche dans la réserve les premiers joueurs disponibles
-    if (cleanBench.length < 3 && cleanReserve.length > 0) {
+    // Limites de banc PAR FORMAT (11→3..5, 8→3..4, 5→3, futsal→..7).
+    const _tid = window.CDD?.getActiveTeam?.()?.id;
+    const lim = (window.CDD_CONVOC && window.CDD_CONVOC.getLimits)
+      ? window.CDD_CONVOC.getLimits(_tid) : { fmt: '11', benchMin: 3, benchMax: 5 };
+    // 2. Top-up si banc < min : on pioche dans la réserve les premiers dispo
+    if (cleanBench.length < lim.benchMin && cleanReserve.length > 0) {
       const benchSet = new Set(cleanBench);
-      const needed = 3 - cleanBench.length;
+      const needed = lim.benchMin - cleanBench.length;
       const toAdd = cleanReserve.filter(pid => !benchSet.has(pid)).slice(0, needed);
       cleanBench = [...cleanBench, ...toAdd];
       cleanReserve = cleanReserve.filter(pid => !toAdd.includes(pid));
     }
-    // 3. Snap down si banc = 4
-    if (cleanBench.length === 4) {
-      return { bench: cleanBench.slice(0, 3), reserve: [cleanBench[3], ...cleanReserve] };
+    if (lim.fmt === '11') {
+      // Règle stricte foot à 11 INCHANGÉE : banc 3 ou 5, jamais 4.
+      if (cleanBench.length === 4) {
+        return { bench: cleanBench.slice(0, 3), reserve: [cleanBench[3], ...cleanReserve] };
+      }
+      if (cleanBench.length >= 5) {
+        return { bench: cleanBench.slice(0, 5), reserve: [...cleanBench.slice(5), ...cleanReserve] };
+      }
+      return { bench: cleanBench, reserve: cleanReserve };
     }
-    // 4. Cap à 5 si banc >= 5
-    if (cleanBench.length >= 5) {
-      return { bench: cleanBench.slice(0, 5), reserve: [...cleanBench.slice(5), ...cleanReserve] };
+    // Autres formats : simple plafond au banc max (pas de règle "pas de 4").
+    if (cleanBench.length > lim.benchMax) {
+      return { bench: cleanBench.slice(0, lim.benchMax), reserve: [...cleanBench.slice(lim.benchMax), ...cleanReserve] };
     }
     return { bench: cleanBench, reserve: cleanReserve };
   };
@@ -1177,8 +1187,8 @@ function ScreenLineup({ go, tweaks, matchId }) {
             <span className="lu-bench-ovr num">{p.stats.ovr}</span>
           </button>
         ))}
-        {/* Toggle banc 3 ↔ 5 (foot amateur strict, jamais 4) — capacité 'compo' */}
-        {canEdit && lineup.bench.length === 3 && lineup.reserve.length >= 2 && (
+        {/* Toggle banc 3 ↔ 5 (foot à 11 strict, jamais 4) — masqué pour les autres formats */}
+        {canEdit && (window.CDD_TEAM_HELPERS?.activeTeamFormat?.() === '11') && lineup.bench.length === 3 && lineup.reserve.length >= 2 && (
           <button
             className="lu-bench-card"
             style={{minWidth:110, justifyContent:"center", alignItems:"center", display:"flex", flexDirection:"column", gap:2, fontSize:11, fontWeight:800, color:"var(--acc, #c8f169)", borderStyle:"dashed", cursor:"pointer"}}
@@ -1194,7 +1204,7 @@ function ScreenLineup({ go, tweaks, matchId }) {
             <span>Banc → 5</span>
           </button>
         )}
-        {canEdit && lineup.bench.length === 5 && (
+        {canEdit && (window.CDD_TEAM_HELPERS?.activeTeamFormat?.() === '11') && lineup.bench.length === 5 && (
           <button
             className="lu-bench-card"
             style={{minWidth:110, justifyContent:"center", alignItems:"center", display:"flex", flexDirection:"column", gap:2, fontSize:11, fontWeight:800, color:"#f97316", borderStyle:"dashed", borderColor:"rgba(249,115,22,0.45)", cursor:"pointer"}}
