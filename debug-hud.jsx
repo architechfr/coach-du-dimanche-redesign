@@ -126,7 +126,7 @@ function DebugHUD() {
       <div className="hud-footer">
         <span>reads: <b className="num">{stats.reads}</b></span>
         <span className="sep">·</span>
-        <span>v43.46 fix: relire à chaque call ✓</span>
+        <span>{window.CDD_APP_VERSION || 'v?'} · build actif</span>
       </div>
     </div>
   );

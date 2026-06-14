@@ -2238,6 +2238,11 @@ async function pullCloudData() {
               venue: fm.venue || 'H',
               isAmical: true,
               updatedAt: fm.updatedAt || null,
+              // FIX 2026-06-14 : SANS cette ligne, le marqueur "match terminé"
+              // (endedAt) du cloud n'arrivait jamais au merge en aval, donc un
+              // device resté ouvert (ex: PC) réaffichait éternellement un match
+              // déjà joué comme "à venir". On le propage maintenant.
+              endedAt: (typeof fm.endedAt === 'number' ? fm.endedAt : null),
             });
           }
         });
@@ -3300,6 +3305,34 @@ window.addEventListener('cdd-auth-changed', () => {
       .finally(() => { _autoPullRunning = false; });
   } catch (e) { _autoPullRunning = false; }
 });
+
+// CONVERGENCE MULTI-APPAREILS (2026-06-14) : un onglet resté ouvert (ex: PC)
+// ne re-pullait jamais le cloud après le login, donc il pouvait afficher un
+// état périmé (match déjà joué sur mobile mais montré "à venir"). On re-pull
+// désormais quand l'app reprend le focus / redevient visible / repasse online,
+// throttlé à 20s pour ne pas spammer. forcePull() a déjà son garde inFlight.
+(function attachAutoResync() {
+  let _lastResync = 0;
+  const RESYNC_MIN_MS = 20000;
+  const maybeResync = (reason) => {
+    try {
+      if (!auth || !auth.currentUser) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - _lastResync < RESYNC_MIN_MS) return;
+      _lastResync = now;
+      Promise.resolve().then(() => forcePull())
+        .catch(e => console.warn('[cddData] resync ' + reason, e && e.message));
+    } catch (e) {}
+  };
+  try {
+    window.addEventListener('focus', () => maybeResync('focus'));
+    window.addEventListener('online', () => maybeResync('online'));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') maybeResync('visible');
+    });
+  } catch (e) {}
+})();
 
 /* ---------- Expose globally ---------- */
 
