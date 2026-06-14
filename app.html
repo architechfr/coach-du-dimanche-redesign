@@ -42,8 +42,23 @@
      l'affichage « Version » dans Réglages → À PROPOS. À bumper à CHAQUE
      push qui bump aussi un cache buster (convention 1 push = 1 numéro). -->
 <script>
-  window.CDD_APP_VERSION = 'v78 · fix-suppr';
+  window.CDD_APP_VERSION = 'v79 · fix-suppr';
   window.CDD_APP_BUILD_DATE = '2026-06-14';
+  // ── FILET ANTI-CACHE-FANTÔME (2026-06-14) ──
+  // Une version passée a pu enregistrer un service worker qui sert l'ancien
+  // code en boucle (matchs supprimés qui "reviennent" car l'ancien code n'a pas
+  // les pierres tombales). On désinscrit TOUT service worker + purge les caches
+  // à chaque chargement. Inoffensif s'il n'y en a pas (l'app n'en utilise pas).
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then(rs => { if (rs && rs.length) { rs.forEach(r => r.unregister()); console.info('[anti-cache] ' + rs.length + ' service worker(s) désinscrit(s)'); } })
+        .catch(() => {});
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+    }
+  } catch (e) {}
 </script>
 
 <!-- Step 1: seed data (synchronous) -->
