@@ -413,14 +413,15 @@ service cloud.firestore {
     match /deleted_matches/{matchId} {
       allow read:   if isSignedIn() && canReadClub(resource.data.clubId);
       allow create: if isSignedIn()
-        && canEditTeam(request.resource.data.clubId,
-                       request.resource.data.teamId)
+        && (canManageClub(request.resource.data.clubId)
+            || canEditTeam(request.resource.data.clubId, request.resource.data.teamId))
         && isString(request.resource.data.id)
         && isString(request.resource.data.clubId)
         && matchId == request.resource.data.id
         && request.resource.data.size() <= 8;
       allow update: if isSignedIn()
-        && canEditTeam(resource.data.clubId, resource.data.teamId)
+        && (canManageClub(resource.data.clubId)
+            || canEditTeam(resource.data.clubId, resource.data.teamId))
         && request.resource.data.clubId == resource.data.clubId
         && request.resource.data.size() <= 8;
       allow delete: if isSignedIn() && canManageClub(resource.data.clubId);

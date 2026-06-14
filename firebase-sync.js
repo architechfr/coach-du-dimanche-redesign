@@ -2635,6 +2635,39 @@ async function pullCloudData() {
     } catch (e) { console.warn('[deleted] purge local', e.message); }
   }
 
+  // ── BALAYAGE ANTI-RÉSURRECTION (ceinture + bretelles) ──
+  // À CHAQUE pull : on relit TOUTES les pierres tombales (locales + cloud) et on
+  // supprime tout enregistrement cdd_match_<id> qui aurait été ré-écrit par un
+  // chemin quelconque (watch, hydratation, vieux code). Garantit qu'un match
+  // supprimé reste mort, quoi qu'il arrive.
+  try {
+    const _allTomb = (window.CDD_FRIENDLY && window.CDD_FRIENDLY.tombstones)
+      ? window.CDD_FRIENDLY.tombstones()
+      : JSON.parse(localStorage.getItem('cdd_deleted_matches') || '[]');
+    const _tombAll = new Set((Array.isArray(_allTomb) ? _allTomb : []).map(String));
+    if (_tombAll.size) {
+      let _swept = 0;
+      const _keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('cdd_match_') === 0
+            && k !== 'cdd_match_current' && k !== 'cdd_match_last_finished'
+            && k !== 'cdd_match_lineup' && k !== 'cdd_match_convoc'
+            && k !== 'cdd_match_info' && k !== 'cdd_match_jersey_numbers') {
+          _keys.push(k);
+        }
+      }
+      _keys.forEach(k => {
+        const id = k.slice('cdd_match_'.length);
+        if (_tombAll.has(String(id))) { try { localStorage.removeItem(k); _swept++; } catch (e) {} }
+      });
+      // Nettoie aussi les pointeurs s'ils visent un match supprimé.
+      try { const c = localStorage.getItem('cdd_match_current'); if (c && _tombAll.has(String(c))) localStorage.removeItem('cdd_match_current'); } catch (e) {}
+      try { const f = localStorage.getItem('cdd_match_last_finished'); if (f && _tombAll.has(String(f))) localStorage.removeItem('cdd_match_last_finished'); } catch (e) {}
+      if (_swept) console.info('[deleted] balayage :', _swept, 'cdd_match_ supprimé(s) (tombstone)');
+    }
+  } catch (e) { console.warn('[deleted] balayage', e.message); }
+
   // Local : cdd_friendly_matches[teamId] = [ { id, ... } ].
   // On fusionne : tout id cloud absent en local est ajouté, et si l'id existe
   // en local, on garde la version la plus récente (updatedAt).
@@ -2786,6 +2819,17 @@ async function pullCloudData() {
     for (const t of teamsWithLive) {
       const lm = t.liveMatch;
       const lmId = String(lm.matchId);
+      // ANTI-RÉSURRECTION : si ce match a été supprimé (pierre tombale), on NE
+      // le ré-hydrate JAMAIS depuis le cloud — c'était LA cause des matchs qui
+      // réapparaissaient après suppression (le pointeur liveMatch d'un match mal
+      // terminé + doc cloud non effacé re-créaient le cdd_match_ local).
+      try {
+        if (window.CDD_FRIENDLY && window.CDD_FRIENDLY.isTombstoned
+            && window.CDD_FRIENDLY.isTombstoned(lmId)) {
+          console.info('[liveMatch] skip ré-hydratation : match supprimé (tombstone)', lmId);
+          continue;
+        }
+      } catch (e) {}
       // Anti-match-fantôme : si "started > 6h", on considère abandonné.
       const startedMs = (typeof lm.startedAt === 'number') ? lm.startedAt : 0;
       const SIX_H = 6 * 60 * 60 * 1000;
