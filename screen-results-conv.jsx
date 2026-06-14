@@ -6,6 +6,8 @@
 
 function ScreenResults({ go, tweaks }) {
   const [tab, setTab] = useState("classement");
+  // Filtre compétition de l'onglet Buteurs : 'all' | 'champ' | 'amical'.
+  const [butScope, setButScope] = useState("all");
   const [, forceUpdate] = useState({});
   // Modale création/édition d'un match amical (depuis l'onglet Amicaux)
   const [friendlyModal, setFriendlyModal] = useState(null); // null | { mode: 'create'|'edit', match? }
@@ -211,28 +213,73 @@ function ScreenResults({ go, tweaks }) {
 
       {tab === "buteurs" && (
         <div className="rs-buteurs">
-          {CDD_TOP_SCORERS.length === 0 ? (
-            <div className="rs-cal-empty">
-              <div className="rs-cal-empty-ic">⚽</div>
-              <div className="rs-cal-empty-t">Pas encore de buteur</div>
-              <div className="rs-cal-empty-d">
-                Les buts seront comptabilisés à partir des matchs que tu arbitres.<br/>
-                Ouvre un match terminé pour vérifier que les buteurs y sont bien enregistrés.
+          {/* Filtre compétition : Tout / Championnat / Amical (FIX 2026-06-14).
+              Les buts et passes décisives sont désormais comptés séparément par
+              compétition (voir aggregateTeamMatchStats dans data-bridge.js). */}
+          <div style={{display:'flex', gap:6, padding:'0 14px 12px'}}>
+            {[
+              {id:'all',    l:'Tout'},
+              {id:'champ',  l:'Championnat'},
+              {id:'amical', l:'Amical'},
+            ].map(s => (
+              <button key={s.id} onClick={() => setButScope(s.id)}
+                style={{
+                  flex:1, padding:'8px 6px', borderRadius:8, cursor:'pointer',
+                  fontSize:11.5, fontWeight:800, letterSpacing:'.02em',
+                  fontFamily:'inherit',
+                  background: butScope === s.id ? 'rgba(200,241,105,0.16)' : 'rgba(255,255,255,0.04)',
+                  color: butScope === s.id ? '#c8f169' : 'rgba(255,255,255,0.7)',
+                  border: '1px solid ' + (butScope === s.id ? 'rgba(200,241,105,0.45)' : 'rgba(255,255,255,0.10)'),
+                }}>
+                {s.l}
+              </button>
+            ))}
+          </div>
+
+          {(() => {
+            // Projette chaque ligne sur la compétition choisie, refiltre et reclasse.
+            const pick = (p) => butScope === 'champ'
+              ? { goals: p.goalsChamp || 0,  assists: p.assistsChamp || 0 }
+              : butScope === 'amical'
+              ? { goals: p.goalsAmical || 0, assists: p.assistsAmical || 0 }
+              : { goals: p.goals || 0,       assists: p.assists || 0 };
+            const rows = (CDD_TOP_SCORERS || [])
+              .map(p => ({ ...p, ...pick(p) }))
+              .filter(r => r.goals > 0 || r.assists > 0)
+              .sort((a, b) => (b.goals - a.goals) || (b.assists - a.assists))
+              .map((r, i) => ({ ...r, rank: i + 1 }));
+
+            if (rows.length === 0) {
+              return (
+                <div className="rs-cal-empty">
+                  <div className="rs-cal-empty-ic">⚽</div>
+                  <div className="rs-cal-empty-t">
+                    {butScope === 'champ' ? 'Aucun but en championnat'
+                      : butScope === 'amical' ? 'Aucun but en amical'
+                      : 'Pas encore de buteur'}
+                  </div>
+                  <div className="rs-cal-empty-d">
+                    Les buts et passes sont comptabilisés à partir des matchs que tu arbitres.<br/>
+                    Ouvre un match terminé pour vérifier que les buteurs et passeurs y sont bien enregistrés.
+                  </div>
+                </div>
+              );
+            }
+
+            return rows.map((p, i) => (
+              <div className={`rs-but ${p.me ? "me" : ""}`} key={p.playerId || i}>
+                <span className="rs-but-r">{p.rank}</span>
+                <span className="rs-but-name">
+                  {p.name}
+                  {p.assists > 0 && <em>{p.assists} passe{p.assists > 1 ? 's' : ''}</em>}
+                </span>
+                <span className="rs-but-g num">
+                  <b>{p.goals}</b>
+                  <em>but{p.goals > 1 ? 's' : ''}</em>
+                </span>
               </div>
-            </div>
-          ) : CDD_TOP_SCORERS.map((p,i) => (
-            <div className={`rs-but ${p.me?"me":""}`} key={p.playerId || i}>
-              <span className="rs-but-r">{p.rank}</span>
-              <span className="rs-but-name">
-                {p.name}
-                {p.assists > 0 && <em>{p.assists} passe{p.assists>1?'s':''}</em>}
-              </span>
-              <span className="rs-but-g num">
-                <b>{p.goals}</b>
-                <em>but{p.goals>1?'s':''}</em>
-              </span>
-            </div>
-          ))}
+            ));
+          })()}
         </div>
       )}
 

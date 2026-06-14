@@ -397,50 +397,131 @@ function buildViewPlayer(player, idx) {
   };
 }
 
-// ─── Agrège les vraies stats joueur depuis les matches arbitrés (arb_m{}) ───
-// Mute les `players` en place : goals/assists/yellow/red/mvp/mins/matchesPlayed.
+/* ═══════════════════════════════════════════════════════════════
+   AGRÉGATEUR DE STATS MATCH — source unique (FIX 2026-06-14)
+   ═══════════════════════════════════════════════════════════════
+   AVANT : applyRealStats() et buildTopScorers() lisaient `arb_m`
+   (store legacy souvent vide) avec les mauvais noms de champs
+   (`m.events`, `e.type==='goal'`, `e.assistId`). Or un but réel est
+   stocké dans `m.ev[]` sous la forme
+       { tp:'goal', t:'A'|'B', scorer, scorerId, passer, ... }
+   et un carton sous { tp:'yellow'|'red', t, pl }. Résultat : l'onglet
+   Buteurs restait VIDE et les stats des cartes joueur à 0.
+
+   Désormais : un seul agrégateur scanne les matchs arbitrés TERMINÉS
+   (cdd_match_*, comme listCoachFinishedMatches), côté A (notre équipe),
+   bucketé par compétition (championnat/coupe vs amical/entraînement),
+   en respectant club/équipe actifs + pierres tombales.
+   ═══════════════════════════════════════════════════════════════ */
+
+// Résout un label d'événement ("#7 Romain", "Romain D.") vers un playerId.
+// Les buts portent un scorerId stable, mais les PASSEURS et les CARTONS ne
+// sont stockés qu'en label → on les rattache par numéro+prénom puis prénom.
+function _makeLabelResolver(players) {
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const map = {};
+  (players || []).forEach(p => {
+    if (!p || !p.first) return;
+    const add = (key) => { const k = norm(key); if (k && !(k in map)) map[k] = p.id; };
+    if (p.num != null) add('#' + p.num + ' ' + p.first);
+    add(p.first);
+    if (p.last) { add(p.first + ' ' + p.last); add(p.first + ' ' + p.last[0]); }
+  });
+  return (label) => {
+    if (!label) return null;
+    const raw = norm(label);
+    if (map[raw]) return map[raw];
+    const stripped = norm(String(label).replace(/^#\d+\s*/, ''));
+    return map[stripped] || null;
+  };
+}
+
+// Agrège but / passe décisive / cartons / matchs joués par joueur depuis les
+// matchs arbitrés terminés. Retourne { [pid]: { goalsChamp, assistsChamp,
+// goalsAmical, assistsAmical, yellow, red, matchesPlayed, mins } }.
+function aggregateTeamMatchStats(players) {
+  const out = {};
+  const ensure = pid => out[pid] || (out[pid] = {
+    goalsChamp: 0, assistsChamp: 0, goalsAmical: 0, assistsAmical: 0,
+    yellow: 0, red: 0, matchesPlayed: 0, mins: 0,
+  });
+  const resolve = _makeLabelResolver(players);
+  const playerIds = new Set((players || []).map(p => p && p.id).filter(Boolean));
+
+  let activeClub = null, activeTeam = null;
+  try {
+    const ctx = JSON.parse(localStorage.getItem('cdd_active_context') || '{}');
+    activeClub = ctx.clubId || localStorage.getItem('arb_current_club');
+    activeTeam = ctx.teamId;
+  } catch (e) {}
+
+  const SKIP = new Set([
+    'cdd_match_current', 'cdd_match_last_finished', 'cdd_match_lineup',
+    'cdd_match_convoc', 'cdd_match_info', 'cdd_match_jersey_numbers',
+  ]);
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('cdd_match_') || SKIP.has(k)) continue;
+      let m = null;
+      try { m = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { continue; }
+      if (!m || (m.st !== 'finished' && !m.endedAt)) continue;
+      if (window.CDD_FRIENDLY && window.CDD_FRIENDLY.isTombstoned && window.CDD_FRIENDLY.isTombstoned(m.id)) continue;
+      if (activeClub && m.clubId !== activeClub) continue;
+      if (activeTeam && m.tmId && m.tmId !== activeTeam) continue;
+
+      const champ = (m.matchType === 'championnat' || m.matchType === 'coupe');
+      const played = new Set();
+      // Roster de NOTRE équipe (côté A) pour compter les matchs joués.
+      const roster = [].concat((m.tA && m.tA.p) || [], (m.tA && m.tA.bench) || []);
+      roster.forEach(pp => {
+        const pid = (pp && (pp.id || pp.pid)) || pp;
+        if (playerIds.has(pid)) played.add(pid);
+      });
+      (m.ev || []).forEach(e => {
+        if (!e || e.t !== 'A') return; // uniquement les events de notre équipe
+        if (e.tp === 'goal') {
+          const pid = e.scorerId || resolve(e.scorer || e.pl);
+          if (pid) { const b = ensure(pid); if (champ) b.goalsChamp++; else b.goalsAmical++; played.add(pid); }
+          if (e.passer) {
+            const aid = resolve(e.passer);
+            if (aid) { const b = ensure(aid); if (champ) b.assistsChamp++; else b.assistsAmical++; played.add(aid); }
+          }
+        } else if (e.tp === 'yellow') {
+          const pid = e.scorerId || resolve(e.pl);
+          if (pid) { ensure(pid).yellow++; played.add(pid); }
+        } else if (e.tp === 'red') {
+          const pid = e.scorerId || resolve(e.pl);
+          if (pid) { ensure(pid).red++; played.add(pid); }
+        }
+      });
+      played.forEach(pid => { const b = ensure(pid); b.matchesPlayed++; b.mins += 90; });
+    }
+  } catch (e) {}
+  return out;
+}
+
+// ─── Applique les vraies stats joueur (mute `players` en place) ───
+// goals/assists/yellow/red/mins/matchesPlayed depuis l'agrégateur unique.
 // Sans matchs arbitrés, tout reste à 0 (pas de fausse data).
 function applyRealStats(players) {
-  if (!window.CDD || !window.CDD.getMatchesForActiveTeam) return;
-  const matches = window.CDD.getMatchesForActiveTeam() || [];
-  if (!matches.length) return;
+  const agg = aggregateTeamMatchStats(players);
   const byId = {};
   players.forEach(p => { byId[p.id] = p; });
-  matches.forEach(m => {
-    const evs = m.events || m.timeline || m.actions || [];
-    const playedIds = new Set();
-    const lineupIds = (m.lineup && m.lineup.startersIds) || m.startersIds || [];
-    const benchIds  = (m.lineup && m.lineup.benchIds)    || m.benchIds    || [];
-    [...lineupIds, ...benchIds].forEach(pid => { if (byId[pid]) playedIds.add(pid); });
-    evs.forEach(e => {
-      if (!e) return;
-      const type = (e.type || e.t || '').toLowerCase();
-      const pid = e.scorerId || e.playerId || e.pid || e.p ||
-                  (e.player && e.player.id) || e.id;
-      if (!pid || !byId[pid]) return;
-      const p = byId[pid];
-      if (type === 'goal' || type === 'but' || type === 'g') {
-        p.goals++;
-        const aid = e.assistId || e.assist || (e.assistPlayer && e.assistPlayer.id);
-        if (aid && byId[aid]) byId[aid].assists++;
-        playedIds.add(pid);
-      } else if (type === 'yellow' || type === 'jaune' || type === 'y') {
-        p.yellow++; playedIds.add(pid);
-      } else if (type === 'red' || type === 'rouge' || type === 'r') {
-        p.red++; playedIds.add(pid);
-      } else if (type === 'mvp') {
-        p.mvp++; playedIds.add(pid);
-      }
-    });
-    playedIds.forEach(pid => {
-      const p = byId[pid];
-      p.matchesPlayed++;
-      p.mins += (m.minutesByPlayer && m.minutesByPlayer[pid]) || 90;
-    });
+  Object.keys(agg).forEach(pid => {
+    const p = byId[pid];
+    if (!p) return;
+    const b = agg[pid];
+    p.goals         = (p.goals || 0)         + b.goalsChamp + b.goalsAmical;
+    p.assists       = (p.assists || 0)       + b.assistsChamp + b.assistsAmical;
+    p.yellow        = (p.yellow || 0)        + b.yellow;
+    p.red           = (p.red || 0)           + b.red;
+    p.matchesPlayed = (p.matchesPlayed || 0) + b.matchesPlayed;
+    p.mins          = (p.mins || 0)          + b.mins;
   });
   // Forme simple : 6 + (buts/match)*4 − (cartons/match)*2
   players.forEach(p => {
-    if (p.matchesPlayed === 0) { p.form = 0; return; }
+    if (!p.matchesPlayed) { p.form = 0; return; }
     const goalRate = p.goals / p.matchesPlayed;
     const cardPenalty = (p.yellow + p.red * 3) / p.matchesPlayed;
     p.form = Math.max(4, Math.min(10, Math.round(6 + goalRate * 4 - cardPenalty * 2)));
@@ -455,55 +536,36 @@ function computeAge(dateStr) {
   const now = new Date().getFullYear();
   return now - y;
 }
-  // Reads arb_m{} (the user's recorded matches), counts goals per player,
-  // builds the top-scorer leaderboard.
+  // Classement buteurs + passeurs, depuis l'agrégateur unique (cdd_match_*).
+  // Chaque ligne porte les compteurs SÉPARÉS par compétition (champ vs amical)
+  // pour que l'onglet Buteurs puisse filtrer Tout / Championnat / Amical.
   function buildTopScorers(teamPlayers) {
-    if (!window.CDD?.getMatchesForActiveTeam) return [];
-    const matches = window.CDD.getMatchesForActiveTeam();
-    if (!matches.length) return [];
-
-    const byPlayer = {};
     const playerById = {};
     teamPlayers.forEach(p => { playerById[p.id] = p; });
+    const agg = aggregateTeamMatchStats(teamPlayers);
 
-    matches.forEach(m => {
-      // Match events can live in several places — try them all defensively
-      const evs = m.events || m.timeline || m.actions || [];
-      evs.forEach(e => {
-        if (!e) return;
-        const type = (e.type || e.t || '').toLowerCase();
-        if (type !== 'goal' && type !== 'but' && type !== 'g') return;
-        // Player id may be in scorerId, playerId, pid, p, or in player.id
-        const pid = e.scorerId || e.playerId || e.pid || e.p ||
-                    (e.player && e.player.id) || e.id;
-        if (!pid) return;
-        if (!byPlayer[pid]) byPlayer[pid] = { goals: 0, assists: 0 };
-        byPlayer[pid].goals++;
-        // Assist on same event sometimes
-        const aid = e.assistId || e.assist || (e.assistPlayer && e.assistPlayer.id);
-        if (aid) {
-          if (!byPlayer[aid]) byPlayer[aid] = { goals: 0, assists: 0 };
-          byPlayer[aid].assists++;
-        }
-      });
-    });
-
-    const rows = Object.keys(byPlayer)
+    const rows = Object.keys(agg)
       .map(pid => {
         const p = playerById[pid];
+        const b = agg[pid];
+        const goals = b.goalsChamp + b.goalsAmical;
+        const assists = b.assistsChamp + b.assistsAmical;
         return {
           playerId: pid,
-          name: p ? `${p.first} ${p.last}` : 'Joueur inconnu',
+          name: p ? `${p.first} ${p.last || ''}`.trim() : 'Joueur inconnu',
           first: p?.first || '',
           last: p?.last || '',
           photo: p?.photo,
-          goals: byPlayer[pid].goals,
-          assists: byPlayer[pid].assists,
+          goals, assists,
+          goalsChamp: b.goalsChamp, assistsChamp: b.assistsChamp,
+          goalsAmical: b.goalsAmical, assistsAmical: b.assistsAmical,
+          me: true,
         };
       })
-      .filter(r => r.goals > 0)
-      .sort((a,b) => b.goals - a.goals)
-      .map((r,i) => ({ ...r, rank: i+1, me: true }));
+      // On garde aussi les passeurs sans but (les passes décisives t'intéressent).
+      .filter(r => r.goals > 0 || r.assists > 0)
+      .sort((a, b) => (b.goals - a.goals) || (b.assists - a.assists))
+      .map((r, i) => ({ ...r, rank: i + 1 }));
 
     return rows;
   }
