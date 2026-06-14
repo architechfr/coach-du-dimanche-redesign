@@ -15,6 +15,11 @@
 //   • Mots-clés "sénior", "vétéran", "loisir", "+35/+40/...", "35 ans" → adultes
 //   • Défaut : mineurs (texte "parents" reste valable comme aujourd'hui)
 function isAdultTeam(team) {
+  // 1. Réglage EXPLICITE prioritaire (défini par le coach via la page Club,
+  //    Phase 0 multi-format). Une fois posé, il fait foi pour TOUTES les pages
+  //    (page « Joueurs » pour adultes vs page « Parents » pour mineurs).
+  if (team && typeof team.isAdult === 'boolean') return team.isAdult;
+  // 2. Sinon, heuristique rétro-compatible sur category/name.
   const txt = ((team && (team.category || '')) + ' ' + (team && team.name || '')).toLowerCase();
   if (!txt.trim()) return false;
   // U13, U15, U17, U18 etc. → mineurs (sauf U19+ qui sont déjà adultes côté FFF)
@@ -40,7 +45,36 @@ function activeTeamIsAdult() {
   } catch (e) { return false; }
 }
 
-window.CDD_TEAM_HELPERS = { isAdultTeam, activeTeamIsAdult };
+// ─── FORMATS DE JEU — socle multi-format (Phase 0, 2026-06-14) ─────────────
+// `team.format` pilotera (Phases suivantes) les formations disponibles, la
+// taille de convocation et les défauts de config match. DÉFAUT '11' → les
+// équipes existantes ne changent strictement RIEN tant qu'on ne modifie pas
+// leur format. Les nombres `players`/`bench` servent de référence aux phases
+// suivantes (compo, convoc) ; ils ne sont pas encore consommés ici.
+const TEAM_FORMATS = {
+  '11':     { id: '11',     label: 'Foot à 11', short: 'F11', players: 11, bench: 5, rolling: false },
+  '8':      { id: '8',      label: 'Foot à 8',  short: 'F8',  players: 8,  bench: 4, rolling: false },
+  '5':      { id: '5',      label: 'Foot à 5',  short: 'F5',  players: 5,  bench: 3, rolling: true  },
+  'futsal': { id: 'futsal', label: 'Futsal',    short: 'FUT', players: 5,  bench: 7, rolling: true  },
+};
+function teamFormat(team) {
+  const f = team && team.format;
+  return (f && TEAM_FORMATS[f]) ? f : '11';
+}
+function formatMeta(format) {
+  return TEAM_FORMATS[format] || TEAM_FORMATS['11'];
+}
+function activeTeamFormat() {
+  try {
+    const t = (window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam()) || null;
+    return teamFormat(t);
+  } catch (e) { return '11'; }
+}
+
+window.CDD_TEAM_HELPERS = {
+  isAdultTeam, activeTeamIsAdult,
+  teamFormat, formatMeta, activeTeamFormat, TEAM_FORMATS,
+};
 
 // Convert FFF position labels → standard short codes
 // Also infers from preferredNumber when position is empty (FFF data often omits it)

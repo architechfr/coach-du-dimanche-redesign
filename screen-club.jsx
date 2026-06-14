@@ -333,11 +333,46 @@ function ScreenClub({ go, tweaks }) {
         )}
       </div>
 
-      {/* ÉQUIPES DU CLUB — lecture seule, dérivé des teams existantes */}
+      {/* ÉQUIPES DU CLUB — format de jeu + public (adultes/mineurs) éditables */}
       {(() => {
         const teams = (window.CDD?.getTeams?.() || []).filter(t => t && t.clubId === clubId);
         if (teams.length === 0) return null;
         const totalPlayers = teams.reduce((sum, t) => sum + ((t.players || []).length || 0), 0);
+
+        const TH = window.CDD_TEAM_HELPERS || {};
+        const FORMATS = TH.TEAM_FORMATS || {};
+        const fmtOf   = (t) => TH.teamFormat ? TH.teamFormat(t) : (t.format || '11');
+        const adultOf = (t) => (typeof t.isAdult === 'boolean')
+          ? t.isAdult : (TH.isAdultTeam ? TH.isAdultTeam(t) : false);
+
+        // Met à jour un champ d'équipe : local (arb_teams) + cloud (saveTeam) + rebuild.
+        const updateTeam = (teamId, patch) => {
+          try {
+            const all = JSON.parse(localStorage.getItem('arb_teams') || '[]');
+            const i = all.findIndex(x => x && x.id === teamId);
+            if (i < 0) return;
+            all[i] = { ...all[i], ...patch };
+            localStorage.setItem('arb_teams', JSON.stringify(all));
+            if (window.cddData?.saveTeam) {
+              window.cddData.saveTeam(all[i]).catch(e => console.warn('[club] saveTeam', e.message));
+            }
+            if (window.CDD_REBUILD) window.CDD_REBUILD();
+            forceTick({});
+          } catch (e) { console.warn('[club] updateTeam', e); }
+        };
+
+        const chip = (active, onClick, label, key) => (
+          <button key={key} type="button" onClick={onClick} disabled={!canEdit}
+            style={{
+              padding:'4px 9px', borderRadius:6, fontSize:10.5, fontWeight:800,
+              fontFamily:'inherit', cursor: canEdit ? 'pointer' : 'default',
+              background: active ? 'rgba(200,241,105,.16)' : 'rgba(255,255,255,.04)',
+              color: active ? '#c8f169' : 'rgba(255,255,255,.65)',
+              border: '1px solid ' + (active ? 'rgba(200,241,105,.45)' : 'rgba(255,255,255,.10)'),
+              opacity: (!canEdit && !active) ? 0.5 : 1,
+            }}>{label}</button>
+        );
+
         return (
           <div style={sectionStyle}>
             <div style={sectionHeader}>
@@ -347,31 +382,60 @@ function ScreenClub({ go, tweaks }) {
                 {teams.length} équipe{teams.length > 1 ? 's' : ''} · {totalPlayers} joueur{totalPlayers > 1 ? 's' : ''}
               </span>
             </div>
-            <div style={{display:'flex', flexDirection:'column', gap:6}}>
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
               {teams.map(t => {
                 const pl = (t.players || []).length;
+                const curFmt = fmtOf(t);
+                const isAdult = adultOf(t);
+                const formatList = Object.keys(FORMATS).length
+                  ? Object.values(FORMATS)
+                  : [{ id:'11', short:'F11' }];
                 return (
                   <div key={t.id} style={{
-                    padding:'8px 12px', borderRadius:8,
+                    padding:'10px 12px', borderRadius:8,
                     background:'rgba(255,255,255,.03)',
                     border:'1px solid rgba(255,255,255,.06)',
-                    display:'flex', alignItems:'center', justifyContent:'space-between',
-                    fontSize:13,
+                    display:'flex', flexDirection:'column', gap:8, fontSize:13,
                   }}>
-                    <span style={{fontWeight:700}}>{t.name || 'Équipe'}</span>
-                    <span style={{display:'flex', gap:8, alignItems:'center'}}>
-                      {t.category && <span style={{fontSize:11, opacity:.7}}>{t.category}</span>}
-                      {pl > 0 && (
-                        <span style={{
-                          fontSize:10, fontWeight:900, padding:'2px 6px', borderRadius:5,
-                          background:'rgba(200,241,105,.10)', color:'#c8f169',
-                        }}>{pl} j.</span>
-                      )}
-                    </span>
+                    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                      <span style={{fontWeight:700}}>{t.name || 'Équipe'}</span>
+                      <span style={{display:'flex', gap:8, alignItems:'center'}}>
+                        {t.category && <span style={{fontSize:11, opacity:.7}}>{t.category}</span>}
+                        {pl > 0 && (
+                          <span style={{
+                            fontSize:10, fontWeight:900, padding:'2px 6px', borderRadius:5,
+                            background:'rgba(200,241,105,.10)', color:'#c8f169',
+                          }}>{pl} j.</span>
+                        )}
+                      </span>
+                    </div>
+                    {/* Format de jeu */}
+                    <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+                      <span style={{fontSize:10, fontWeight:700, opacity:.55, letterSpacing:'.04em', width:54}}>FORMAT</span>
+                      {formatList.map(f => chip(
+                        curFmt === f.id,
+                        () => canEdit && curFmt !== f.id && updateTeam(t.id, { format: f.id }),
+                        f.short, 'f-' + f.id
+                      ))}
+                    </div>
+                    {/* Public : adultes (page Joueurs) vs mineurs (page Parents) */}
+                    <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+                      <span style={{fontSize:10, fontWeight:700, opacity:.55, letterSpacing:'.04em', width:54}}>PUBLIC</span>
+                      {chip(isAdult,  () => canEdit && updateTeam(t.id, { isAdult: true  }), '🧔 Adultes', 'ad-1')}
+                      {chip(!isAdult, () => canEdit && updateTeam(t.id, { isAdult: false }), '🧒 Mineurs', 'ad-0')}
+                      <span style={{fontSize:9.5, opacity:.5, marginLeft:2}}>
+                        {isAdult ? '→ page « Joueurs »' : '→ page « Parents »'}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
             </div>
+            {!canEdit && (
+              <div style={{fontSize:10, opacity:.5, marginTop:6}}>
+                Réservé coach principal · adjoint · admin
+              </div>
+            )}
           </div>
         );
       })()}
