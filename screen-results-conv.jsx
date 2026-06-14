@@ -11,6 +11,9 @@ function ScreenResults({ go, tweaks }) {
   const [, forceUpdate] = useState({});
   // Modale création/édition d'un match amical (depuis l'onglet Amicaux)
   const [friendlyModal, setFriendlyModal] = useState(null); // null | { mode: 'create'|'edit', match? }
+  // Sélection multiple dans Résultats (ménage rapide des faux matchs).
+  const [resSelMode, setResSelMode] = useState(false);
+  const [resSel, setResSel] = useState([]); // ids de matchs cochés
 
   // Re-render when FFF data lands or friendly matches change
   useEffect(() => {
@@ -36,6 +39,25 @@ function ScreenResults({ go, tweaks }) {
   const friendlyList = _teamIdRes && window.CDD_FRIENDLY?.list
     ? window.CDD_FRIENDLY.list(_teamIdRes)
     : [];
+
+  // ── Sélection multiple / suppression groupée (Résultats) ──
+  const toggleResSel = (id) => setResSel(cur =>
+    cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]);
+  const cancelResSel = () => { setResSelMode(false); setResSel([]); };
+  const doBulkDelete = () => {
+    if (!resSel.length) return;
+    if (!window.confirm(
+      `Supprimer définitivement ${resSel.length} match${resSel.length > 1 ? 's' : ''} ?\n\n`
+      + `Les feuilles de match et données liées seront effacées. Action irréversible.`
+    )) return;
+    const tid = _teamIdRes || null;
+    // purgeMatch résout lui-même l'amical lié (scheduledMatchId) par scan.
+    resSel.forEach(id => {
+      try { window.CDD_FRIENDLY?.purgeMatch?.({ teamId: tid, matchId: id }); } catch (e) {}
+    });
+    cancelResSel();
+    forceUpdate({});
+  };
 
   const isLoading = window.CDD_FFF_LOADING;
   const fffCfg = CDD_CLUB?.fff;
@@ -409,7 +431,34 @@ function ScreenResults({ go, tweaks }) {
                 {/* ───────── RÉSULTATS (joués : amicaux + entraînements) ───────── */}
                 {played.length > 0 && (
                   <>
-                    <div style={sectionH}>🏁 Résultats</div>
+                    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', margin:'4px 2px 8px', gap:8}}>
+                      <span style={{...sectionH, margin:0}}>🏁 Résultats</span>
+                      {_canEditRes && (resSelMode ? (
+                        <span style={{display:'flex', gap:6}}>
+                          <button onClick={doBulkDelete} disabled={!resSel.length}
+                            style={{
+                              padding:'5px 10px', borderRadius:7, fontSize:11, fontWeight:800, fontFamily:'inherit',
+                              cursor: resSel.length ? 'pointer' : 'not-allowed',
+                              background: resSel.length ? 'rgba(255,107,107,0.15)' : 'rgba(255,255,255,0.04)',
+                              color: resSel.length ? '#ff8a8a' : 'rgba(255,255,255,0.4)',
+                              border: '1px solid ' + (resSel.length ? 'rgba(255,107,107,0.45)' : 'rgba(255,255,255,0.10)'),
+                            }}>🗑 Supprimer ({resSel.length})</button>
+                          <button onClick={cancelResSel}
+                            style={{
+                              padding:'5px 10px', borderRadius:7, fontSize:11, fontWeight:700, fontFamily:'inherit',
+                              cursor:'pointer', background:'rgba(255,255,255,0.05)', color:'rgba(255,255,255,0.75)',
+                              border:'1px solid rgba(255,255,255,0.15)',
+                            }}>Annuler</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setResSelMode(true)}
+                          style={{
+                            padding:'5px 10px', borderRadius:7, fontSize:11, fontWeight:800, fontFamily:'inherit',
+                            cursor:'pointer', background:'rgba(200,241,105,0.10)', color:'#c8f169',
+                            border:'1px solid rgba(200,241,105,0.35)',
+                          }}>☑️ Sélectionner</button>
+                      ))}
+                    </div>
                     <div style={{display:'flex', flexDirection:'column', gap:8}}>
                       {played.map(m => {
                         const tm = typeMeta(m.matchType);
@@ -420,16 +469,27 @@ function ScreenResults({ go, tweaks }) {
                           : [m.score[0], m.score[1]];
                         const fdCls = m.result === 'W' ? 'fd-w' : m.result === 'L' ? 'fd-l' : 'fd-d';
                         const fdTxt = m.result === 'W' ? 'V' : m.result === 'L' ? 'D' : 'N';
+                        const _sel = resSel.includes(m.id);
                         return (
                           <div key={m.id} style={{
                             padding:'10px 12px', borderRadius:10,
-                            background:'rgba(255,255,255,0.02)',
-                            border:'1px solid rgba(255,255,255,0.07)',
+                            background: _sel ? 'rgba(255,107,107,0.12)' : 'rgba(255,255,255,0.02)',
+                            border: '1px solid ' + (_sel ? 'rgba(255,107,107,0.45)' : 'rgba(255,255,255,0.07)'),
                             display:'flex', gap:10, alignItems:'center',
                           }}>
+                            {resSelMode && (
+                              <span onClick={() => toggleResSel(m.id)} style={{
+                                width:22, height:22, borderRadius:6, flexShrink:0, cursor:'pointer',
+                                display:'flex', alignItems:'center', justifyContent:'center',
+                                fontSize:13, fontWeight:900,
+                                background: _sel ? '#ff8a8a' : 'rgba(255,255,255,0.06)',
+                                color: _sel ? '#000' : 'rgba(255,255,255,0.5)',
+                                border: '1px solid ' + (_sel ? '#ff8a8a' : 'rgba(255,255,255,0.2)'),
+                              }}>{_sel ? '✓' : ''}</span>
+                            )}
                             <span className={`fd ${fdCls} fd-big`} style={{flexShrink:0}}>{fdTxt}</span>
-                            <button onClick={() => go('fiche-match', m)}
-                                    title="Voir la feuille de match"
+                            <button onClick={() => resSelMode ? toggleResSel(m.id) : go('fiche-match', m)}
+                                    title={resSelMode ? 'Cocher / décocher' : 'Voir la feuille de match'}
                                     style={{
                                       flex:1, minWidth:0, textAlign:'left', cursor:'pointer',
                                       background:'none', border:'none', padding:0, color:'inherit',
@@ -454,7 +514,7 @@ function ScreenResults({ go, tweaks }) {
                             <div style={{fontWeight:900, fontSize:18, color:'#fff', flexShrink:0, letterSpacing:'.02em'}}>
                               {us}<span style={{opacity:0.4, margin:'0 2px'}}>–</span>{them}
                             </div>
-                            {_canEditRes && (
+                            {_canEditRes && !resSelMode && (
                               <button
                                 onClick={() => {
                                   const label = `${m.opp} (${us}–${them})`;
