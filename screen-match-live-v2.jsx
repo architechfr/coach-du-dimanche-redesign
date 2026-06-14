@@ -1329,7 +1329,10 @@ function ScreenMatchV2({ go, tweaks }) {
 
     const scorerLbl = '#'+scorer.num+(scorer.first?' '+scorer.first:'');
     let pl = scorerLbl;
-    let evt = { tp:'goal', t: side, mn, ch: M.ch, scorer: scorerLbl, ts: Date.now() };
+    // scorerId : identité STABLE du buteur. Sans elle, le résumé devait re-deviner
+    // le joueur par numéro de maillot → mauvaise attribution (ex: but compté pour
+    // le gardien sans licence). On la stocke ici une fois pour toutes.
+    let evt = { tp:'goal', t: side, mn, ch: M.ch, scorer: scorerLbl, scorerId: scorer?.id || null, ts: Date.now() };
 
     if (type === 'penalty') {
       evt.penalty = true;
@@ -1343,6 +1346,7 @@ function ScreenMatchV2({ go, tweaks }) {
       pl += ' ('+lbl+det+')';
     } else if (type === 'pass' && passer) {
       evt.passer = MATCH_HELPERS.playerLabel(passer);
+      evt.passerId = passer?.id || null;
       pl += ' (p. '+evt.passer+')';
     } else if (type === 'recovery') {
       evt.source = 'recovery';
@@ -2552,7 +2556,14 @@ function MatchSummaryShareModal({ M, onClose }) {
   const secondary = (club.colors && club.colors[1]) || '#0B1320';
   const lineup = [...(M.tA?.p || []), ...(M.tA?.bench || [])];
 
-  // Buteurs équipe A : agrège par scorer label, garde l'ordre chronologique
+  // Nettoie un label "#9 Philippe" → "Philippe" (retire le préfixe numéro).
+  const cleanLbl = (lbl) => String(lbl || '?').replace(/^#\S+\s*/, '').trim() || '?';
+
+  // Buteurs équipe A : agrège par scorer label, garde l'ordre chronologique.
+  // ⚠️ Le nom affiché = le NOM FIGÉ au moment du but (comme le fil live).
+  // On ne ré-attribue JAMAIS le but par numéro de maillot (source du bug
+  // "but compté pour le gardien sans licence"). On résout un joueur réel
+  // UNIQUEMENT via l'id stocké dans l'événement (scorerId), pour la photo/MVP.
   const scorers = [];
   (M.ev || []).forEach(e => {
     if (e.t === 'A' && e.tp === 'goal') {
@@ -2562,23 +2573,18 @@ function MatchSummaryShareModal({ M, onClose }) {
         existing.count++;
         existing.minutes.push({ mn: e.mn, ch: e.ch });
       } else {
-        const pid = window.CDD_COACH?._resolvePlayerIdFromLabel?.(label, lineup);
-        const player = pid ? (window.CDD_PLAYERS || []).find(p => p.id === pid) : null;
-        scorers.push({ label, count: 1, minutes: [{ mn: e.mn, ch: e.ch }], player, isPenalty: !!e.penalty });
+        const player = e.scorerId ? (window.CDD_PLAYERS || []).find(p => p.id === e.scorerId) : null;
+        scorers.push({ label, display: cleanLbl(label), count: 1, minutes: [{ mn: e.mn, ch: e.ch }], player, isPenalty: !!e.penalty });
       }
     }
   });
 
-  // MVP : joueur avec le plus de buts (tie-break : passes décisives via computeExploits si dispo)
-  const exploits = window.MATCH_HELPERS?.computeExploits?.(M) || { goals: {}, assists: {}, mvp: null };
-  let mvpPlayer = null;
-  if (exploits.mvp) {
-    const pid = window.CDD_COACH?._resolvePlayerIdFromLabel?.(exploits.mvp, lineup);
-    mvpPlayer = pid ? (window.CDD_PLAYERS || []).find(p => p.id === pid) : null;
-  }
-  if (!mvpPlayer && scorers.length > 0) {
-    mvpPlayer = scorers[0].player;
-  }
+  // MVP : meilleur buteur (par nombre de buts). On n'affiche la carte Homme du
+  // match QUE si l'identité du joueur est fiable (id stocké) — jamais un joueur
+  // deviné. Pour les matchs anciens (sans scorerId), pas de carte plutôt qu'un faux.
+  let mvpScorer = null;
+  for (const s of scorers) { if (!mvpScorer || s.count > mvpScorer.count) mvpScorer = s; }
+  const mvpPlayer = (mvpScorer && mvpScorer.player) ? mvpScorer.player : null;
 
   // Cartons équipe A
   const yellowsA = (M.ev || []).filter(e => e.t === 'A' && e.tp === 'yellow').length;
@@ -2721,7 +2727,7 @@ function MatchSummaryShareModal({ M, onClose }) {
                   <div key={i} style={{display:'flex', alignItems:'center', gap:8, fontSize:13}}>
                     <span style={{fontSize:14}}>⚽</span>
                     <span style={{fontWeight:700, flex:1}}>
-                      {s.player ? `${s.player.first} ${s.player.last || ''}`.trim() : s.label}
+                      {s.player ? `${s.player.first} ${s.player.last || ''}`.trim() : s.display}
                       {s.count > 1 && <span style={{color:primary, marginLeft:6}}>×{s.count}</span>}
                     </span>
                     <span style={{opacity:0.55, fontSize:11}}>
