@@ -404,6 +404,16 @@ service cloud.firestore {
         && canEditTeam(resource.data.clubId, resource.data.teamId);
     }
 
+    // ═══ /users/{userId} ════════════════════════════════════════════
+    // Snapshot localStorage du V1 (cloudPush / cloudPull dans index.html).
+    // - Lecture : sa propre doc + admin (pour la vue agrégée globale).
+    // - Écriture : seulement la sienne (push de son propre snapshot).
+    // Indispensable pour adminAggregateAllClubs() (bug USDF invisible).
+    match /users/{userId} {
+      allow read:  if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  COLLECTIONS EXISTANTES — conservées telles quelles (ne pas casser)
     // ═══════════════════════════════════════════════════════════════
