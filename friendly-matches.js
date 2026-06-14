@@ -303,6 +303,22 @@
     // 2. Pierres tombales sur tous les ids concernés (anti-résurrection).
     tombstone(frId, ...matchIds);
 
+    // 2b. Pierres tombales CLOUD → propagation cross-appareils (les autres
+    //     téléphones purgeront leur copie au prochain pull).
+    try {
+      let clubId = null;
+      const at = window.CDD && window.CDD.getActiveTeam && window.CDD.getActiveTeam();
+      if (at && at.clubId) clubId = at.clubId;
+      else if (tid && window.CDD && window.CDD.getTeamById) {
+        const t = window.CDD.getTeamById(tid); clubId = (t && t.clubId) || null;
+      }
+      if (window.cddData && window.cddData.saveDeletedMatch) {
+        [frId, ...matchIds].filter(Boolean).forEach(id => {
+          try { window.cddData.saveDeletedMatch(id, { clubId, teamId: tid }); } catch (e) {}
+        });
+      }
+    } catch (e) {}
+
     // 3. Suppression des enregistrements de matchs joués (local + marqueurs + cloud).
     matchIds.forEach(id => {
       try { localStorage.removeItem('cdd_match_' + id); } catch (e) {}

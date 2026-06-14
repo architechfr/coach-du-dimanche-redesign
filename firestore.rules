@@ -404,6 +404,28 @@ service cloud.firestore {
         && canEditTeam(resource.data.clubId, resource.data.teamId);
     }
 
+    // ═══ /deleted_matches/{matchId} ═════════════════════════════════
+    // Pierres tombales de suppression (cross-appareils, 2026-06-14). Quand un
+    // coach supprime un match (amical 'fr_*' ou arbitré 'm_*'), on écrit ici
+    // pour que les AUTRES appareils purgent leur copie locale au prochain pull.
+    // Champs : { id, clubId, teamId, deletedAt, deletedBy }
+    // Lecture : tout membre du club. Écriture : coach/owner/adjoint.
+    match /deleted_matches/{matchId} {
+      allow read:   if isSignedIn() && canReadClub(resource.data.clubId);
+      allow create: if isSignedIn()
+        && canEditTeam(request.resource.data.clubId,
+                       request.resource.data.teamId)
+        && isString(request.resource.data.id)
+        && isString(request.resource.data.clubId)
+        && matchId == request.resource.data.id
+        && request.resource.data.size() <= 8;
+      allow update: if isSignedIn()
+        && canEditTeam(resource.data.clubId, resource.data.teamId)
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.size() <= 8;
+      allow delete: if isSignedIn() && canManageClub(resource.data.clubId);
+    }
+
     // ═══ /users/{userId} ════════════════════════════════════════════
     // Snapshot localStorage du V1 (cloudPush / cloudPull dans index.html).
     // - Lecture : sa propre doc + admin (pour la vue agrégée globale).

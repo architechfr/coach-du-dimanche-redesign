@@ -1428,6 +1428,35 @@ async function deleteFriendlyMatch(matchId) {
   return { ok: true };
 }
 
+// ─── Pierres tombales CLOUD (suppression cross-appareils, 2026-06-14) ───
+// Collection `deleted_matches/{id}` : id = match supprimé (fr_* ou m_*).
+// Permet à un AUTRE appareil de purger sa copie locale au prochain pull
+// (sinon le merge additif laissait le match fantôme sur le 2e device).
+async function saveDeletedMatch(id, meta) {
+  if (!db || !id) return { ok: false };
+  meta = meta || {};
+  try {
+    await setDoc(doc(db, 'deleted_matches', String(id)), {
+      id: String(id),
+      clubId: meta.clubId ? String(meta.clubId) : null,
+      teamId: meta.teamId ? String(meta.teamId) : null,
+      deletedAt: serverTimestamp(),
+      deletedBy: _uid() || null,
+    }, { merge: true });
+  } catch (e) { console.warn('[deleted] saveDeletedMatch', e.message); }
+  return { ok: true };
+}
+async function fetchDeletedMatches(clubId) {
+  if (!db || !clubId) return [];
+  try {
+    const q = query(collection(db, 'deleted_matches'), where('clubId', '==', String(clubId)));
+    const snap = await getDocs(q);
+    const out = [];
+    snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+    return out;
+  } catch (e) { console.warn('[deleted] fetchDeletedMatches', e.message); return []; }
+}
+
 // ─── Profil coach (carte de visite partageable) ───
 // Storage local : cdd_coach_profile_{uid} (voir coach-profile.js).
 // Cloud : collection coach_profiles, id = uid.
@@ -2156,6 +2185,8 @@ async function pullCloudData() {
   const rawJerseyNumbers    = [];
   // Matchs amicaux — collection friendly_matches → cdd_friendly_matches[teamId][]
   const rawFriendlyMatches  = [];
+  // Pierres tombales cloud (ids de matchs supprimés sur un autre appareil).
+  const rawDeletedIds = [];
   for (const cid of clubIds) {
     try {
       const club = await fetchClub(cid);
@@ -2247,6 +2278,11 @@ async function pullCloudData() {
           }
         });
       } catch (e) { console.warn('[cddData] pull friendly_matches', cid, e.message); }
+      // Pierres tombales (matchs supprimés sur un autre appareil)
+      try {
+        const dels = await fetchDeletedMatches(cid);
+        dels.forEach(d => { if (d && d.id) rawDeletedIds.push(String(d.id)); });
+      } catch (e) { console.warn('[cddData] pull deleted_matches', cid, e.message); }
     } catch (e) { console.warn('[cddData] pull club', cid, e.message); }
   }
 
@@ -2575,6 +2611,30 @@ async function pullCloudData() {
   } catch (e) {}
 
   // Sync MATCHS AMICAUX depuis le cloud — LWW par id (qui est unique).
+  // ── Pierres tombales CLOUD → purge cross-appareils ──
+  // Un match supprimé sur un AUTRE appareil : on l'inscrit dans les tombstones
+  // locales (anti-résurrection) ET on retire toute trace locale (cdd_match_*).
+  // Doit s'exécuter AVANT le merge des amicaux pour que la purge ci-dessous
+  // (via _tombSet) écarte aussi les amicaux supprimés ailleurs.
+  if (rawDeletedIds.length) {
+    try {
+      if (window.CDD_FRIENDLY && window.CDD_FRIENDLY.tombstone) {
+        window.CDD_FRIENDLY.tombstone.apply(null, rawDeletedIds);
+      } else {
+        const cur = JSON.parse(localStorage.getItem('cdd_deleted_matches') || '[]');
+        const set = new Set((Array.isArray(cur) ? cur : []).map(String));
+        rawDeletedIds.forEach(id => set.add(String(id)));
+        localStorage.setItem('cdd_deleted_matches', JSON.stringify([...set].slice(-1000)));
+      }
+      rawDeletedIds.forEach(id => {
+        try { localStorage.removeItem('cdd_match_' + id); } catch (e) {}
+        try { if (localStorage.getItem('cdd_match_current') === id) localStorage.removeItem('cdd_match_current'); } catch (e) {}
+        try { if (localStorage.getItem('cdd_match_last_finished') === id) localStorage.removeItem('cdd_match_last_finished'); } catch (e) {}
+      });
+      console.info('[deleted] purge cross-appareils :', rawDeletedIds.length, 'tombstone(s) cloud appliquée(s)');
+    } catch (e) { console.warn('[deleted] purge local', e.message); }
+  }
+
   // Local : cdd_friendly_matches[teamId] = [ { id, ... } ].
   // On fusionne : tout id cloud absent en local est ajouté, et si l'id existe
   // en local, on garde la version la plus récente (updatedAt).
@@ -3202,6 +3262,7 @@ window.cddData = {
   saveMatchInfo, fetchMatchInfos, deleteMatchInfo,
   saveJerseyNumbers, fetchJerseyNumbers, deleteJerseyNumbers,
   saveFriendlyMatch, fetchFriendlyMatches, deleteFriendlyMatch,
+  saveDeletedMatch, fetchDeletedMatches,
   saveCoachProfile, fetchCoachProfile, deleteCoachProfile,
   pushAllLocalOverrides,
   saveClubLogoBase64,
