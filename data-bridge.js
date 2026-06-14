@@ -441,12 +441,34 @@ function _makeLabelResolver(players) {
 // goalsAmical, assistsAmical, yellow, red, matchesPlayed, mins } }.
 function aggregateTeamMatchStats(players) {
   const out = {};
-  const ensure = pid => out[pid] || (out[pid] = {
-    goalsChamp: 0, assistsChamp: 0, goalsAmical: 0, assistsAmical: 0,
-    yellow: 0, red: 0, matchesPlayed: 0, mins: 0,
-  });
   const resolve = _makeLabelResolver(players);
-  const playerIds = new Set((players || []).map(p => p && p.id).filter(Boolean));
+  const playerById = {};
+  (players || []).forEach(p => { if (p && p.id) playerById[p.id] = p; });
+  const playerIds = new Set(Object.keys(playerById));
+  const cleanLabel = s => String(s || '').replace(/^#\d+\s*/, '').trim();
+
+  // Identité stable d'un buteur/passeur : son playerId si on a pu le rattacher
+  // à l'effectif, SINON son label nettoyé (cas joueur ponctuel / invité non
+  // inscrit). Ainsi TOUT buteur apparaît au classement, exactement comme dans
+  // "Derniers matchs", au lieu d'être silencieusement ignoré.
+  const ensure = (id, label) => {
+    const cl = cleanLabel(label);
+    const key = id ? ('id:' + id) : (cl ? 'lbl:' + cl.toLowerCase() : null);
+    if (!key) return null;
+    if (!out[key]) {
+      const p = id ? playerById[id] : null;
+      out[key] = {
+        key, playerId: id || null,
+        name: p ? `${p.first} ${p.last || ''}`.trim() : (cl || 'Joueur'),
+        first: p ? (p.first || '') : (cl || ''),
+        last: p ? (p.last || '') : '',
+        photo: p ? (p.photo || null) : null,
+        goalsChamp: 0, assistsChamp: 0, goalsAmical: 0, assistsAmical: 0,
+        yellow: 0, red: 0, matchesPlayed: 0, mins: 0,
+      };
+    }
+    return out[key];
+  };
 
   let activeClub = null, activeTeam = null;
   try {
@@ -471,31 +493,33 @@ function aggregateTeamMatchStats(players) {
       if (activeTeam && m.tmId && m.tmId !== activeTeam) continue;
 
       const champ = (m.matchType === 'championnat' || m.matchType === 'coupe');
-      const played = new Set();
+      const playedKeys = new Set();
       // Roster de NOTRE équipe (côté A) pour compter les matchs joués.
       const roster = [].concat((m.tA && m.tA.p) || [], (m.tA && m.tA.bench) || []);
       roster.forEach(pp => {
         const pid = (pp && (pp.id || pp.pid)) || pp;
-        if (playerIds.has(pid)) played.add(pid);
+        if (playerIds.has(pid)) { const b = ensure(pid, null); if (b) playedKeys.add(b.key); }
       });
       (m.ev || []).forEach(e => {
         if (!e || e.t !== 'A') return; // uniquement les events de notre équipe
         if (e.tp === 'goal') {
-          const pid = e.scorerId || resolve(e.scorer || e.pl);
-          if (pid) { const b = ensure(pid); if (champ) b.goalsChamp++; else b.goalsAmical++; played.add(pid); }
+          const sid = e.scorerId || resolve(e.scorer || e.pl);
+          const b = ensure(sid, e.scorer || e.pl);
+          if (b) { if (champ) b.goalsChamp++; else b.goalsAmical++; playedKeys.add(b.key); }
           if (e.passer) {
             const aid = resolve(e.passer);
-            if (aid) { const b = ensure(aid); if (champ) b.assistsChamp++; else b.assistsAmical++; played.add(aid); }
+            const ab = ensure(aid, e.passer);
+            if (ab) { if (champ) ab.assistsChamp++; else ab.assistsAmical++; playedKeys.add(ab.key); }
           }
         } else if (e.tp === 'yellow') {
-          const pid = e.scorerId || resolve(e.pl);
-          if (pid) { ensure(pid).yellow++; played.add(pid); }
+          const yb = ensure(e.scorerId || resolve(e.pl), e.pl);
+          if (yb) { yb.yellow++; playedKeys.add(yb.key); }
         } else if (e.tp === 'red') {
-          const pid = e.scorerId || resolve(e.pl);
-          if (pid) { ensure(pid).red++; played.add(pid); }
+          const rb = ensure(e.scorerId || resolve(e.pl), e.pl);
+          if (rb) { rb.red++; playedKeys.add(rb.key); }
         }
       });
-      played.forEach(pid => { const b = ensure(pid); b.matchesPlayed++; b.mins += 90; });
+      playedKeys.forEach(key => { if (out[key]) { out[key].matchesPlayed++; out[key].mins += 90; } });
     }
   } catch (e) {}
   return out;
@@ -508,10 +532,13 @@ function applyRealStats(players) {
   const agg = aggregateTeamMatchStats(players);
   const byId = {};
   players.forEach(p => { byId[p.id] = p; });
-  Object.keys(agg).forEach(pid => {
-    const p = byId[pid];
+  // agg est indexé par identité (id: ou lbl:) ; on n'applique qu'aux entrées
+  // rattachées à un vrai joueur de l'effectif (les buteurs ponctuels n'ont pas
+  // de carte joueur à muter, mais comptent quand même au classement buteurs).
+  Object.keys(agg).forEach(key => {
+    const b = agg[key];
+    const p = b.playerId ? byId[b.playerId] : null;
     if (!p) return;
-    const b = agg[pid];
     p.goals         = (p.goals || 0)         + b.goalsChamp + b.goalsAmical;
     p.assists       = (p.assists || 0)       + b.assistsChamp + b.assistsAmical;
     p.yellow        = (p.yellow || 0)        + b.yellow;
@@ -540,26 +567,22 @@ function computeAge(dateStr) {
   // Chaque ligne porte les compteurs SÉPARÉS par compétition (champ vs amical)
   // pour que l'onglet Buteurs puisse filtrer Tout / Championnat / Amical.
   function buildTopScorers(teamPlayers) {
-    const playerById = {};
-    teamPlayers.forEach(p => { playerById[p.id] = p; });
     const agg = aggregateTeamMatchStats(teamPlayers);
 
     const rows = Object.keys(agg)
-      .map(pid => {
-        const p = playerById[pid];
-        const b = agg[pid];
+      .map(key => {
+        const b = agg[key];
         const goals = b.goalsChamp + b.goalsAmical;
         const assists = b.assistsChamp + b.assistsAmical;
         return {
-          playerId: pid,
-          name: p ? `${p.first} ${p.last || ''}`.trim() : 'Joueur inconnu',
-          first: p?.first || '',
-          last: p?.last || '',
-          photo: p?.photo,
+          playerId: b.playerId || key, // clé stable pour React (id ou lbl:)
+          name: b.name,
+          first: b.first, last: b.last, photo: b.photo,
           goals, assists,
           goalsChamp: b.goalsChamp, assistsChamp: b.assistsChamp,
           goalsAmical: b.goalsAmical, assistsAmical: b.assistsAmical,
-          me: true,
+          // 'me' = rattaché à l'effectif (surlignage). Les ponctuels = false.
+          me: !!b.playerId,
         };
       })
       // On garde aussi les passeurs sans but (les passes décisives t'intéressent).
