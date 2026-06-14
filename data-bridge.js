@@ -1680,6 +1680,25 @@ const CONVOC_MAX  = 16; // 11 + 5 (extension max via bouton +)
 const BENCH_MIN   = 3;
 const BENCH_MAX   = 5;
 
+// Limites de convocation PAR FORMAT (Phase 1b multi-format). Dérivées de
+// TEAM_FORMATS (players + bench). Foot à 11 → 11+3..5 = 14..16 (inchangé).
+// Foot à 8 → 8+3..4 = 11..12 ; Foot à 5 → 5+3 = 8 ; Futsal → 5+..7 = 8..12.
+function _convocLimits(teamId) {
+  const TH = window.CDD_TEAM_HELPERS;
+  let fmt = '11';
+  try {
+    let t = null;
+    if (teamId && window.CDD && window.CDD.getTeamById) t = window.CDD.getTeamById(teamId);
+    if (!t && window.CDD && window.CDD.getActiveTeam) t = window.CDD.getActiveTeam();
+    fmt = (TH && TH.teamFormat) ? TH.teamFormat(t) : '11';
+  } catch (e) {}
+  const meta = (TH && TH.formatMeta) ? TH.formatMeta(fmt) : { players: 11, bench: 5 };
+  const starters = meta.players || 11;
+  const benchMax = meta.bench || 5;
+  const benchMin = Math.min(BENCH_MIN, benchMax);
+  return { fmt, starters, benchMin, benchMax, convocMin: starters + benchMin, convocMax: starters + benchMax };
+}
+
 // ─── Overlay convoc par match (séparation Compo type ↔ Convocation) ───
 // Storage : cdd_match_convoc = { [teamId]: { [matchId]: { startersIds, benchIds, basedOn, createdAt, updatedAt } } }
 // Toute modif depuis la page Convocations écrit ici, jamais dans team.lineupTemplate.
@@ -1816,9 +1835,19 @@ function _ensureMatchLineup(teamId, matchId) {
 
 window.CDD_CONVOC = {
   CONVOC_MIN, CONVOC_MAX, BENCH_MIN, BENCH_MAX,
+  // Limites effectives selon le format de l'équipe (11/8/5/futsal).
+  getLimits(teamId) { return _convocLimits(teamId); },
   setSize(teamId, count) {
-    // #51 — Strict 14 ou 16 (banc 3 ou 5). 15 = banc 4 = INVALIDE → snap au plus proche valide.
-    const snapped = (typeof count === 'number' && count >= 16) ? 16 : 14;
+    const lim = _convocLimits(teamId);
+    let snapped;
+    if (lim.fmt === '11') {
+      // #51 — Foot à 11 INCHANGÉ : banc 3 ou 5 (14 ou 16), jamais 4.
+      snapped = (typeof count === 'number' && count >= 16) ? 16 : 14;
+    } else {
+      // Autres formats : clamp dans [convocMin, convocMax] du format.
+      const c = (typeof count === 'number') ? count : lim.convocMin;
+      snapped = Math.max(lim.convocMin, Math.min(lim.convocMax, c));
+    }
     try {
       const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
       all[teamId] = { count: snapped, updatedAt: Date.now() };
@@ -1827,12 +1856,14 @@ window.CDD_CONVOC = {
     if (window.CDD_REBUILD) window.CDD_REBUILD();
   },
   getSize(teamId) {
+    const lim = _convocLimits(teamId);
     try {
       const all = JSON.parse(localStorage.getItem('cdd_convoc_settings') || '{}');
       const raw = all[teamId]?.count;
-      if (typeof raw !== 'number') return CONVOC_MIN;
-      return raw >= 16 ? 16 : 14; // strict 14 ou 16
-    } catch (e) { return CONVOC_MIN; }
+      if (typeof raw !== 'number') return lim.convocMin;
+      if (lim.fmt === '11') return raw >= 16 ? 16 : 14; // strict 14 ou 16
+      return Math.max(lim.convocMin, Math.min(lim.convocMax, raw));
+    } catch (e) { return lim.convocMin; }
   },
   // Indique si une compo de match existe pour le match courant.
   // Vérifie cdd_match_lineup (nouveau) puis cdd_match_convoc (legacy).
@@ -1881,11 +1912,12 @@ window.CDD_CONVOC = {
     if (!teamId) return false;
     const matchId = _currentMatchId();
     const ml = _ensureMatchLineup(teamId, matchId);
-    // Cap bench=5
+    // Cap du banc selon le format (11→5, 8→4, 5→3, futsal→7).
     if (slot === 'bench') {
+      const benchMax = _convocLimits(teamId).benchMax;
       const benchCountNow = ml.bench.filter(id => id !== playerId).length;
-      if (benchCountNow >= BENCH_MAX) {
-        try { window.dispatchEvent(new CustomEvent('cdd-bench-full', { detail: { teamId, max: BENCH_MAX } })); } catch (e) {}
+      if (benchCountNow >= benchMax) {
+        try { window.dispatchEvent(new CustomEvent('cdd-bench-full', { detail: { teamId, max: benchMax } })); } catch (e) {}
         return false;
       }
     }

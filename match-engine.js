@@ -41,6 +41,22 @@ function loadMatch(id) {
 function saveMatch(M) {
   try { localStorage.setItem('cdd_match_'+M.id, JSON.stringify(M)); } catch (e) {}
 }
+// Défauts de config match PAR FORMAT (Phase 1b multi-format). Foot à 11
+// inchangé (2×45, 11 joueurs, 5 changements). cfg explicite reste prioritaire.
+function _formatMatchDefaults() {
+  let fmt = '11';
+  try {
+    const TH = window.CDD_TEAM_HELPERS;
+    fmt = (TH && TH.activeTeamFormat) ? TH.activeTeamFormat() : '11';
+  } catch (e) {}
+  switch (fmt) {
+    case '8':      return { fmt, hd: 30, nt: 8,  ms: 7,  htd: 10 };
+    case '5':      return { fmt, hd: 25, nt: 5,  ms: 99, htd: 5  };
+    case 'futsal': return { fmt, hd: 20, nt: 5,  ms: 99, htd: 10 };
+    default:       return { fmt: '11', hd: 45, nt: 11, ms: 5,  htd: 15 };
+  }
+}
+
 function newMatch(tA, tB, cfg = {}) {
   // Cloisonnement #20 : tag le match avec le club et l'equipe active
   let clubId = null, tmId = null;
@@ -49,13 +65,16 @@ function newMatch(tA, tB, cfg = {}) {
     clubId = ctx.clubId || localStorage.getItem('arb_current_club');
     tmId = ctx.teamId;
   } catch (e) {}
+  const fd = _formatMatchDefaults();
   return {
     id: 'm_' + Date.now().toString(36),
     st: 'paused', notStarted: true,
     tSt: null, tOff: 0,
-    htStart: null, htDur: cfg.htd || 15,
+    htStart: null, htDur: cfg.htd || fd.htd,
     ch: 1,
-    cfg: { hs: cfg.hs||2, hd: cfg.hd||45, htd: cfg.htd||15, nt: cfg.nt||11, ms: cfg.ms||5 },
+    cfg: { hs: cfg.hs||2, hd: cfg.hd||fd.hd, htd: cfg.htd||fd.htd, nt: cfg.nt||fd.nt, ms: cfg.ms||fd.ms },
+    // Format de jeu du match (11/8/5/futsal) — figé au coup d'envoi.
+    format: cfg.format || fd.fmt,
     tA, tB,
     sA: 0, sB: 0,
     yA: 0, yB: 0,

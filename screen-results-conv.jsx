@@ -604,10 +604,13 @@ function ScreenConvocations({ go, tweaks }) {
     return () => window.removeEventListener('cdd-match-info-changed', h);
   }, []);
 
-  // #51 — Banc strict 3 à 5 (foot amateur). Picker numérique retiré.
+  // #51 — Banc strict (foot amateur). Limites désormais PAR FORMAT (11→5,
+  // 8→4, 5→3, futsal→7) via CDD_CONVOC.getLimits().
   const teamId = window.CDD?.getActiveTeam?.()?.id;
-  const BENCH_MAX = (window.CDD_CONVOC && window.CDD_CONVOC.BENCH_MAX) || 5;
-  const BENCH_MIN = (window.CDD_CONVOC && window.CDD_CONVOC.BENCH_MIN) || 3;
+  const _convLim = (window.CDD_CONVOC && window.CDD_CONVOC.getLimits)
+    ? window.CDD_CONVOC.getLimits(teamId) : { benchMax: 5, benchMin: 3 };
+  const BENCH_MAX = _convLim.benchMax || 5;
+  const BENCH_MIN = _convLim.benchMin || 3;
   const [benchFullToast, setBenchFullToast] = useState(false);
 
   // Écoute l'event 'cdd-bench-full' dispatché par CDD_CONVOC quand on dépasse 5
