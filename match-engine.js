@@ -57,6 +57,18 @@ function _formatMatchDefaults() {
   }
 }
 
+// Nb de joueurs sur le terrain + taille de banc du format actif. Sert aux
+// constructions par défaut (titulaires fallback, adversaire générique).
+function _fmtCounts() {
+  const fd = _formatMatchDefaults();
+  let bench = 5;
+  try {
+    const TH = window.CDD_TEAM_HELPERS;
+    if (TH && TH.formatMeta) bench = TH.formatMeta(fd.fmt).bench || 5;
+  } catch (e) {}
+  return { players: fd.nt, bench };
+}
+
 function newMatch(tA, tB, cfg = {}) {
   // Cloisonnement #20 : tag le match avec le club et l'equipe active
   let clubId = null, tmId = null;
@@ -99,6 +111,7 @@ function newMatch(tA, tB, cfg = {}) {
 function buildDefaultTeams() {
   const players = window.CDD_PLAYERS || [];
   const club = window.CDD_CLUB || {};
+  const _fc = _fmtCounts(); // nb joueurs/banc selon le format de l'équipe
   const byId = (id) => players.find(p => p.id === id);
   // Helper : applique le num match (override match-specific) si défini, sinon num saison.
   const matchNumOf = (p) => {
@@ -164,8 +177,8 @@ function buildDefaultTeams() {
 
   // Priorité 3 (fallback) : isStarter + premiers dispo en banc
   if (!starters || starters.length === 0) {
-    starters = players.filter(p => p.isStarter).slice(0, 11);
-    bench    = players.filter(p => !p.isStarter && p.status !== 'reserve').slice(0, 5);
+    starters = players.filter(p => p.isStarter).slice(0, _fc.players);
+    bench    = players.filter(p => !p.isStarter && p.status !== 'reserve').slice(0, _fc.bench);
   }
 
   return {
@@ -182,8 +195,8 @@ function buildDefaultTeams() {
       c: '#3b82f6',
       c2: '#ffffff',
       logoDataUrl: null,
-      p: Array.from({length:11}, (_,i) => ({ num: i+1, first: '', last: '#'+(i+1), id: 'b_'+i, onField: true })),
-      bench: Array.from({length:5}, (_,i) => ({ num: 12+i, first: '', last: '#'+(12+i), id: 'b_'+(11+i), onField: false })),
+      p: Array.from({length:_fc.players}, (_,i) => ({ num: i+1, first: '', last: '#'+(i+1), id: 'b_'+i, onField: true })),
+      bench: Array.from({length:_fc.bench}, (_,i) => ({ num: _fc.players+1+i, first: '', last: '#'+(_fc.players+1+i), id: 'b_'+(_fc.players+i), onField: false })),
     }
   };
 }
@@ -411,7 +424,8 @@ function setOpponent(M, name, color, opts = {}) {
   // 2e couleur (bicolore) — via opts.color2 ou string secondaire
   if (opts.color2) M.tB.c2 = opts.color2;
   if (opts.players && Array.isArray(opts.players)) {
-    M.tB.p = opts.players.slice(0, 11).map((nm, i) => ({
+    const _maxOpp = _fmtCounts().players;
+    M.tB.p = opts.players.slice(0, _maxOpp).map((nm, i) => ({
       num: i + 1, first: '', last: nm || '#' + (i+1), id: 'b_' + i, onField: true,
     }));
   }
