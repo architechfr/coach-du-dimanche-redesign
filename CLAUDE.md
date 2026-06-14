@@ -36,7 +36,8 @@ session par session). Synthèse rapide :
 
 > **Collections Firestore actives** : `clubs`, `teams`, `players`,
 > `memberships`, `invites`, `match_lineups`, `match_infos`, `match_jerseys`,
-> `friendly_matches` + legacy `cdd_v2_*` et `shared_teams`.
+> `friendly_matches`, `deleted_matches` (pierres tombales de suppression
+>   cross-appareils, 2026-06-14) + legacy `cdd_v2_*` et `shared_teams`.
 > Les règles sont dans `firestore.rules`, à publier à la main dans la
 > console Firebase après tout changement.
 
