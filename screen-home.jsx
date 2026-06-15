@@ -83,7 +83,16 @@ function pickCoachVisual() {
 // ---------- HOME ----------
 function ScreenHome({ go, tweaks }) {
   const next = CDD_NEXT_MATCH;
-  const last = CDD_LAST_MATCHES;
+  // [accueil 2026-06-15] « Derniers matchs » sur l'ACCUEIL = UNIQUEMENT les
+  // compétitions officielles FFF (championnat + coupe). Les amicaux et
+  // entraînements arbitrés par le coach restent visibles via « Tous → »
+  // (écran results) et dans l'onglet Amicaux du Championnat, mais ne polluent
+  // plus l'accueil. Filtre côté rendu : robuste même si un amical « fantôme »
+  // ressuscite dans CDD_LAST_MATCHES (divergence local/cloud) — il n'apparaît
+  // de toute façon pas ici.
+  const last = (CDD_LAST_MATCHES || []).filter(
+    m => m && (m.matchType === 'championnat' || m.matchType === 'coupe')
+  );
   const club = CDD_CLUB;
   // Pick top 2 stars: highest OVR among starters, fallback to first 2 players
   const starters = CDD_PLAYERS.filter(p => p.isStarter);
@@ -674,7 +683,7 @@ function ScreenHome({ go, tweaks }) {
             padding:'16px', textAlign:'center', fontSize:12, opacity:0.55,
             background:'rgba(255,255,255,0.03)', borderRadius:10,
           }}>
-            Aucun match joué encore — termine ton premier match pour le voir ici.
+            Aucun match de championnat joué pour l'instant. Les amicaux et entraînements sont dans « Tous → ».
           </div>
         )}
       </div>
