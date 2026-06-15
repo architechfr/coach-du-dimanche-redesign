@@ -1013,7 +1013,22 @@ async function rebuildCDDGlobals() {
     : [];
   // On RE-FUSIONNE les matchs de championnat FFF déjà connus (sinon ce rebuild
   // les ferait disparaître de l'accueil jusqu'au prochain applyFFFData).
-  window.CDD_LAST_MATCHES = _mergeLastMatches(coachFinished, window.CDD_FFF_PLAYED);
+  // [fix 2026-06-15] Cold start : CDD_FFF_PLAYED (mémoire) est vide tant que
+  // le fetch FFF async n'a pas répondu. On ré-hydrate alors depuis le cache
+  // local persistant (posé par applyFFFData), scopé par équipe (anti
+  // cross-team). Résultat : les matchs de championnat s'affichent IMMÉDIATEMENT
+  // au démarrage, même offline ou si le fetch FFF échoue.
+  let _fffPlayed = Array.isArray(window.CDD_FFF_PLAYED) ? window.CDD_FFF_PLAYED : [];
+  if (_fffPlayed.length === 0 && activeTeam?.id) {
+    try {
+      const _cached = JSON.parse(localStorage.getItem('cdd_fff_played_' + activeTeam.id) || '[]');
+      if (Array.isArray(_cached) && _cached.length) {
+        _fffPlayed = _cached;
+        window.CDD_FFF_PLAYED = _cached; // ré-hydrate la mémoire pour les rebuilds suivants
+      }
+    } catch (e) {}
+  }
+  window.CDD_LAST_MATCHES = _mergeLastMatches(coachFinished, _fffPlayed);
   window.CDD_STANDINGS = [];
   window.CDD_TOP_SCORERS = [];
 
@@ -1377,6 +1392,14 @@ async function applyFFFData(fffCfg, clubName, players) {
     // Mémorise les matchs de championnat joués → les rebuilds ultérieurs
     // (rebuildCDDGlobals) les re-fusionnent au lieu de les perdre.
     window.CDD_FFF_PLAYED = fffMatches;
+    // [fix 2026-06-15] PERSISTANCE locale (cache passif) scopée par équipe :
+    // au prochain démarrage à froid, rebuildCDDGlobals ré-hydrate ces matchs
+    // AVANT le refetch FFF async. Sans ça, l'accueil n'affiche que les amicaux
+    // tant que le fetch FFF n'a pas répondu (« je quitte / ce n'est plus bon »).
+    try {
+      const _tid = (window.CDD?.getActiveTeam?.()?.id) || null;
+      if (_tid) localStorage.setItem('cdd_fff_played_' + _tid, JSON.stringify(fffMatches));
+    } catch (e) {}
     window.CDD_LAST_MATCHES = _mergeLastMatches(coachMatches, fffMatches);
 
     // Also store all matches (past + upcoming) for full agenda

@@ -42,8 +42,8 @@
      l'affichage « Version » dans Réglages → À PROPOS. À bumper à CHAQUE
      push qui bump aussi un cache buster (convention 1 push = 1 numéro). -->
 <script>
-  window.CDD_APP_VERSION = 'v79 · fix-suppr';
-  window.CDD_APP_BUILD_DATE = '2026-06-14';
+  window.CDD_APP_VERSION = 'v183 · stabilité-cache';
+  window.CDD_APP_BUILD_DATE = '2026-06-15';
   // ── FILET ANTI-CACHE-FANTÔME (2026-06-14) ──
   // Une version passée a pu enregistrer un service worker qui sert l'ancien
   // code en boucle (matchs supprimés qui "reviennent" car l'ancien code n'a pas
@@ -112,7 +112,7 @@
 <script src="calendar-export.js?v=1"></script>
 
 <!-- Step 4: data bridge builds the globals (CDD_PLAYERS etc) BEFORE app.jsx mounts -->
-<script type="text/babel" src="data-bridge.js?v=144"></script>
+<script type="text/babel" src="data-bridge.js?v=183"></script>
 
 <!-- Step 5: UI components -->
 <script type="text/babel" src="club-badge.jsx?v=61.0"></script>
