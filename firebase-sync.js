@@ -19,7 +19,8 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
-  getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, deleteDoc, deleteField,
+  getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, getDocsFromServer,
+  deleteDoc, deleteField,
   onSnapshot, serverTimestamp, collection, query, where, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import {
@@ -1686,6 +1687,40 @@ async function fetchMemberships(uid) {
   return out;
 }
 
+// [fix anti-faux-révoqué 2026-06-15] Lecture FORCÉE SERVEUR des memberships,
+// réessayée avec backoff. Sert UNIQUEMENT à confirmer une absence avant une
+// décision destructive (révocation d'accès → bandeau « Accès retiré »).
+//
+// Pourquoi : `fetchMemberships` (getDocs) peut, dans une fenêtre de course au
+// boot (token auth pas encore propagé à Firestore, blip réseau, ad-blocker),
+// renvoyer un résultat vide alors que l'utilisateur a bien un club. Un seul
+// read vide ne doit JAMAIS suffire à l'éjecter. `getDocsFromServer` :
+//   - bypasse tout cache (vrai état serveur),
+//   - LÈVE une erreur si offline/bloqué (au lieu de renvoyer un faux vide).
+// Retour :
+//   { memberships:[...], errored:false } → lecture fiable (vide = vraie révoc)
+//   { memberships:[],     errored:true  } → ≥1 tentative a échoué → NE PAS révoquer
+async function confirmMemberships(uid) {
+  const targetUid = uid || _uid();
+  if (!db || !targetUid) return { memberships: [], errored: true, error: 'no-db-or-uid' };
+  const q = query(collection(db, 'memberships'), where('uid', '==', targetUid));
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const snap = await getDocsFromServer(q);
+      const out = [];
+      snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+      // Vide confirmé OU memberships trouvées : lecture fiable, on rend la main.
+      return { memberships: out, errored: false };
+    } catch (e) {
+      lastErr = e;
+      // Backoff court : laisse le token auth se propager / le réseau respirer.
+      await new Promise(r => setTimeout(r, 500 + attempt * 400));
+    }
+  }
+  return { memberships: [], errored: true, error: lastErr ? lastErr.message : 'unknown' };
+}
+
 // Toutes les memberships d'un club — pour l'écran « membres du club ».
 // Lisible uniquement par un coach principal/owner/admin du club (firestore
 // .rules → memberships read = canEditClub). Un adjoint ou un parent qui
@@ -2107,6 +2142,28 @@ async function pullCloudData() {
     try { memberships = await fetchMemberships(uid); }
     catch (e) { return { ok: false, reason: 'fetch-failed', error: e.message }; }
     clubIds = Array.from(new Set((memberships || []).map(m => m.clubId).filter(Boolean)));
+  }
+
+  // [fix anti-faux-révoqué 2026-06-15] Un seul read vide ne doit JAMAIS
+  // suffire à éjecter l'utilisateur vers « Accès retiré ». AVANT toute purge
+  // destructive, on CONFIRME l'absence par une lecture forcée serveur,
+  // réessayée. Trois issues possibles :
+  //   - lecture incertaine (offline / ad-blocker / token pas prêt) → on garde
+  //     le cache local intact et on ne révoque pas (retour fetch-failed) ;
+  //   - faux vide (la confirmation retrouve des memberships) → on repart
+  //     normalement dessus ;
+  //   - vide confirmé stable → c'est une vraie révocation → on laisse la
+  //     branche ci-dessous purger.
+  if (clubIds.length === 0 && !isAdminPull) {
+    const confirm = await confirmMemberships(uid);
+    if (confirm.errored) {
+      _setSyncStatus({ ok: false, lastError: 'confirm-membership: ' + (confirm.error || '') });
+      return { ok: false, reason: 'fetch-failed-confirm', error: confirm.error };
+    }
+    if (confirm.memberships.length > 0) {
+      memberships = confirm.memberships;
+      clubIds = Array.from(new Set(memberships.map(m => m.clubId).filter(Boolean)));
+    }
   }
 
   if (clubIds.length === 0) {
